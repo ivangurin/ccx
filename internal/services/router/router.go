@@ -18,6 +18,7 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/ivangurin/ccx/internal/translators"
 	"github.com/ivangurin/ccx/internal/translators/anthropic"
+	"github.com/ivangurin/ccx/internal/translators/openai"
 )
 
 // route — связка профиль+модель+транслятор; immutable после установки.
@@ -88,7 +89,9 @@ func buildTranslator(profile *models.Profile) (translators.Translator, error) {
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
 		return anthropic.New(profile), nil
-	case models.ProtocolOpenAI, models.ProtocolCopilot, models.ProtocolCodex:
+	case models.ProtocolOpenAI:
+		return openai.New(profile), nil
+	case models.ProtocolCopilot, models.ProtocolCodex:
 		return nil, fmt.Errorf("router: транслятор %s появится в следующем этапе", profile.Protocol)
 	default:
 		return nil, fmt.Errorf("router: неизвестный protocol %q", profile.Protocol)

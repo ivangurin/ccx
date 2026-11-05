@@ -65,11 +65,30 @@ func TestUse_UnknownProfile(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestUse_UnimplementedProtocol(t *testing.T) {
-	svc, _ := newTestRouter(t, "openai-x")
+func TestUse_OpenAIProfile_Activates(t *testing.T) {
+	// openai-профиль: транслятор строится без апстрим-проверки (Ready тривиален)
+	svc2, sp := newTestRouter(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Set("oa", &models.Profile{
+		Name:     "OpenAI",
+		Protocol: models.ProtocolOpenAI,
+		OpenAI:   &models.OpenAIConfig{BaseURL: "https://api.openai.com/v1"},
+		Models:   []models.Model{{ID: "gpt", Default: true}},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	require.NoError(t, svc2.Use(context.Background(), "oa", "gpt"))
+	profile, model, ok := svc2.Active()
+	require.True(t, ok)
+	require.Equal(t, "oa", profile)
+	require.Equal(t, "gpt", model)
+}
 
-	err := svc.Use(context.Background(), "openai-x", "m")
-	require.Error(t, err) // транслятор openai появится в M3
+func TestUse_CopilotNotImplementedYet(t *testing.T) {
+	svc, _ := newTestRouter(t, "copilot-x")
+
+	err := svc.Use(context.Background(), "copilot-x", "m")
+	require.Error(t, err) // M4
 	_, _, ok := svc.Active()
 	require.False(t, ok)
 }
