@@ -1,17 +1,17 @@
-package openai_test
+package chatstream_test
 
 import (
 	"testing"
 
 	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/translators/openai"
+	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/stretchr/testify/require"
 )
 
 // feed прогоняет чанки через конвертер, собирая Anthropic-события.
 func feed(t *testing.T, chunks []*models.ChatChunk) []models.AnthropicEvent {
 	t.Helper()
-	conv := openai.NewStreamConverter("glm")
+	conv := chatstream.NewStreamConverter("glm")
 	events := make([]models.AnthropicEvent, 0, len(chunks)*2)
 	for _, c := range chunks {
 		events = append(events, conv.Feed(c)...)

@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/translators/chatstream"
 )
 
 // Translator — Anthropic → OpenAI chat/completions.
@@ -117,7 +117,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Stream {
-		t.serveStream(w, resp, req.Model)
+		chatstream.ServeChatStream(w, resp, req.Model)
 
 		return
 	}
@@ -137,32 +137,6 @@ func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model
 	if data, merr := json.Marshal(out); merr == nil {
 		_, _ = w.Write(data)
 	}
-}
-
-func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, model string) {
-	writer := sse.NewWriter(w)
-	conv := NewStreamConverter(model)
-	reader := sse.NewReader(resp.Body)
-	for {
-		ev, err := reader.Next()
-		if err != nil {
-			break
-		}
-		if ev.Done {
-			break
-		}
-		var chunk models.ChatChunk
-		if jsonErr := json.Unmarshal([]byte(ev.Data), &chunk); jsonErr != nil {
-			continue
-		}
-		for _, out := range conv.Feed(&chunk) {
-			writer.Event(out.Type, out)
-		}
-	}
-	for _, out := range conv.Finish() {
-		writer.Event(out.Type, out)
-	}
-	writer.Close()
 }
 
 // ServeCountTokens — локальная оценка (у chat/completions нет токен-эндпоинта).

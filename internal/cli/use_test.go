@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"bytes"
+	"net"
+	"strconv"
 	"testing"
 
 	"github.com/ivangurin/ccx/internal/cli"
@@ -59,8 +61,10 @@ func TestCommandUse_NoProvidersHint(t *testing.T) {
 
 func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
+	port := freePort(t)
+	t.Setenv("CCX_PORT", strconv.Itoa(port))
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{
-		Version: 2, Daemon: models.Daemon{Port: 4567, AuthToken: "x"},
+		Version: 2, Daemon: models.Daemon{Port: port, AuthToken: "x"},
 	}))
 	var out bytes.Buffer
 
@@ -108,4 +112,18 @@ func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {
 
 	require.Contains(t, out.String(), "Выберите")
 	require.Equal(t, 0, code)
+}
+
+// freePort — свободный TCP-порт (тест не зависит от дефолтного 4567:
+// на машине может жить настоящий демон).
+func freePort(t *testing.T) int {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	tcpAddr, ok := lis.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	port := tcpAddr.Port
+	require.NoError(t, lis.Close())
+
+	return port
 }

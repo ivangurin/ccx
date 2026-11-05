@@ -44,10 +44,35 @@ type MessagesRequest struct {
 	Metadata      json.RawMessage `json:"metadata,omitempty"`
 }
 
-// Usage — токены.
+// Usage — токены. UnmarshalJSON принимает и Anthropic-ключи
+// (input_tokens/output_tokens), и OpenAI (prompt_tokens/completion_tokens) —
+// апстримы chat/completions шлют второй формат.
 type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
+}
+
+// UnmarshalJSON — двойной формат ключей (см. комментарий типа).
+func (u *Usage) UnmarshalJSON(data []byte) error {
+	var both struct {
+		InputTokens   int `json:"input_tokens"`
+		OutputTokens  int `json:"output_tokens"`
+		PromptTokens  int `json:"prompt_tokens"`
+		CompleteToken int `json:"completion_tokens"`
+	}
+	if err := json.Unmarshal(data, &both); err != nil {
+		return err
+	}
+	u.InputTokens = both.InputTokens
+	u.OutputTokens = both.OutputTokens
+	if u.InputTokens == 0 && both.PromptTokens != 0 {
+		u.InputTokens = both.PromptTokens
+	}
+	if u.OutputTokens == 0 && both.CompleteToken != 0 {
+		u.OutputTokens = both.CompleteToken
+	}
+
+	return nil
 }
 
 // MessagesResponse — нестримовый ответ.

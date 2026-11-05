@@ -95,8 +95,16 @@ func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.Translator, error) {
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
+		if profile.Anthropic == nil {
+			return nil, errors.New("профиль без блока anthropic (base_url) — заполните ccx edit")
+		}
+
 		return anthropic.New(profile), nil
 	case models.ProtocolOpenAI:
+		if profile.OpenAI == nil {
+			return nil, errors.New("профиль без блока openai (base_url) — заполните ccx edit")
+		}
+
 		return openai.New(profile), nil
 	case models.ProtocolCopilot:
 		store := filepath.Join(cfg.CCXDir(), "copilot-auth.json")

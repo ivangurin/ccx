@@ -31,17 +31,23 @@ const (
 
 // Auth — вырезка ~/.codex/auth.json.
 type Auth struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	AccountID    string `json:"account_id"`
+	AccessToken  string
+	RefreshToken string
+	AccountID    string // tokens.account_id живого файла
 }
 
+// authFile — полный формат живого auth.json (поля codex CLI обязаны
+// переживать наш рефреш: RMW-патч, не пересоздание файла).
 type authFile struct {
-	Tokens struct {
+	AuthMode    string `json:"auth_mode"`
+	LastRefresh string `json:"last_refresh,omitempty"`
+	Tokens      struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
+		AccountID    string `json:"account_id"`
+		IDToken      string `json:"id_token"`
+		LastRefresh  string `json:"last_refresh"`
 	} `json:"tokens"`
-	AccountID string `json:"account_id"`
 }
 
 // DefaultAuthPath — ~/.codex/auth.json.
@@ -64,16 +70,25 @@ func LoadAuth(path string) (Auth, error) {
 	return Auth{
 		AccessToken:  f.Tokens.AccessToken,
 		RefreshToken: f.Tokens.RefreshToken,
-		AccountID:    f.AccountID,
+		AccountID:    f.Tokens.AccountID,
 	}, nil
 }
 
-// SaveAuth атомарно пишет auth.json (права сохраняет jsonfile).
+// SaveAuth — read-modify-write: читает существующий файл и патчит ТОЛЬКО
+// tokens.access/refresh/last_refresh — auth_mode, id_token, account_id и
+// прочие поля codex CLI переживают рефреш нетронутыми (инвариант: файл чужой,
+// мы гости). Файла нет — создаёт минимальный.
 func SaveAuth(path string, auth Auth) error {
 	var f authFile
+	_ = jsonfile.ReadJSON(path, &f) // отсутствие файла — ок, создадим
 	f.Tokens.AccessToken = auth.AccessToken
 	f.Tokens.RefreshToken = auth.RefreshToken
-	f.AccountID = auth.AccountID
+	if f.Tokens.AccountID == "" {
+		f.Tokens.AccountID = auth.AccountID
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	f.Tokens.LastRefresh = now
+	f.LastRefresh = now
 
 	return jsonfile.WriteAtomicJSON(path, f, 0o600)
 }

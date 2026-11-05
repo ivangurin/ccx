@@ -1,6 +1,11 @@
 package config
 
-import "github.com/ivangurin/ccx/internal/models"
+import (
+	"github.com/ivangurin/ccx/internal/models"
+)
+
+// prefillFixDefault — PrefillFix=true по умолчанию для шаблонов/миграции.
+var prefillFixDefault = true
 
 // CopilotDefaults — маскировка под VSCode-клиент (шлюз Copilot фильтрует
 // посторонних); значения — публичные из расширения GitHub Copilot Chat.
@@ -10,7 +15,7 @@ var CopilotDefaults = models.CopilotConfig{
 	EditorVersion:  "vscode/1.99.0",
 	EditorPlugin:   "copilot-chat/0.28.0",
 	UserAgent:      "GitHubCopilotChat/0.28.0",
-	PrefillFix:     true,
+	PrefillFix:     &prefillFixDefault,
 }
 
 // CodexDefaults — мимикрия под codex CLI (Responses API подписки ChatGPT).

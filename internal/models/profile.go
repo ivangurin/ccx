@@ -54,7 +54,9 @@ type CopilotConfig struct {
 	EditorVersion  string `json:"editor_version,omitempty"`
 	EditorPlugin   string `json:"editor_plugin_version,omitempty"`
 	UserAgent      string `json:"user_agent,omitempty"`
-	PrefillFix     bool   `json:"prefill_fix,omitempty"`
+	// PrefillFix: nil = включён (дефолт — шлюз Copilot отвергает prefill без
+	// фикса); явный false — выключить.
+	PrefillFix *bool `json:"prefill_fix,omitempty"`
 }
 
 // CodexConfig — ChatGPT подписка через Responses API; логин переиспользует

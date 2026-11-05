@@ -93,7 +93,8 @@ func TestMigrateV1_CopilotBridgeToCopilot(t *testing.T) {
 	prof := p.Profiles.Get(profCopilot)
 	require.Equal(t, models.ProtocolCopilot, prof.Protocol)
 	require.NotNil(t, prof.Copilot)
-	require.True(t, prof.Copilot.PrefillFix)
+	require.NotNil(t, prof.Copilot.PrefillFix)
+	require.True(t, *prof.Copilot.PrefillFix)
 	require.Equal(t, "claude-sonnet-5.5", prof.Models[0].ID)
 }
 

@@ -1,8 +1,27 @@
-package openai
+package chatstream
 
 import (
+	"slices"
+
 	"github.com/ivangurin/ccx/internal/models"
 )
+
+// имена событий (goconst).
+const evMessageDelta = "message_delta"
+
+// stopReason — finish_reason → stop_reason.
+func stopReason(finish string) string {
+	switch finish {
+	case "tool_calls":
+		return "tool_use"
+	case "length":
+		return "max_tokens"
+	case "content_filter":
+		return "refusal"
+	default: // stop и неизвестные
+		return "end_turn"
+	}
+}
 
 // StreamConverter превращает SSE-чанки chat/completions в события
 // Anthropic Messages. Состояние: текущий блок (text/thinking/tool_use per index),
@@ -94,32 +113,62 @@ func (c *StreamConverter) feedChoice(choice struct {
 	return events
 }
 
-// Finish закрывает открытые блоки и завершает сообщение.
+// Finish закрывает открытые блоки (в порядке открытия — детерминизм) и
+// завершает сообщение; message_stop строго без payload.
 func (c *StreamConverter) Finish() []models.AnthropicEvent {
-	var events []models.AnthropicEvent
 	if !c.started {
-		return events
+		return nil
 	}
-	seen := map[int]bool{}
-	for _, anthropicIdx := range c.toolBlocks {
-		if !seen[anthropicIdx] {
-			seen[anthropicIdx] = true
-			events = append(events, blockStop(anthropicIdx))
-		}
-	}
+	events := make([]models.AnthropicEvent, 0, len(c.toolBlocks)+2)
+	events = append(events, c.closeBlocks()...)
 	usage := models.Usage{}
 	if c.usage != nil {
 		usage = *c.usage
 	}
 	events = append(events, models.AnthropicEvent{
-		Type: "message_delta",
+		Type: evMessageDelta,
 		Delta: &models.AnthropicDelta{
-			Type:       "message_delta",
+			Type:       evMessageDelta,
 			StopReason: firstNonEmptyStr(c.stopReason, "end_turn"),
 		},
 		Usage: &usage,
 	})
-	events = append(events, models.AnthropicEvent{Type: "message_stop", Message: &models.AnthropicMessagePayload{}})
+	events = append(events, models.AnthropicEvent{Type: "message_stop"})
+
+	return events
+}
+
+// FinishBroken — финал после обрыва апстрима: блоки закрыты, stop_reason
+// не подменяет ошибку (SSE-error уже эмитнут релеем до этого).
+func (c *StreamConverter) FinishBroken() []models.AnthropicEvent {
+	if !c.started {
+		return nil
+	}
+	events := make([]models.AnthropicEvent, 0, len(c.toolBlocks)+1)
+	events = append(events, c.closeBlocks()...)
+	events = append(events, models.AnthropicEvent{
+		Type:  evMessageDelta,
+		Delta: &models.AnthropicDelta{Type: evMessageDelta, StopReason: "max_tokens"},
+	})
+
+	return events
+}
+
+// closeBlocks — content_block_stop по возрастанию индекса (порядок открытия).
+func (c *StreamConverter) closeBlocks() []models.AnthropicEvent {
+	indexes := make([]int, 0, len(c.toolBlocks))
+	seenIdx := map[int]bool{}
+	for _, idx := range c.toolBlocks {
+		if !seenIdx[idx] {
+			seenIdx[idx] = true
+			indexes = append(indexes, idx)
+		}
+	}
+	slices.Sort(indexes)
+	events := make([]models.AnthropicEvent, 0, len(indexes))
+	for _, idx := range indexes {
+		events = append(events, blockStop(idx))
+	}
 
 	return events
 }

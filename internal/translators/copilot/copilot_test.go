@@ -47,7 +47,7 @@ func TestCopilot_MasqueradeHeaders(t *testing.T) {
 		EditorVersion:  "vscode/1.99.0",
 		EditorPlugin:   "copilot-chat/0.28.0",
 		UserAgent:      "GitHubCopilotChat/0.28.0",
-		PrefillFix:     true,
+		PrefillFix:     ptrBool(true),
 	}, staticToken{token: "gho_secret"}, up.URL)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-5.5","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`))
@@ -73,7 +73,7 @@ func TestCopilot_PrefillRewritten(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: true}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"claude-sonnet-5.5","max_tokens":10,
 		"messages":[{"role":"user","content":"напиши"},{"role":"assistant","content":[{"type":"text","text":"полу"}]}]
@@ -98,7 +98,7 @@ func TestCopilot_PrefillDisabled(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: false}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(false)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"m","max_tokens":1,
 		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"пре"}]
@@ -115,7 +115,7 @@ func TestCopilot_Stream(t *testing.T) {
 	var hdrs http.Header
 	up := capturingUpstream(t, &hdrs, "", true)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: true}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	rec := httptest.NewRecorder()
 
@@ -131,3 +131,29 @@ func TestCopilot_Ready_UsesTokenSource(t *testing.T) {
 	tr := copilot.NewForTest(&models.CopilotConfig{}, staticToken{token: "t"}, "http://127.0.0.1:1")
 	require.NoError(t, tr.Ready(context.Background()))
 }
+
+// I7: профиль без prefill_fix (рукописный) — фикс всё равно применяется
+// (дефолт true по плану; шлюз Copilot отвергает prefill без него).
+func TestI7_PrefillDefaultTrue(t *testing.T) {
+	var body string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+	}))
+	t.Cleanup(up.Close)
+
+	tr := copilot.NewForTest(&models.CopilotConfig{}, staticToken{token: "t"}, up.URL) // PrefillFix не задан
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
+		"model":"m","max_tokens":1,
+		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"пре"}]
+	}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Contains(t, body, "[continuation]", "prefill-фикс применён по умолчанию")
+}
+
+func ptrBool(b bool) *bool { return &b }

@@ -18,11 +18,12 @@ import (
 func writeAuth(t *testing.T, path, access, refresh string) {
 	t.Helper()
 	require.NoError(t, jsonfile.WriteAtomicJSON(path, map[string]any{
+		"auth_mode": "chatgpt",
 		"tokens": map[string]any{
 			"access_token":  access,
 			"refresh_token": refresh,
+			"account_id":    "acc-1",
 		},
-		"account_id": "acc-1",
 	}, 0o600))
 }
 

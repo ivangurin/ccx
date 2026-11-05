@@ -20,6 +20,8 @@ import (
 
 // константы ролей/типов (goconst).
 const (
+	evError        = "error"
+	typeToolUse    = "tool_use"
 	typeText       = "text"
 	typeMessage    = "message"
 	roleAssistantS = "assistant"
@@ -304,69 +306,100 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 // streamEvent — типизированное событие Responses SSE.
 type streamEvent struct {
-	Type  string `json:"type"`
-	Delta string `json:"delta"`
-	Item  *struct {
+	Type   string `json:"type"`
+	Delta  string `json:"delta"`
+	ItemID string `json:"item_id"`
+	Item   *struct {
 		Type   string `json:"type"`
 		Name   string `json:"name"`
 		CallID string `json:"call_id"`
+		ID     string `json:"id"`
 	} `json:"item"`
 	Response *struct {
 		Usage *models.Usage `json:"usage"`
 	} `json:"response"`
 }
 
-//nolint:gocognit,gocyclo // switch по типам SSE-событий Responses — линейный диспетчер
+//nolint:gocognit,gocyclo // линейный диспетчер по типам SSE-событий Responses
 func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, model string) {
-	writer := sse.NewWriter(w)
 	reader := sse.NewReader(resp.Body)
-	started := false
 	nextIndex := 0
-	toolIdx := map[string]int{}
+	itemIdx := map[string]int{}
+	itemIsTool := map[string]bool{}
+	itemOrder := []string{}
 	var usage models.Usage
 	stopReason := "end_turn"
 
-	emit := func(ev models.AnthropicEvent) { writer.Event(ev.Type, ev) }
+	var writer *sse.Writer
+	emit := func(ev models.AnthropicEvent) {
+		if writer == nil {
+			writer = sse.NewWriter(w)
+		}
+		writer.Event(ev.Type, ev)
+	}
+	openBlock := func(itemID string, block models.AnthropicBlock) {
+		idx := nextIndex
+		nextIndex++
+		itemIdx[itemID] = idx
+		itemIsTool[itemID] = block.Type == typeToolUse
+		itemOrder = append(itemOrder, itemID)
+		emit(models.AnthropicEvent{Type: "content_block_start", Index: &idx, ContentBlock: &block})
+	}
+
 	for {
 		ev, err := reader.Next()
-		if err != nil || ev.Done {
+		if err != nil {
+			// обрыв/пустой стрим до единого события — обычный JSON-ответ 502
+			if writer == nil {
+				writeErr(w, http.StatusBadGateway, "codex: пустой стрим апстрима")
+
+				return
+			}
+			emit(models.AnthropicEvent{
+				Type:  "error",
+				Error: &models.AnthropicError{Type: "api_error", Message: "upstream stream interrupted"},
+			})
+
+			break
+		}
+		if ev.Done {
 			break
 		}
 		var se streamEvent
 		if jsonErr := json.Unmarshal([]byte(ev.Data), &se); jsonErr != nil {
 			continue
 		}
-		if !started {
-			started = true
+		if writer == nil { // первое событие — открываем сообщение (headers лениво)
 			emit(models.AnthropicEvent{
 				Type: "message_start",
 				Message: &models.AnthropicMessagePayload{
-					ID: "resp", Type: typeMessage, Role: "assistant", Model: model, Content: []any{},
+					ID: "resp", Type: "message", Role: "assistant", Model: model, Content: []any{},
 				},
 			})
 		}
 		switch se.Type {
 		case "response.output_item.added":
 			if se.Item != nil {
-				blockType := "text"
-				if se.Item.Type == "function_call" {
-					blockType = "tool_use"
-					toolIdx[se.Item.CallID] = nextIndex
+				id := se.Item.ID
+				if id == "" {
+					id = se.Item.CallID
 				}
-				idx := nextIndex
-				nextIndex++
-				block := models.AnthropicBlock{Type: blockType}
 				if se.Item.Type == "function_call" {
-					block.ID, block.Name = se.Item.CallID, se.Item.Name
+					openBlock(id, models.AnthropicBlock{Type: typeToolUse, ID: se.Item.CallID, Name: se.Item.Name})
+				} else {
+					openBlock(id, models.AnthropicBlock{Type: typeText})
 				}
-				emit(models.AnthropicEvent{Type: "content_block_start", Index: &idx, ContentBlock: &block})
 			}
 		case "response.output_text.delta":
-			idx := findTextIndex(toolIdx, nextIndex)
+			if _, ok := itemIdx[se.ItemID]; !ok {
+				// дельта без output_item.added — ленивый text-блок
+				openBlock(se.ItemID, models.AnthropicBlock{Type: typeText})
+			}
+			idx := itemIdx[se.ItemID]
 			delta := models.AnthropicDelta{Type: "text_delta", Text: se.Delta}
 			emit(models.AnthropicEvent{Type: "content_block_delta", Index: &idx, Delta: &delta})
 		case "response.function_call_arguments.delta":
-			if idx, ok := lastToolIndex(toolIdx); ok {
+			if idx, ok := itemIdx[se.ItemID]; ok {
 				delta := models.AnthropicDelta{Type: "input_json_delta", PartialJSON: se.Delta}
 				emit(models.AnthropicEvent{Type: "content_block_delta", Index: &idx, Delta: &delta})
 			}
@@ -374,57 +407,46 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 			if se.Response != nil && se.Response.Usage != nil {
 				usage = *se.Response.Usage
 			}
-			if len(toolIdx) > 0 {
-				stopReason = "tool_use"
+			for _, id := range itemOrder {
+				if itemIsTool[id] {
+					stopReason = "tool_use"
+
+					break
+				}
 			}
 		case "response.failed":
-			stopReason = "end_turn"
+			emit(models.AnthropicEvent{
+				Type:  evError,
+				Error: &models.AnthropicError{Type: "api_error", Message: "response failed"},
+			})
 		case "error":
 			emit(models.AnthropicEvent{
-				Type:  "error",
+				Type:  evError,
 				Error: &models.AnthropicError{Type: "api_error", Message: se.Delta},
 			})
 		default:
 			// прочие события Responses игнорируем
 		}
 	}
-	if !started {
+	if writer == nil {
 		writeErr(w, http.StatusBadGateway, "codex: пустой стрим апстрима")
 
 		return
 	}
-	// закрыть открытые блоки
-	seen := map[int]bool{}
-	for _, idx := range toolIdx {
-		if !seen[idx] {
-			seen[idx] = true
-			emit(models.AnthropicEvent{Type: "content_block_stop", Index: &idx})
-		}
+	// закрыть ВСЕ блоки в порядке открытия
+	for _, id := range itemOrder {
+		idx := itemIdx[id]
+		emit(models.AnthropicEvent{Type: "content_block_stop", Index: &idx})
 	}
 	emit(models.AnthropicEvent{
 		Type:  "message_delta",
 		Delta: &models.AnthropicDelta{Type: "message_delta", StopReason: stopReason},
 		Usage: &usage,
 	})
-	emit(models.AnthropicEvent{Type: "message_stop", Message: &models.AnthropicMessagePayload{}})
+	emit(models.AnthropicEvent{Type: "message_stop"})
 	writer.Close()
 }
 
-// findTextIndex — text-блок всегда индекс 0 (первый output_item).
-func findTextIndex(_ map[string]int, _ int) int { return 0 }
-
-func lastToolIndex(toolIdx map[string]int) (int, bool) {
-	last, ok := -1, false
-	for _, v := range toolIdx {
-		if v > last {
-			last, ok = v, true
-		}
-	}
-
-	return last, ok
-}
-
-// ServeCountTokens — локальная оценка.
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {

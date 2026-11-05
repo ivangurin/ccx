@@ -13,7 +13,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/ivangurin/ccx/internal/translators/openai"
 	"github.com/ivangurin/ccx/internal/translators/prefill"
 )
@@ -49,6 +49,15 @@ func New(profile *models.Profile, tokens TokenSource) *Translator {
 // NewForTest — транслятор с переопределённым base-URL.
 func NewForTest(cfg *models.CopilotConfig, tokens TokenSource, baseURL string) *Translator {
 	return &Translator{cfg: cfg, tokens: tokens, base: baseURL, http: &http.Client{}}
+}
+
+// prefillEnabled — nil = true (дефолт): шлюз отвергает prefill без фикса.
+func prefillEnabled(cfg *models.CopilotConfig) bool {
+	if cfg == nil || cfg.PrefillFix == nil {
+		return true
+	}
+
+	return *cfg.PrefillFix
 }
 
 // Protocol — copilot.
@@ -103,7 +112,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if t.cfg.PrefillFix {
+	if prefillEnabled(t.cfg) {
 		body, _ = prefill.Rewrite(body)
 	}
 	var req models.MessagesRequest
@@ -156,7 +165,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Stream {
-		t.serveStream(w, resp, req.Model)
+		chatstream.ServeChatStream(w, resp, req.Model)
 
 		return
 	}
@@ -176,29 +185,6 @@ func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model
 	if data, merr := json.Marshal(out); merr == nil {
 		_, _ = w.Write(data)
 	}
-}
-
-func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, model string) {
-	writer := sse.NewWriter(w)
-	conv := openai.NewStreamConverter(model)
-	reader := sse.NewReader(resp.Body)
-	for {
-		ev, err := reader.Next()
-		if err != nil || ev.Done {
-			break
-		}
-		var chunk models.ChatChunk
-		if jsonErr := json.Unmarshal([]byte(ev.Data), &chunk); jsonErr != nil {
-			continue
-		}
-		for _, out := range conv.Feed(&chunk) {
-			writer.Event(out.Type, out)
-		}
-	}
-	for _, out := range conv.Finish() {
-		writer.Event(out.Type, out)
-	}
-	writer.Close()
 }
 
 // ServeCountTokens — локальная оценка.

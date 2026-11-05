@@ -191,3 +191,29 @@ func startEchoUpstream(t *testing.T) *httptest.Server {
 
 	return srv
 }
+
+// I6: рукоправленный профиль anthropic/openai без protocol-блока —
+// внятная ошибка, не паника на каждом /v1/messages.
+func TestUse_NilProtocolBlock_FailsGracefully(t *testing.T) {
+	for _, tc := range []struct {
+		key      string
+		protocol models.Protocol
+	}{
+		{"bare-anthropic", models.ProtocolAnthropic},
+		{"bare-openai", models.ProtocolOpenAI},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			svc, sp := newTestRouter(t)
+			p, err := config.LoadProviders(sp.Config.ProvidersPath())
+			require.NoError(t, err)
+			p.Profiles.Set(tc.key, &models.Profile{Name: tc.key, Protocol: tc.protocol}) // без блока!
+			require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+			require.NotPanics(t, func() {
+				err := svc.Use(t.Context(), tc.key, "m")
+				require.Error(t, err, "свитч без блока должен отмениться")
+				require.Contains(t, err.Error(), "ccx edit")
+			})
+		})
+	}
+}
