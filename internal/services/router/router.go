@@ -11,13 +11,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sync/atomic"
 
+	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/ivangurin/ccx/internal/translators"
 	"github.com/ivangurin/ccx/internal/translators/anthropic"
+	"github.com/ivangurin/ccx/internal/translators/copilot"
 	"github.com/ivangurin/ccx/internal/translators/openai"
 )
 
@@ -65,7 +68,7 @@ func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 		return fmt.Errorf("router: неизвестный профиль: %s", profileKey)
 	}
 
-	tr, err := buildTranslator(profile)
+	tr, err := buildTranslator(s.cfg, profile)
 	if err != nil {
 		return err
 	}
@@ -85,13 +88,17 @@ func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 }
 
 // buildTranslator — реестр protocol → транслятор.
-func buildTranslator(profile *models.Profile) (translators.Translator, error) {
+func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.Translator, error) {
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
 		return anthropic.New(profile), nil
 	case models.ProtocolOpenAI:
 		return openai.New(profile), nil
-	case models.ProtocolCopilot, models.ProtocolCodex:
+	case models.ProtocolCopilot:
+		store := filepath.Join(cfg.CCXDir(), "copilot-auth.json")
+
+		return copilot.New(profile, copilot_client.New(store)), nil
+	case models.ProtocolCodex:
 		return nil, fmt.Errorf("router: транслятор %s появится в следующем этапе", profile.Protocol)
 	default:
 		return nil, fmt.Errorf("router: неизвестный protocol %q", profile.Protocol)

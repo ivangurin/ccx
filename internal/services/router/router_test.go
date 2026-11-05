@@ -30,7 +30,11 @@ func newTestRouter(t *testing.T, profiles ...string) (*router.Service, *suite_pr
 		Models:    []models.Model{{ID: "glm", Default: true}},
 	})
 	for _, key := range profiles {
-		p.Profiles.Set(key, &models.Profile{Name: key, Protocol: models.Protocol(key)})
+		protocol := models.Protocol(key)
+		if key == "copilot-x" {
+			protocol = models.ProtocolCopilot // тест-кейс: без ccx auth copilot
+		}
+		p.Profiles.Set(key, &models.Profile{Name: key, Protocol: protocol})
 	}
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
@@ -84,11 +88,13 @@ func TestUse_OpenAIProfile_Activates(t *testing.T) {
 	require.Equal(t, "gpt", model)
 }
 
-func TestUse_CopilotNotImplementedYet(t *testing.T) {
+func TestUse_CopilotWithoutAuth_NotReady(t *testing.T) {
 	svc, _ := newTestRouter(t, "copilot-x")
 
+	// без ccx auth copilot транслятор не готов — переключение отменяется
 	err := svc.Use(context.Background(), "copilot-x", "m")
-	require.Error(t, err) // M4
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "не готов")
 	_, _, ok := svc.Active()
 	require.False(t, ok)
 }

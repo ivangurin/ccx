@@ -57,6 +57,8 @@ func Execute(args []string, stdout io.Writer) int {
 		return runServe(args, stdout)
 	case "stop":
 		return runStop(args, stdout)
+	case "auth":
+		return runAuth(args, stdout)
 	default:
 		// не команда — вероятно, профиль: ccx zai / ccx zai glm-5.3 (паритет bash)
 		if !strings.HasPrefix(args[0], "-") {
