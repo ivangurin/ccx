@@ -2,21 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Module: `github.com/ivangurin/ccx`, Go 1.27.
+Module: `github.com/ivangurin/ccms`, Go 1.27.
 
-ccx is a single binary for switching Claude Code LLM providers: the CLI
-switches profiles, the embedded daemon (`ccx serve`, 127.0.0.1:4567) owns
-`ANTHROPIC_BASE_URL` and translates the Anthropic Messages API into the
-active provider's protocol (anthropic-passthrough / openai / copilot / codex).
-A rewrite of the bash tool `~/projects/ccx` (the behavior reference; its 78
-tests are being ported).
+ccms (Claude Code Model Switcher) is a single binary for switching Claude Code
+LLM providers: the CLI switches profiles, the embedded daemon (`ccms serve`,
+127.0.0.1:4567) owns `ANTHROPIC_BASE_URL` and translates the Anthropic
+Messages API into the active provider's protocol (anthropic-passthrough /
+openai / copilot / codex). A rewrite of the bash tool `~/projects/ccx`
+(the behavior reference; its 78 tests are being ported).
 
 ## Commands
 
 ```bash
 make run           # run daemon in foreground (dev)
-make build         # build binary to ./bin/ccx
-make install       # install to $(PREFIX)/bin/ccx (default /opt/homebrew)
+make build         # build binary to ./bin/ccms
+make install       # install to $(PREFIX)/bin/ccms (default /opt/homebrew)
 make test          # run all tests with coverage
 make lint          # golangci-lint --fix on changed files (new-from-rev=main)
 make lint-full     # golangci-lint on all files
@@ -37,18 +37,18 @@ go test ./internal/services/switcher/... -run TestName -count=1
 
 CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
 the Anthropic API to the active profile's translator). Data ownership: the
-CLI owns `settings.json`, the daemon owns `ccx-state.json`; upstream
+CLI owns `settings.json`, the daemon owns `ccms-state.json`; upstream
 credentials live in `~/.claude/providers.json` (v2, `protocol` per profile).
 
 ### Layer structure
 
 ```
-cmd/ccx/main.go                         entry point: run() → cli.Execute
+cmd/ccms/main.go                        entry point: run() → cli.Execute
 internal/
   cli/                                  stdlib command dispatcher (use/list/status/init/serve/...)
   app/                                  app.Run(): serve mode: config→logger→closer→provider→router→http
                                          spawn.go: detached daemon launch (Setsid, pidfile)
-  config/                               env config + CCX_* paths + providers.json v2 (load/save, 0600)
+  config/                               env config + CCMS_* paths + providers.json v2 (load/save, 0600)
                                          migrate.go: v1→v2 + import from settings/env.json
   models/                               DTOs: anthropic(+sse), openai, codex, profile, providers,
                                          settings, state, admin
@@ -98,15 +98,16 @@ internal/
   all `ANTHROPIC_DEFAULT_*_MODEL` = the selected model.
 - **`ANTHROPIC_BASE_URL` is always the daemon** — it never changes when
   switching profiles.
-- **`ccx-state.json`** `{profile, model, updated}` — format is 1:1 with the
-  old ccx (read by statusline.sh).
+- **`ccms-state.json`** `{profile, model, updated}` — format is 1:1 with
+  bash-ccx's ccx-state.json (statusline.sh reads it — after the ccms rename
+  its path must point to ccms-state.json; the JSON schema is unchanged).
 - Atomic writes: tmp file in the same directory + rename; backups and configs
   are 0600.
 
 ## Testing
 
 Tests use testify (`require`); the suite provider is
-`internal/pkg/suite/provider` (temp CCX_HOME, safe config, quiet logger, lazy
+`internal/pkg/suite/provider` (temp CCMS_HOME, safe config, quiet logger, lazy
 mocks, cleanup). Upstreams are httptest fakes; SSE uses golden sequences in
 testdata. **Test coverage must be at least 80%** (`make test`,
 `-coverpkg=./...`).

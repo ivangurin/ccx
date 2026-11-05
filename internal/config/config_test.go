@@ -4,16 +4,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccms/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewFromEnv_Defaults(t *testing.T) {
-	t.Setenv("CCX_HOME", "/tmp/ccx-test-home")
+	t.Setenv("CCMS_HOME", "/tmp/ccms-test-home")
 
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
-	require.Equal(t, "/tmp/ccx-test-home", cfg.Home)
+	require.Equal(t, "/tmp/ccms-test-home", cfg.Home)
 	require.Equal(t, "info", cfg.LogLevel)
 	require.Equal(t, "json", cfg.LogFormat)
 	require.Equal(t, 0, cfg.DaemonPort)
@@ -22,12 +22,12 @@ func TestNewFromEnv_Defaults(t *testing.T) {
 }
 
 func TestNewFromEnv_Overrides(t *testing.T) {
-	t.Setenv("CCX_HOME", "/tmp/h")
-	t.Setenv("CCX_LOG_LEVEL", "debug")
-	t.Setenv("CCX_LOG_FORMAT", "dev")
-	t.Setenv("CCX_PORT", "8123")
-	t.Setenv("CCX_LOCK_TIMEOUT", "5s")
-	t.Setenv("CCX_DAEMON_START_TIMEOUT", "3s")
+	t.Setenv("CCMS_HOME", "/tmp/h")
+	t.Setenv("CCMS_LOG_LEVEL", "debug")
+	t.Setenv("CCMS_LOG_FORMAT", "dev")
+	t.Setenv("CCMS_PORT", "8123")
+	t.Setenv("CCMS_LOCK_TIMEOUT", "5s")
+	t.Setenv("CCMS_DAEMON_START_TIMEOUT", "3s")
 
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
@@ -39,7 +39,7 @@ func TestNewFromEnv_Overrides(t *testing.T) {
 }
 
 func TestNewFromEnv_TildeHomeExpanded(t *testing.T) {
-	t.Setenv("CCX_HOME", "~/somewhere")
+	t.Setenv("CCMS_HOME", "~/somewhere")
 
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
@@ -47,8 +47,8 @@ func TestNewFromEnv_TildeHomeExpanded(t *testing.T) {
 }
 
 func TestNewFromEnv_DefaultHomeIsDotClaude(t *testing.T) {
-	// no CCX_HOME: home from USER/HOME → ~/.claude (bash-ccx parity)
-	t.Setenv("CCX_HOME", "")
+	// no CCMS_HOME: home from USER/HOME → ~/.claude (bash-ccx parity)
+	t.Setenv("CCMS_HOME", "")
 
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
@@ -56,16 +56,16 @@ func TestNewFromEnv_DefaultHomeIsDotClaude(t *testing.T) {
 }
 
 func TestNewFromEnv_InvalidLogLevel(t *testing.T) {
-	t.Setenv("CCX_HOME", "/tmp/h")
-	t.Setenv("CCX_LOG_LEVEL", "loud")
+	t.Setenv("CCMS_HOME", "/tmp/h")
+	t.Setenv("CCMS_LOG_LEVEL", "loud")
 
 	_, err := config.NewFromEnv()
 	require.Error(t, err)
 }
 
 func TestNewFromEnv_InvalidPort(t *testing.T) {
-	t.Setenv("CCX_HOME", "/tmp/h")
-	t.Setenv("CCX_PORT", "70000")
+	t.Setenv("CCMS_HOME", "/tmp/h")
+	t.Setenv("CCMS_PORT", "70000")
 
 	_, err := config.NewFromEnv()
 	require.Error(t, err)

@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/cli"
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/cli"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,13 +56,13 @@ func TestCommandUse_NoProvidersHint(t *testing.T) {
 	code := cli.Execute([]string{cmdUse, "zai"}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "ccx init")
+	require.Contains(t, out.String(), "ccms init")
 }
 
 func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	port := freePort(t)
-	t.Setenv("CCX_PORT", strconv.Itoa(port))
+	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{
 		Version: 2, Daemon: models.Daemon{Port: port, AuthToken: "x"},
 	}))

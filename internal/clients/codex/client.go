@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 )
 
 // ErrNotLoggedIn means ~/.codex/auth.json is missing/empty (codex login needed).

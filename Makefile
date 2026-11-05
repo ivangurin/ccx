@@ -7,16 +7,16 @@ RESET := \033[0m
 
 .PHONY: run
 run: .hooks ## Run the daemon in foreground (dev)
-	@echo "$(GREEN)▶$(RESET) Running ccx daemon..."
-	@go run ./cmd/ccx serve
+	@echo "$(GREEN)▶$(RESET) Running ccms daemon..."
+	@go run ./cmd/ccms serve
 
 .PHONY: build
 build: ## Build the binary
-	go build -o $(BIN_DIR)/ccx ./cmd/ccx
+	go build -o $(BIN_DIR)/ccms ./cmd/ccms
 
 .PHONY: install
-install: build ## Install the binary to $(PREFIX)/bin/ccx
-	install -m 0755 $(BIN_DIR)/ccx $(PREFIX)/bin/ccx
+install: build ## Install the binary to $(PREFIX)/bin/ccms
+	install -m 0755 $(BIN_DIR)/ccms $(PREFIX)/bin/ccms
 
 .PHONY: lint
 lint: .hooks ## Run linters on changed files

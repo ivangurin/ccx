@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/pkg/closer"
+	"github.com/ivangurin/ccms/internal/pkg/closer"
 	"github.com/stretchr/testify/require"
 )
 

@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ivangurin/ccx/internal/clients/codex"
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccms/internal/clients/codex"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/sse"
 )
 
 // role/type constants (goconst).

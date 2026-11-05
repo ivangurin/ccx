@@ -1,8 +1,8 @@
-# ccx
+# Claude Code Model Switcher
 
-A single Go binary for switching Claude Code LLM providers: the CLI switches
-profiles, the embedded daemon translates the Anthropic Messages API into the
-active provider's protocol. A rewrite of the bash tool
+A single Go binary (`ccms`) for switching Claude Code LLM providers: the CLI
+switches profiles, the embedded daemon translates the Anthropic Messages API
+into the active provider's protocol. A rewrite of the bash tool
 [`ccx`](../ccx) (the behavior reference) with no external proxies: ccr,
 copilot-api and copilot-bridge are replaced by built-in translators,
 claude-codex by a built-in codex client.
@@ -19,15 +19,15 @@ claude-codex by a built-in codex client.
 ## Quick start
 
 ```bash
-make install                      # build + /opt/homebrew/bin/ccx (PREFIX=…)
-ccx init                          # v1 config migration or import + templates
-ccx list                          # profiles and models
-ccx auth copilot                  # GitHub OAuth (for the copilot profile)
-ccx use zai                       # switch (the daemon starts automatically)
-ccx status                        # profile/model/daemon
+make install                      # build + /opt/homebrew/bin/ccms (PREFIX=…)
+ccms init                         # v1 config migration or import + templates
+ccms list                         # profiles and models
+ccms auth copilot                 # GitHub OAuth (for the copilot profile)
+ccms use zai                      # switch (the daemon starts automatically)
+ccms status                       # profile/model/daemon
 ```
 
-After the first `ccx use`, `~/.claude/settings.json` no longer changes
+After the first `ccms use`, `~/.claude/settings.json` no longer changes
 `ANTHROPIC_BASE_URL` — it always points at the local daemon
 (`http://127.0.0.1:4567`); switching profiles re-routes the daemon on the
 fly.
@@ -57,7 +57,7 @@ fly.
 
 ## Commands
 
-`ccx` (menu) · `ccx use <profile> [model]` (alias `ccx <profile>`) · `list` ·
+`ccms` (menu) · `ccms use <profile> [model]` (alias `ccms <profile>`) · `list` ·
 `status` · `init [--force]` · `edit` · `serve` (daemon in foreground) ·
 `stop` · `auth copilot` · `auth codex` · `version` · `help`
 

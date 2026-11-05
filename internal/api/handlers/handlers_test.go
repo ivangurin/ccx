@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/api/handlers"
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccx/internal/services/router"
+	"github.com/ivangurin/ccms/internal/api/handlers"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/services/router"
 	"github.com/stretchr/testify/require"
 )
 

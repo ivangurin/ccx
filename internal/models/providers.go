@@ -1,6 +1,6 @@
 package models
 
-// Daemon holds the local ccx daemon's parameters (the single HTTP endpoint
+// Daemon holds the local ccms daemon's parameters (the single HTTP endpoint
 // ANTHROPIC_BASE_URL points to; auth_token is the static client token:
 // used both for Claude Code → daemon and for the admin API).
 type Daemon struct {

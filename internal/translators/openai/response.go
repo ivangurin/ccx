@@ -1,7 +1,7 @@
 package openai
 
 import (
-	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccms/internal/models"
 )
 
 // stopReasonMap maps finish_reason → stop_reason.

@@ -8,7 +8,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccms/internal/models"
 )
 
 // Translator is the daemon's active translator. Built by the factory on profile

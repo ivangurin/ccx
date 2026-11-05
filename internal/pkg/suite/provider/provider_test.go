@@ -4,14 +4,14 @@ import (
 	"os"
 	"testing"
 
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewProvider_SandboxHome(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 
-	// sandbox: CCX_HOME points into t.TempDir; the live ~/.claude is unreachable
+	// sandbox: CCMS_HOME points into t.TempDir; the live ~/.claude is unreachable
 	require.NotEmpty(t, sp.Config.Home)
 	info, err := os.Stat(sp.Config.Home)
 	require.NoError(t, err)

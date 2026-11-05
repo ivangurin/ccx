@@ -9,7 +9,7 @@ import (
 // Settings is Claude Code's settings.json with surgical patching: read into
 // a raw representation, only the env/model/availableModels/
 // enforceAvailableModels keys are patched — all other fields of the file
-// survive a switch byte-for-byte (bash-ccx invariant: ccx does not own
+// survive a switch byte-for-byte (bash-ccx invariant: ccms does not own
 // settings that belong to someone else).
 type Settings struct {
 	Raw map[string]json.RawMessage

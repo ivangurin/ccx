@@ -1,6 +1,7 @@
-// Package config is ccx's env configuration (CCX_* parity with the bash
-// version: tests and sandboxes override CCX_HOME). .env is deliberately not
-// supported: ccx is a user CLI, not a service with a deployment environment.
+// Package config is ccms's env configuration (semantic parity with the bash
+// version, whose variables were named CCX_*; renamed to CCMS_* along with the
+// project: tests and sandboxes override CCMS_HOME). .env is deliberately not
+// supported: ccms is a user CLI, not a service with a deployment environment.
 package config
 
 import (
@@ -23,27 +24,27 @@ const (
 	maxPort                   = 65535
 )
 
-// Config is the ccx process environment (CLI and daemon read the same one).
+// Config is the ccms process environment (CLI and daemon read the same one).
 type Config struct {
 	// Home is the Claude Code data root (default ~/.claude); it holds
-	// providers.json, settings.json, ccx-state.json, backups/, ccx/logs/.
-	Home string `env:"CCX_HOME"`
+	// providers.json, settings.json, ccms-state.json, backups/, ccms/logs/.
+	Home string `env:"CCMS_HOME"`
 
-	LogLevel           string        `env:"CCX_LOG_LEVEL"`
-	LogFormat          string        `env:"CCX_LOG_FORMAT"`
-	DaemonPort         int           `env:"CCX_PORT"`
-	LockTimeout        time.Duration `env:"CCX_LOCK_TIMEOUT"`
-	DaemonStartTimeout time.Duration `env:"CCX_DAEMON_START_TIMEOUT"`
+	LogLevel           string        `env:"CCMS_LOG_LEVEL"`
+	LogFormat          string        `env:"CCMS_LOG_FORMAT"`
+	DaemonPort         int           `env:"CCMS_PORT"`
+	LockTimeout        time.Duration `env:"CCMS_LOCK_TIMEOUT"`
+	DaemonStartTimeout time.Duration `env:"CCMS_DAEMON_START_TIMEOUT"`
 
-	// targeted path overrides (CCX_PROVIDERS/... parity with the bash version)
-	ProvidersFile string `env:"CCX_PROVIDERS"`
-	SettingsFile  string `env:"CCX_SETTINGS"`
-	StateFile     string `env:"CCX_STATE"`
-	BackupDirPath string `env:"CCX_BACKUP_DIR"`
-	LogDirPath    string `env:"CCX_LOG_DIR"`
+	// targeted path overrides (CCMS_PROVIDERS/... parity with the bash version)
+	ProvidersFile string `env:"CCMS_PROVIDERS"`
+	SettingsFile  string `env:"CCMS_SETTINGS"`
+	StateFile     string `env:"CCMS_STATE"`
+	BackupDirPath string `env:"CCMS_BACKUP_DIR"`
+	LogDirPath    string `env:"CCMS_LOG_DIR"`
 }
 
-// NewFromEnv reads CCX_* variables, applies defaults, and validates.
+// NewFromEnv reads CCMS_* variables, applies defaults, and validates.
 func NewFromEnv() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
@@ -86,16 +87,16 @@ func (c *Config) Validate() error {
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":
 	default:
-		return fmt.Errorf("config: invalid CCX_LOG_LEVEL %q", c.LogLevel)
+		return fmt.Errorf("config: invalid CCMS_LOG_LEVEL %q", c.LogLevel)
 	}
 	switch c.LogFormat {
 	case "dev", "json":
 	default:
-		return fmt.Errorf("config: invalid CCX_LOG_FORMAT %q", c.LogFormat)
+		return fmt.Errorf("config: invalid CCMS_LOG_FORMAT %q", c.LogFormat)
 	}
 	// 0 = "port from providers.json daemon.port" — a legitimate value
 	if c.DaemonPort < 0 || c.DaemonPort > maxPort {
-		return fmt.Errorf("config: invalid CCX_PORT %d", c.DaemonPort)
+		return fmt.Errorf("config: invalid CCMS_PORT %d", c.DaemonPort)
 	}
 
 	return nil

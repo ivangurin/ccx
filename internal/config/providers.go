@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 )
 
-// ErrUnsupportedVersion means providers.json is not v2 (ccx init migration needed).
-var ErrUnsupportedVersion = errors.New("config: unsupported providers.json version (run ccx init)")
+// ErrUnsupportedVersion means providers.json is not v2 (ccms init migration needed).
+var ErrUnsupportedVersion = errors.New("config: unsupported providers.json version (run ccms init)")
 
-// ProvidersPath is the providers.json path (CCX_PROVIDERS overrides it).
+// ProvidersPath is the providers.json path (CCMS_PROVIDERS overrides it).
 func (c *Config) ProvidersPath() string {
 	if c.ProvidersFile != "" {
 		return c.ProvidersFile
@@ -21,7 +21,7 @@ func (c *Config) ProvidersPath() string {
 	return filepath.Join(c.Home, "providers.json")
 }
 
-// SettingsPath is the Claude Code settings.json path (CCX_SETTINGS overrides it).
+// SettingsPath is the Claude Code settings.json path (CCMS_SETTINGS overrides it).
 func (c *Config) SettingsPath() string {
 	if c.SettingsFile != "" {
 		return c.SettingsFile
@@ -30,16 +30,16 @@ func (c *Config) SettingsPath() string {
 	return filepath.Join(c.Home, "settings.json")
 }
 
-// StatePath is the ccx-state.json path (CCX_STATE overrides it).
+// StatePath is the ccms-state.json path (CCMS_STATE overrides it).
 func (c *Config) StatePath() string {
 	if c.StateFile != "" {
 		return c.StateFile
 	}
 
-	return filepath.Join(c.Home, "ccx-state.json")
+	return filepath.Join(c.Home, "ccms-state.json")
 }
 
-// BackupDir is the settings.json backup directory (CCX_BACKUP_DIR overrides it).
+// BackupDir is the settings.json backup directory (CCMS_BACKUP_DIR overrides it).
 func (c *Config) BackupDir() string {
 	if c.BackupDirPath != "" {
 		return c.BackupDirPath
@@ -48,18 +48,18 @@ func (c *Config) BackupDir() string {
 	return filepath.Join(c.Home, "backups")
 }
 
-// CCXDir is the ccx data directory: logs, daemon.lock/pid (inside Home).
-func (c *Config) CCXDir() string {
-	return filepath.Join(c.Home, "ccx")
+// CCMSDir is the ccms data directory: logs, daemon.lock/pid (inside Home).
+func (c *Config) CCMSDir() string {
+	return filepath.Join(c.Home, "ccms")
 }
 
-// LogDir is the daemon log directory (CCX_LOG_DIR overrides it).
+// LogDir is the daemon log directory (CCMS_LOG_DIR overrides it).
 func (c *Config) LogDir() string {
 	if c.LogDirPath != "" {
 		return c.LogDirPath
 	}
 
-	return filepath.Join(c.Home, "ccx", "logs")
+	return filepath.Join(c.Home, "ccms", "logs")
 }
 
 // LoadProviders reads and validates providers.json v2.

@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ivangurin/ccx/internal/api/middleware"
-	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccms/internal/api/middleware"
+	"github.com/ivangurin/ccms/internal/models"
 )
 
 // Routerer — the minimum the HTTP layer needs (implemented by services/router.Service).

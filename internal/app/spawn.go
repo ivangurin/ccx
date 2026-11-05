@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccms/internal/config"
 )
 
 // SpawnDetached starts a child daemon: its own session (Setsid — terminal

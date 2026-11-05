@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/cli"
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/cli"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +17,7 @@ func TestExecute_Version(t *testing.T) {
 	code := cli.Execute([]string{"version"}, &out)
 
 	require.Equal(t, 0, code)
-	require.Equal(t, "ccx dev\n", out.String())
+	require.Equal(t, "ccms dev\n", out.String())
 }
 
 func TestExecute_Help(t *testing.T) {
@@ -38,7 +38,7 @@ func TestExecute_NoArgs_MenuWithoutProviders(t *testing.T) {
 	code := cli.Execute(nil, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "ccx init")
+	require.Contains(t, out.String(), "ccms init")
 }
 
 func TestExecute_UnknownCommand(t *testing.T) {

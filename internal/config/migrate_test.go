@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -81,7 +81,7 @@ func TestMigrateV1_CopilotBridgeToCopilot(t *testing.T) {
 	writeV1(t, path, `{"profiles": {"copilot": {
 		"name": "Copilot",
 		"proxy": {"start": "python3 tools/copilot-bridge.py", "health": "http://127.0.0.1:4142", "stop_pattern": "copilot-bridge.py"},
-		"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4142", "ANTHROPIC_AUTH_TOKEN": "ccx-x"},
+		"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4142", "ANTHROPIC_AUTH_TOKEN": "ccms-x"},
 		"models": [{"id": "claude-sonnet-5.5", "default": true}]
 	}}}`)
 

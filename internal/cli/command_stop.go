@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccms/internal/config"
 )
 
-// runStop — ccx stop: POST /admin/stop (graceful shutdown of the daemon).
+// runStop — ccms stop: POST /admin/stop (graceful shutdown of the daemon).
 func runStop(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(stdout, "ccx: %v\n", err)
+		fmt.Fprintf(stdout, "ccms: %v\n", err)
 
 		return 1
 	}
@@ -21,7 +21,7 @@ func runStop(_ []string, stdout io.Writer) int {
 	if port == 0 {
 		providers, perr := config.LoadProviders(cfg.ProvidersPath())
 		if perr != nil {
-			fmt.Fprintln(stdout, "ccx: providers.json unavailable — run ccx init first")
+			fmt.Fprintln(stdout, "ccms: providers.json unavailable — run ccms init first")
 
 			return 1
 		}
@@ -43,7 +43,7 @@ func runStop(_ []string, stdout io.Writer) int {
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
-		fmt.Fprintf(stdout, "ccx: failed to stop the daemon: %v\n", err)
+		fmt.Fprintf(stdout, "ccms: failed to stop the daemon: %v\n", err)
 
 		return 1
 	}
@@ -58,7 +58,7 @@ func runStop(_ []string, stdout io.Writer) int {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	fmt.Fprintf(stdout, "ccx: daemon is still responding (log: %s)\n", cfg.LogDir()+"/daemon.log")
+	fmt.Fprintf(stdout, "ccms: daemon is still responding (log: %s)\n", cfg.LogDir()+"/daemon.log")
 
 	return 0
 }

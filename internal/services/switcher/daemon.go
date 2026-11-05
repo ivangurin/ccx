@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/app"
-	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccms/internal/app"
+	"github.com/ivangurin/ccms/internal/config"
 )
 
 // HTTPDaemon — the Daemon implementation on top of the daemon's admin API.

@@ -11,11 +11,11 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/translators/chatstream"
-	"github.com/ivangurin/ccx/internal/translators/openai"
-	"github.com/ivangurin/ccx/internal/translators/prefill"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/translators/chatstream"
+	"github.com/ivangurin/ccms/internal/translators/openai"
+	"github.com/ivangurin/ccms/internal/translators/prefill"
 )
 
 // CopilotAPIBase is the Copilot gateway endpoint.

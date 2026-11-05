@@ -17,7 +17,7 @@ func Auth(tokenOf func() string) func(http.Handler) http.Handler {
 			if want == "" || got == "" || !secureEqual(want, got) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"invalid ccx token (daemon.auth_token)"}}`))
+				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"invalid ccms token (daemon.auth_token)"}}`))
 
 				return
 			}

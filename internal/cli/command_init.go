@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccms/internal/config"
 )
 
-// runInit — ccx init [--force]: create/migrate providers.json.
+// runInit — ccms init [--force]: create/migrate providers.json.
 func runInit(args []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(stdout, "ccx: %v\n", err)
+		fmt.Fprintf(stdout, "ccms: %v\n", err)
 
 		return 1
 	}
@@ -23,11 +23,11 @@ func runInit(args []string, stdout io.Writer) int {
 		if errors.Is(err, config.ErrProvidersExist) {
 			// bash-ccx parity: not an error, a hint
 			fmt.Fprintf(stdout, "providers.json already exists: %s\n", cfg.ProvidersPath())
-			fmt.Fprintln(stdout, "Use 'ccx init --force' to regenerate (the current file will be replaced).")
+			fmt.Fprintln(stdout, "Use 'ccms init --force' to regenerate (the current file will be replaced).")
 
 			return 0
 		}
-		fmt.Fprintf(stdout, "ccx: %v\n", err)
+		fmt.Fprintf(stdout, "ccms: %v\n", err)
 
 		return 1
 	}
@@ -44,7 +44,7 @@ func runInit(args []string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "  ⚠ %s\n", w)
 	}
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Check tokens and model lists: ccx edit")
+	fmt.Fprintln(stdout, "Check tokens and model lists: ccms edit")
 
 	return 0
 }

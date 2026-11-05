@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
 )
 
 // loadProvidersOrHint reads providers.json; if it is missing or outdated,
@@ -18,11 +18,11 @@ func loadProvidersOrHint(cfg *config.Config, stdout io.Writer) *models.Providers
 		return providers
 	}
 	if errors.Is(err, config.ErrUnsupportedVersion) {
-		fmt.Fprintln(stdout, "providers.json is in the old format (v1) — run ccx init to migrate")
+		fmt.Fprintln(stdout, "providers.json is in the old format (v1) — run ccms init to migrate")
 
 		return nil
 	}
-	fmt.Fprint(stdout, "ccx: providers.json not found — run ccx init first\n")
+	fmt.Fprint(stdout, "ccms: providers.json not found — run ccms init first\n")
 
 	return nil
 }

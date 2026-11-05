@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccx/internal/services/switcher"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/services/switcher"
 	"github.com/stretchr/testify/require"
 )
 

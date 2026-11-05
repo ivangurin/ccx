@@ -1,4 +1,4 @@
-module github.com/ivangurin/ccx
+module github.com/ivangurin/ccms
 
 go 1.27.3
 

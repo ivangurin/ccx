@@ -3,8 +3,8 @@ package openai_test
 import (
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/translators/openai"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/translators/openai"
 	"github.com/stretchr/testify/require"
 )
 

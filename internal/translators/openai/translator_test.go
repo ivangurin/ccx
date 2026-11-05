@@ -7,15 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/translators/openai"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/translators/openai"
 	"github.com/stretchr/testify/require"
 )
 
 func newTranslator(baseURL string) *openai.Translator {
 	return openai.New(&models.Profile{
 		Protocol: models.ProtocolOpenAI,
-		OpenAI:   &models.OpenAIConfig{BaseURL: baseURL, APIKey: "sk-test", UserAgent: "ccx-test/1"},
+		OpenAI:   &models.OpenAIConfig{BaseURL: baseURL, APIKey: "sk-test", UserAgent: "ccms-test/1"},
 	})
 }
 
@@ -38,7 +38,7 @@ func TestServeMessages_NonStream(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "the answer")
 	require.Contains(t, rec.Body.String(), "end_turn")
 	require.Equal(t, "Bearer sk-test", gotAuth)
-	require.Equal(t, "ccx-test/1", gotUA)
+	require.Equal(t, "ccms-test/1", gotUA)
 }
 
 func TestServeMessages_Stream(t *testing.T) {

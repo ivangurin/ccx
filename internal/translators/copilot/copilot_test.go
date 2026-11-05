@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/translators/copilot"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/translators/copilot"
 	"github.com/stretchr/testify/require"
 )
 

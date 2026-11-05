@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccx/internal/services/router"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/services/router"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +32,7 @@ func newTestRouter(t *testing.T, profiles ...string) (*router.Service, *suite_pr
 	for _, key := range profiles {
 		protocol := models.Protocol(key)
 		if key == "copilot-x" {
-			protocol = models.ProtocolCopilot // test case: without ccx auth copilot
+			protocol = models.ProtocolCopilot // test case: without ccms auth copilot
 		}
 		p.Profiles.Set(key, &models.Profile{Name: key, Protocol: protocol})
 	}
@@ -91,7 +91,7 @@ func TestUse_OpenAIProfile_Activates(t *testing.T) {
 func TestUse_CopilotWithoutAuth_NotReady(t *testing.T) {
 	svc, _ := newTestRouter(t, "copilot-x")
 
-	// without ccx auth copilot the translator is not ready — the switch is cancelled
+	// without ccms auth copilot the translator is not ready — the switch is cancelled
 	err := svc.Use(context.Background(), "copilot-x", "m")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not ready")
@@ -107,7 +107,7 @@ func TestServeMessages_NoActive_503(t *testing.T) {
 
 	resp := rec.Result()
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	require.Contains(t, rec.Body.String(), "ccx use")
+	require.Contains(t, rec.Body.String(), "ccms use")
 }
 
 func TestServeMessages_DelegatesToActive(t *testing.T) {
@@ -212,7 +212,7 @@ func TestUse_NilProtocolBlock_FailsGracefully(t *testing.T) {
 			require.NotPanics(t, func() {
 				err := svc.Use(t.Context(), tc.key, "m")
 				require.Error(t, err, "a switch without a block must be cancelled")
-				require.Contains(t, err.Error(), "ccx edit")
+				require.Contains(t, err.Error(), "ccms edit")
 			})
 		})
 	}

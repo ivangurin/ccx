@@ -1,4 +1,4 @@
-// Package app — daemon wiring for ccx serve: config → logger → closer →
+// Package app — daemon wiring for ccms serve: config → logger → closer →
 // router (restore from state) → http → signals → graceful shutdown.
 package app
 
@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/api/handlers"
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/pkg/closer"
-	"github.com/ivangurin/ccx/internal/pkg/flock"
-	"github.com/ivangurin/ccx/internal/pkg/httpserver"
-	"github.com/ivangurin/ccx/internal/services/router"
+	"github.com/ivangurin/ccms/internal/api/handlers"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/pkg/closer"
+	"github.com/ivangurin/ccms/internal/pkg/flock"
+	"github.com/ivangurin/ccms/internal/pkg/httpserver"
+	"github.com/ivangurin/ccms/internal/services/router"
 )
 
 // Version — daemon version (ldflags).
@@ -38,7 +38,7 @@ func New(cfg *config.Config, log *slog.Logger) *App {
 
 // Run blocks until a signal/ctx cancel (or /admin/stop). A double start is
 // prevented: flock daemon.lock, the loser exits quietly (the winning
-// process will serve it — a race of two parallel ccx use).
+// process will serve it — a race of two parallel ccms use).
 func (a *App) Run(ctx context.Context) error {
 	lock, err := flock.TryLock(a.daemonLockPath())
 	if err != nil {
@@ -76,7 +76,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Start() }()
-	a.log.Info("ccx daemon listening", "addr", a.listenAddr(), "version", Version)
+	a.log.Info("ccms daemon listening", "addr", a.listenAddr(), "version", Version)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -114,11 +114,11 @@ func (a *App) listenAddr() string {
 }
 
 func (a *App) daemonLockPath() string {
-	return filepath.Join(a.cfg.CCXDir(), "daemon.lock")
+	return filepath.Join(a.cfg.CCMSDir(), "daemon.lock")
 }
 
 func (a *App) pidfilePath() string {
-	return filepath.Join(a.cfg.CCXDir(), "daemon.pid")
+	return filepath.Join(a.cfg.CCMSDir(), "daemon.pid")
 }
 
 func (a *App) writePidfile() {

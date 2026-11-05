@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/clients/copilot"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccms/internal/clients/copilot"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 	"github.com/stretchr/testify/require"
 )
 

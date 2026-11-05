@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,12 +95,12 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 
 	require.Equal(t, filepath.Join(home, "providers.json"), sp.Config.ProvidersPath())
 	require.Equal(t, filepath.Join(home, "settings.json"), sp.Config.SettingsPath())
-	require.Equal(t, filepath.Join(home, "ccx-state.json"), sp.Config.StatePath())
+	require.Equal(t, filepath.Join(home, "ccms-state.json"), sp.Config.StatePath())
 	require.Equal(t, filepath.Join(home, "backups"), sp.Config.BackupDir())
-	require.Equal(t, filepath.Join(home, "ccx", "logs"), sp.Config.LogDir())
+	require.Equal(t, filepath.Join(home, "ccms", "logs"), sp.Config.LogDir())
 
-	t.Setenv("CCX_PROVIDERS", "/tmp/custom-providers.json")
-	t.Setenv("CCX_SETTINGS", "/tmp/custom-settings.json")
+	t.Setenv("CCMS_PROVIDERS", "/tmp/custom-providers.json")
+	t.Setenv("CCMS_SETTINGS", "/tmp/custom-settings.json")
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/custom-providers.json", cfg.ProvidersPath())

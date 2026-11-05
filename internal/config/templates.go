@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccms/internal/models"
 )
 
 // prefillFixDefault is PrefillFix=true by default for templates/migration.

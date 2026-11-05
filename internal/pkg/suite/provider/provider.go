@@ -1,5 +1,5 @@
 // Package suite_provider — a test counterpart of the production composition
-// (a port of the idp-port-forward pattern): a sandboxed CCX_HOME (t.TempDir),
+// (a port of the idp-port-forward pattern): a sandboxed CCMS_HOME (t.TempDir),
 // a silent logger, lazy services/mocks on top — a single assembly point of
 // fixtures for all tests. The live ~/.claude is unreachable by construction
 // (an invariant after the CCR incidents in bash-ccx: tests never touch real
@@ -14,8 +14,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/pkg/logger"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/pkg/logger"
 )
 
 // Provider — the test environment: a config with safe defaults + a silent
@@ -29,13 +29,13 @@ type Provider struct {
 	cleanups []func()
 }
 
-// NewProvider builds the sandbox: a unique CCX_HOME per call (t.Setenv —
+// NewProvider builds the sandbox: a unique CCMS_HOME per call (t.Setenv —
 // tests must not be parallel); the return value is the provider itself.
 func NewProvider(t *testing.T) *Provider {
 	t.Helper()
 
 	home := t.TempDir()
-	t.Setenv("CCX_HOME", home)
+	t.Setenv("CCMS_HOME", home)
 
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -70,7 +70,7 @@ func (p *Provider) Logger() *slog.Logger {
 	return p.log
 }
 
-// HomeDir — the sandbox root (CCX_HOME).
+// HomeDir — the sandbox root (CCMS_HOME).
 func (p *Provider) HomeDir() string {
 	return p.Config.Home
 }

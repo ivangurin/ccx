@@ -11,12 +11,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 )
 
 // DefaultDaemonPort is the default daemon port (fixed: settings.json points
-// at it once; a port conflict is a comprehensible error + CCX_PORT).
+// at it once; a port conflict is a comprehensible error + CCMS_PORT).
 const DefaultDaemonPort = 4567
 
 // zaiProfileName is the display name of the profile imported from settings.json.
@@ -26,7 +26,7 @@ const zaiProfileName = "z.ai (GLM)"
 // --force refuses (bash-ccx parity: never silently overwrite user credentials).
 var ErrProvidersExist = errors.New("config: providers.json already exists (use --force)")
 
-// InitResult is the outcome of ccx init for display to the user.
+// InitResult is the outcome of ccms init for display to the user.
 type InitResult struct {
 	Path     string
 	Migrated bool     // converted v1 (proxy{}) → v2 (protocol)
@@ -155,7 +155,7 @@ func migrateProfile(key string, vp *v1Profile) (*models.Profile, []string) {
 		prof.OpenAI = &models.OpenAIConfig{MaxTokensFld: "max_tokens"}
 		baseURL, apiKey, err := loadCCRProvider()
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: failed to load credentials from ~/.claude-code-router/config.json (%v) — fill in openai.base_url/api_key via ccx edit", key, err))
+			warnings = append(warnings, fmt.Sprintf("%s: failed to load credentials from ~/.claude-code-router/config.json (%v) — fill in openai.base_url/api_key via ccms edit", key, err))
 		} else {
 			prof.OpenAI.BaseURL, prof.OpenAI.APIKey = baseURL, apiKey
 		}
@@ -261,7 +261,7 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 		providers.Profiles.Set("zai", zai)
 	} else {
 		providers.Profiles.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Anthropic: &models.AnthropicConfig{}, Env: map[string]string{}})
-		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccx edit")
+		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccms edit")
 	}
 
 	if x5 := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); x5 != nil {

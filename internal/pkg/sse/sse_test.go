@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccms/internal/pkg/sse"
 	"github.com/stretchr/testify/require"
 )
 

@@ -1,4 +1,4 @@
-// Package models holds ccx domain DTOs. Profile v2: upstream credentials live
+// Package models holds ccms domain DTOs. Profile v2: upstream credentials live
 // in the protocol block (selected by Protocol), env holds only user extras
 // for settings.json (not ANTHROPIC_*).
 package models

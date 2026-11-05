@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/translators/chatstream"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/translators/chatstream"
 )
 
 // Translator: Anthropic → OpenAI chat/completions.

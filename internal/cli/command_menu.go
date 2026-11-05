@@ -5,19 +5,19 @@ import (
 	"io"
 	"os"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
-	"github.com/ivangurin/ccx/internal/pkg/tui"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccms/internal/pkg/tui"
 )
 
-// runMenu — ccx with no arguments: provider → model → use. A single staged
+// runMenu — ccms with no arguments: provider → model → use. A single staged
 // TUI session: the model list replaces the provider list in place, Esc on
 // the models returns to the providers, Esc on the providers exits.
 func runMenu(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(stdout, "ccx: %v\n", err)
+		fmt.Fprintf(stdout, "ccms: %v\n", err)
 
 		return 1
 	}
@@ -26,7 +26,7 @@ func runMenu(_ []string, stdout io.Writer) int {
 		return 0
 	}
 	if providers.Profiles.Len() == 0 {
-		fmt.Fprintln(stdout, "No profiles — ccx init or ccx edit")
+		fmt.Fprintln(stdout, "No profiles — ccms init or ccms edit")
 
 		return 0
 	}
@@ -42,7 +42,7 @@ func runMenu(_ []string, stdout io.Writer) int {
 	profile := providers.Profiles.Get(profileKey)
 	if len(profile.Models) == 0 {
 		// the chain stopped at the provider: its model level was never built
-		fmt.Fprintf(stdout, "ccx: profile %s has no models — ccx edit\n", profileKey)
+		fmt.Fprintf(stdout, "ccms: profile %s has no models — ccms edit\n", profileKey)
 
 		return 1
 	}

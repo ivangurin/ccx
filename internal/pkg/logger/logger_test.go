@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccx/internal/pkg/logger"
+	"github.com/ivangurin/ccms/internal/pkg/logger"
 	"github.com/stretchr/testify/require"
 )
 

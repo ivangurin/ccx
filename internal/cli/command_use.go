@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/services/switcher"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/services/switcher"
 )
 
-// runUse — ccx use <profile> [model] (alias: ccx <profile> [model]).
+// runUse — ccms use <profile> [model] (alias: ccms <profile> [model]).
 func runUse(args []string, stdout io.Writer) int {
 	if len(args) < 2 || args[1] == "" {
-		fmt.Fprintln(stdout, "ccx: specify a profile: ccx use <profile> [model] (see ccx list)")
+		fmt.Fprintln(stdout, "ccms: specify a profile: ccms use <profile> [model] (see ccms list)")
 
 		return 1
 	}
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(stdout, "ccx: %v\n", err)
+		fmt.Fprintf(stdout, "ccms: %v\n", err)
 
 		return 1
 	}

@@ -2,7 +2,7 @@
 // Use(): reread providers.json → build a translator by protocol →
 // Ready() → atomic swap (in-flight requests stay on the old one) → Close
 // the old one. The daemon is stateless regarding user files: the route is
-// restored from ccx-state.json (read-only) at startup.
+// restored from ccms-state.json (read-only) at startup.
 package router
 
 import (
@@ -16,16 +16,16 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/ivangurin/ccx/internal/clients/codex"
-	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
-	"github.com/ivangurin/ccx/internal/translators"
-	"github.com/ivangurin/ccx/internal/translators/anthropic"
-	codex_tr "github.com/ivangurin/ccx/internal/translators/codex"
-	"github.com/ivangurin/ccx/internal/translators/copilot"
-	"github.com/ivangurin/ccx/internal/translators/openai"
+	"github.com/ivangurin/ccms/internal/clients/codex"
+	copilot_client "github.com/ivangurin/ccms/internal/clients/copilot"
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccms/internal/translators"
+	"github.com/ivangurin/ccms/internal/translators/anthropic"
+	codex_tr "github.com/ivangurin/ccms/internal/translators/codex"
+	"github.com/ivangurin/ccms/internal/translators/copilot"
+	"github.com/ivangurin/ccms/internal/translators/openai"
 )
 
 // route — a profile+model+translator bundle; immutable once installed.
@@ -96,18 +96,18 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
 		if profile.Anthropic == nil {
-			return nil, errors.New("profile has no anthropic block (base_url) — fill it in via ccx edit")
+			return nil, errors.New("profile has no anthropic block (base_url) — fill it in via ccms edit")
 		}
 
 		return anthropic.New(profile), nil
 	case models.ProtocolOpenAI:
 		if profile.OpenAI == nil {
-			return nil, errors.New("profile has no openai block (base_url) — fill it in via ccx edit")
+			return nil, errors.New("profile has no openai block (base_url) — fill it in via ccms edit")
 		}
 
 		return openai.New(profile), nil
 	case models.ProtocolCopilot:
-		store := filepath.Join(cfg.CCXDir(), "copilot-auth.json")
+		store := filepath.Join(cfg.CCMSDir(), "copilot-auth.json")
 
 		return copilot.New(profile, copilot_client.New(store)), nil
 	case models.ProtocolCodex:
@@ -122,7 +122,7 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 	}
 }
 
-// Restore restores the route from ccx-state.json (daemon startup).
+// Restore restores the route from ccms-state.json (daemon startup).
 func (s *Service) Restore(ctx context.Context) {
 	var state models.State
 	if err := jsonfile.ReadJSON(s.cfg.StatePath(), &state); err != nil || state.Profile == "" {
@@ -159,7 +159,7 @@ func (s *Service) AuthToken() string {
 func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	routeRef := s.active.Load()
 	if routeRef == nil {
-		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccx use")
+		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccms use")
 
 		return
 	}
@@ -170,7 +170,7 @@ func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	routeRef := s.active.Load()
 	if routeRef == nil {
-		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccx use")
+		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccms use")
 
 		return
 	}

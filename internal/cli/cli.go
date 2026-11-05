@@ -1,4 +1,4 @@
-// Package cli — stdlib command dispatcher for ccx. Commands are simple verbs
+// Package cli — stdlib command dispatcher for ccms. Commands are simple verbs
 // with 0–2 arguments; cobra is not needed (why: minimal dependencies, commands
 // are ported from bash-ccx 1:1 along with their tests).
 package cli
@@ -12,20 +12,21 @@ import (
 // Version is set at build time (-X ...cli.Version=...), dev — locally.
 var Version = "dev"
 
-const usage = `ccx — switching LLM providers for Claude Code
+const usage = `ccms — switching LLM providers for Claude Code
 
 Usage:
-  ccx                    interactive menu: profile → model
-  ccx use <profile> [model]
-  ccx list               profiles and models
-  ccx status             active profile/model, daemon state
-  ccx init [--force]     create providers.json (import/migration)
-  ccx edit               open providers.json in $EDITOR
-  ccx serve              daemon (foreground, debugging)
-  ccx stop               the daemon
-  ccx auth copilot       GitHub OAuth device flow
-  ccx auth codex         check codex CLI login
-  ccx version            ccx help               this help
+  ccms                    interactive menu: profile → model
+  ccms use <profile> [model]
+  ccms list               profiles and models
+  ccms status             active profile/model, daemon state
+  ccms init [--force]     create providers.json (import/migration)
+  ccms edit               open providers.json in $EDITOR
+  ccms serve              daemon (foreground, debugging)
+  ccms stop               the daemon
+  ccms auth copilot       GitHub OAuth device flow
+  ccms auth codex         check codex CLI login
+  ccms version            binary version
+  ccms help               this help
 `
 
 // Execute runs the command; returns the process exit code.
@@ -35,7 +36,7 @@ func Execute(args []string, stdout io.Writer) int {
 	}
 	switch args[0] {
 	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "ccx %s\n", Version)
+		fmt.Fprintf(stdout, "ccms %s\n", Version)
 
 		return 0
 	case "help", "--help", "-h":
@@ -59,13 +60,13 @@ func Execute(args []string, stdout io.Writer) int {
 	case "auth":
 		return runAuth(args, stdout)
 	default:
-		// not a command — likely a profile: ccx zai / ccx zai glm-5.3 (bash parity)
+		// not a command — likely a profile: ccms zai / ccms zai glm-5.3 (bash parity)
 		if !strings.HasPrefix(args[0], "-") {
 			useArgs := append([]string{"use", args[0]}, args[1:]...)
 
 			return runUse(useArgs, stdout)
 		}
-		fmt.Fprintf(stdout, "ccx: unknown command %q\n\n%s", args[0], usage)
+		fmt.Fprintf(stdout, "ccms: unknown command %q\n\n%s", args[0], usage)
 
 		return 1
 	}
