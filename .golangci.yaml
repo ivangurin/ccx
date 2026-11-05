@@ -109,6 +109,7 @@ linters:
           arguments:
             - "fmt\\..*"
             - "bytes\\..*"
+            - "strings\\..*"
         - name: var-naming
           arguments:
             - []

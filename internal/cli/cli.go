@@ -6,6 +6,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Version подставляется при сборке (-X ...cli.Version=...), dev — локально.
@@ -31,9 +32,7 @@ const usage = `ccx — переключение LLM-провайдеров Claud
 // Execute исполняет команду; возвращает код выхода процесса.
 func Execute(args []string, stdout io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stdout, usage)
-
-		return 0
+		return runMenu(args, stdout)
 	}
 	switch args[0] {
 	case "version", "--version", "-v":
@@ -52,7 +51,19 @@ func Execute(args []string, stdout io.Writer) int {
 		return runStatus(args, stdout)
 	case "edit", "-e":
 		return runEdit(args, stdout)
+	case "use":
+		return runUse(args, stdout)
+	case "serve":
+		return runServe(args, stdout)
+	case "stop":
+		return runStop(args, stdout)
 	default:
+		// не команда — вероятно, профиль: ccx zai / ccx zai glm-5.3 (паритет bash)
+		if !strings.HasPrefix(args[0], "-") {
+			useArgs := append([]string{"use", args[0]}, args[1:]...)
+
+			return runUse(useArgs, stdout)
+		}
 		fmt.Fprintf(stdout, "ccx: неизвестная команда %q\n\n%s", args[0], usage)
 
 		return 1

@@ -48,6 +48,11 @@ func (c *Config) BackupDir() string {
 	return filepath.Join(c.Home, "backups")
 }
 
+// CCXDir — каталог данных ccx: логи, daemon.lock/pid (внутри Home).
+func (c *Config) CCXDir() string {
+	return filepath.Join(c.Home, "ccx")
+}
+
 // LogDir — каталог логов демона (CCX_LOG_DIR переопределяет).
 func (c *Config) LogDir() string {
 	if c.LogDirPath != "" {
