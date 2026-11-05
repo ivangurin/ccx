@@ -7,10 +7,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"strings"
-
-	"golang.org/x/term"
 )
 
 // Item — a menu row: Label is the primary text, Detail the secondary one
@@ -34,21 +31,6 @@ func Filter(items []Item, query string) []Item {
 	}
 
 	return out
-}
-
-// Select — interactive selection; in/out make the fallback testable.
-// Terminal (raw mode): ↑↓/Ctrl-P/N, Enter — select, Esc/Ctrl-C — cancel,
-// any other input — filter. Non-terminal → FallbackSelect.
-func Select(header string, items []Item, defaultIdx int, in io.Reader, out io.Writer) (int, error) {
-	if len(items) == 0 {
-		return -1, errEmptyList
-	}
-	f, isFile := in.(*os.File)
-	if !isFile || !term.IsTerminal(int(f.Fd())) {
-		return FallbackSelect(items, defaultIdx, bufio.NewReader(in), out)
-	}
-
-	return runInteractive(header, items, defaultIdx, f, out)
 }
 
 // FallbackSelect — numbered selection without a TUI: enter a number, empty = default.

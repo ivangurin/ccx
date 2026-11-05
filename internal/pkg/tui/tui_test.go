@@ -70,12 +70,40 @@ func TestFallbackSelect_ReasksOnGarbage(t *testing.T) {
 	require.Contains(t, out.String(), "2") // range hint
 }
 
-func TestSelect_FallbackWhenNotTTY(t *testing.T) {
-	// stdin is a reader, not a terminal: Select falls back to numbered selection
-	items := []tui.Item{{Label: "a"}, {Label: "b"}}
-	in := strings.NewReader("1\n")
+func TestSelectStaged_FallbackWalksLevels(t *testing.T) {
+	// stdin is a reader, not a terminal: the numbered fallback level by level
+	next := func(chosen []int) (tui.Stage, bool) {
+		switch len(chosen) {
+		case 0:
+			return tui.Stage{Header: "providers", Items: []tui.Item{{Label: "a"}, {Label: "b"}}}, true
+		case 1:
+			return tui.Stage{Header: "models", Items: []tui.Item{{Label: "m1"}, {Label: "m2"}}}, true
+		}
 
-	idx, err := tui.Select("Header", items, 0, in, &strings.Builder{})
+		return tui.Stage{}, false
+	}
+	in := strings.NewReader("2\n1\n")
+
+	path, err := tui.SelectStaged(next, in, &strings.Builder{})
 	require.NoError(t, err)
-	require.Equal(t, 0, idx)
+	require.Equal(t, []int{1, 0}, path)
+}
+
+func TestSelectStaged_FallbackInterruptedCancels(t *testing.T) {
+	next := func([]int) (tui.Stage, bool) {
+		return tui.Stage{Header: "h", Items: []tui.Item{{Label: "a"}}}, false
+	}
+	in := strings.NewReader("") // EOF before any choice
+
+	path, err := tui.SelectStaged(next, in, &strings.Builder{})
+	require.Error(t, err)
+	require.Nil(t, path)
+}
+
+func TestSelectStaged_EmptyFirstLevel(t *testing.T) {
+	next := func([]int) (tui.Stage, bool) { return tui.Stage{}, false }
+
+	path, err := tui.SelectStaged(next, strings.NewReader("1\n"), &strings.Builder{})
+	require.Error(t, err)
+	require.Nil(t, path)
 }

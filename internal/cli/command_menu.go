@@ -11,7 +11,9 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/tui"
 )
 
-// runMenu — ccx with no arguments: profile → model → use.
+// runMenu — ccx with no arguments: provider → model → use. A single staged
+// TUI session: the model list replaces the provider list in place, Esc on
+// the models returns to the providers, Esc on the providers exits.
 func runMenu(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -30,30 +32,51 @@ func runMenu(_ []string, stdout io.Writer) int {
 	}
 
 	defProfile := activeProfileIndex(cfg, providers)
-	profileItems := profileMenuItems(providers)
-	pIdx, err := tui.Select("Profile", profileItems, defProfile, os.Stdin, stdout)
-	if err != nil || pIdx < 0 {
+	next := menuStages(providers, defProfile)
+	chosen, err := tui.SelectStaged(next, os.Stdin, stdout)
+	if err != nil || len(chosen) == 0 {
 		return 0
 	}
-	profileKey := providers.Profiles.Keys[pIdx]
-	profile := providers.Profiles.Get(profileKey)
 
+	profileKey := providers.Profiles.Keys[chosen[0]]
+	profile := providers.Profiles.Get(profileKey)
 	if len(profile.Models) == 0 {
+		// the chain stopped at the provider: its model level was never built
 		fmt.Fprintf(stdout, "ccx: profile %s has no models — ccx edit\n", profileKey)
 
 		return 1
 	}
-	defModel := defaultModelIndex(profile)
-	modelItems := modelMenuItems(profile)
-	mIdx, err := tui.Select("Model · "+profileKey, modelItems, defModel, os.Stdin, stdout)
-	if err != nil || mIdx < 0 {
-		return 0
-	}
-	model := profile.Models[mIdx].ID
+	model := profile.Models[chosen[1]].ID
 
 	fmt.Fprint(stdout, "\n")
 
 	return runUse([]string{"use", profileKey, model}, stdout)
+}
+
+// menuStages — the menu levels: providers, then the chosen provider's models.
+// A provider without models ends the chain (ok=false) — runMenu reports it.
+func menuStages(providers *models.Providers, defProfile int) tui.NextStage {
+	return func(chosen []int) (tui.Stage, bool) {
+		if len(chosen) > 0 {
+			profileKey := providers.Profiles.Keys[chosen[0]]
+			profile := providers.Profiles.Get(profileKey)
+			if len(profile.Models) == 0 {
+				return tui.Stage{}, false
+			}
+
+			return tui.Stage{
+				Header:     "Choose a model · " + profileKey,
+				Items:      modelMenuItems(profile),
+				DefaultIdx: defaultModelIndex(profile),
+			}, true
+		}
+
+		return tui.Stage{
+			Header:     "Choose a provider",
+			Items:      profileMenuItems(providers),
+			DefaultIdx: defProfile,
+		}, true
+	}
 }
 
 // profileMenuItems — profile menu entries in file order.

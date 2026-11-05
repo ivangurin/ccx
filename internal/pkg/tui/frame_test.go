@@ -11,7 +11,7 @@ import (
 func TestBuildFrame_CountsLinesAndMarksCursor(t *testing.T) {
 	items := []Item{{Label: "a"}, {Label: "b"}, {Label: "c"}}
 
-	frame, lines := buildFrame("Header", items, "", 1)
+	frame, lines := buildFrame("Header", items, "", 1, false)
 	// header + 3 items + footer
 	require.Equal(t, 5, lines)
 	require.Contains(t, frame, "Header\r\n")
@@ -22,10 +22,25 @@ func TestBuildFrame_CountsLinesAndMarksCursor(t *testing.T) {
 }
 
 func TestBuildFrame_FilterLineWhenQuery(t *testing.T) {
-	frame, lines := buildFrame("h", []Item{{Label: "a"}}, "q", 0)
+	frame, lines := buildFrame("h", []Item{{Label: "a"}}, "q", 0, false)
 	// header + filter + item + footer
 	require.Equal(t, 4, lines)
 	require.Contains(t, frame, "filter: q\r\n")
+}
+
+func TestBuildFrame_EscHintByLevel(t *testing.T) {
+	// the first level cancels, the deeper ones go back
+	top := buildFrameTail(t, false)
+	require.Equal(t, "up/down select - Enter confirm - Esc cancel\r", top)
+	deeper := buildFrameTail(t, true)
+	require.Equal(t, "up/down select - Enter confirm - Esc back\r", deeper)
+}
+
+func buildFrameTail(t *testing.T, back bool) string {
+	t.Helper()
+	frame, _ := buildFrame("h", []Item{{Label: "a"}}, "", 0, back)
+
+	return frame[strings.LastIndex(frame, "up/down"):]
 }
 
 func TestRepaintPrefix(t *testing.T) {
@@ -37,14 +52,15 @@ func TestRepaintPrefix(t *testing.T) {
 
 func TestRender_RedrawsInPlace(t *testing.T) {
 	var buf bytes.Buffer
-	u := &ui{header: "h", items: []Item{{Label: "a"}, {Label: "b"}}, out: &buf}
+	s := &session{out: &buf}
+	s.push(Stage{Header: "h", Items: []Item{{Label: "a"}, {Label: "b"}}})
 
-	u.render()
+	s.render()
 	first := buf.String()
 	require.NotContains(t, first, "\x1b[", "first frame is drawn without escape clearing")
 
-	u.cursor = 1
-	u.render()
+	s.top().cursor = 1
+	s.render()
 	second := buf.String()[len(first):]
 	// header + 2 items + footer = 4 lines: cursor moved up 3 and screen cleared
 	require.True(t, strings.HasPrefix(second, "\r\x1b[3A\x1b[J"), "second frame must overwrite the first in place: %q", second)

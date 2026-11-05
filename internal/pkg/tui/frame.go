@@ -6,9 +6,11 @@ import (
 )
 
 // buildFrame — a full menu frame: header, filter line (if set), items,
-// footer. The last line has no newline: the cursor stays on the footer so
-// the next frame can climb back to the top from here (in-place repaint).
-func buildFrame(header string, visible []Item, query string, cursor int) (string, int) {
+// footer. back switches the Esc hint: "cancel" on the first level, "back"
+// on the deeper ones. The last line has no newline: the cursor stays on the
+// footer so the next frame can climb back to the top from here (in-place
+// repaint).
+func buildFrame(header string, visible []Item, query string, cursor int, back bool) (string, int) {
 	var sb strings.Builder
 	lines := 0
 	fmt.Fprintf(&sb, "%s\r\n", header)
@@ -29,7 +31,11 @@ func buildFrame(header string, visible []Item, query string, cursor int) (string
 		fmt.Fprintf(&sb, "%s%s%s\r\n", mark, it.Label, detail)
 		lines++
 	}
-	fmt.Fprint(&sb, "up/down select - Enter confirm - Esc cancel\r")
+	escHint := "cancel"
+	if back {
+		escHint = "back"
+	}
+	fmt.Fprintf(&sb, "up/down select - Enter confirm - Esc %s\r", escHint)
 	lines++
 
 	return sb.String(), lines

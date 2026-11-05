@@ -17,122 +17,171 @@ var (
 	errCancelled   = errors.New("tui: cancelled")
 )
 
-// ui \u2014 state of the interactive selection.
-type ui struct {
-	header    string
-	items     []Item
-	cursor    int
-	query     string
-	tty       *os.File
-	out       io.Writer
-	lastLines int // lines in the previous frame \u2014 needed for in-place repaint
+// level — one visited menu level; cursor and query survive the round trip
+// to the deeper level and back.
+type level struct {
+	header string
+	items  []Item
+	cursor int
+	query  string
+	chosen int // item index picked on this level when descending
 }
 
-// runInteractive \u2014 raw-mode loop: render, arrows, filter, Enter/Esc.
-func runInteractive(header string, items []Item, defaultIdx int, tty *os.File, out io.Writer) (int, error) {
+// session — interactive staged selection: the stack of levels (the top one
+// is active) plus the shared last-lines counter for in-place repaint —
+// every next frame, of any level, climbs back over the previous one.
+type session struct {
+	out       io.Writer
+	levels    []level
+	lastLines int
+}
+
+// runSession — raw-mode staged loop: render, arrows, filter, Enter/Esc.
+func runSession(next NextStage, first Stage, tty *os.File, out io.Writer) ([]int, error) {
 	oldState, err := term.MakeRaw(int(tty.Fd()))
 	if err != nil {
-		return FallbackSelect(items, defaultIdx, bufio.NewReader(tty), out)
+		return fallbackStaged(next, first, bufio.NewReader(tty), out)
 	}
 	defer func() { _ = term.Restore(int(tty.Fd()), oldState) }()
 
-	u := &ui{header: header, items: items, cursor: defaultIdx, tty: tty, out: out}
-	u.render()
+	s := &session{out: out}
+	s.push(first)
+	s.render()
 
 	buf := make([]byte, 16)
 	for {
 		n, readErr := tty.Read(buf)
 		if readErr != nil || n == 0 {
-			return -1, errInterrupted
+			return nil, errInterrupted
 		}
-		done, idx, selErr := u.handleKey(buf[:n])
+		done, path, selErr := s.handleKey(buf[:n], next)
 		if done {
-			return idx, selErr
+			return path, selErr
 		}
-		u.render()
+		s.render()
 	}
 }
 
-// handleKey processes a keypress; done=true means selection finished.
-func (u *ui) handleKey(key []byte) (done bool, idx int, selErr error) {
+// handleKey processes a keypress; done=true — the session is over (path or error).
+func (s *session) handleKey(key []byte, next NextStage) (done bool, path []int, selErr error) {
 	switch {
 	case key[0] == '\r' || key[0] == '\n':
-		return u.confirm()
-	case key[0] == 27 && len(key) == 1:
-		fmt.Fprint(u.out, "\r\n")
-
-		return true, -1, errCancelled
-	case key[0] == 3 || key[0] == 4:
-		fmt.Fprint(u.out, "\r\n")
-
-		return true, -1, errCancelled
+		return s.confirm(next)
+	case (key[0] == 27 && len(key) == 1) || key[0] == 3 || key[0] == 4:
+		return s.cancel()
 	case key[0] == 27 && len(key) >= 3 && (key[1] == '[' || key[1] == 'O'):
-		u.arrow(key[2])
-
-		return false, 0, nil
+		s.arrow(key[2])
 	case key[0] == 127 || key[0] == 8:
-		if u.query != "" {
-			u.query = u.query[:len(u.query)-1]
+		if top := s.top(); top.query != "" {
+			top.query = top.query[:len(top.query)-1]
 		}
-
-		return false, 0, nil
 	case key[0] >= 32:
-		u.query += string(key[0])
-
-		return false, 0, nil
-	default:
-		return false, 0, nil
+		s.top().query += string(key[0])
 	}
+
+	return false, nil, nil
 }
 
-func (u *ui) arrow(code byte) {
+// cancel — Esc/Ctrl-C: one level up; from the first level — cancel the session.
+func (s *session) cancel() (bool, []int, error) {
+	if len(s.levels) > 1 {
+		s.levels = s.levels[:len(s.levels)-1]
+
+		return false, nil, nil
+	}
+	fmt.Fprint(s.out, "\r\n")
+
+	return true, nil, errCancelled
+}
+
+// confirm — Enter: record the choice and descend to the next level, or
+// finish when the builder has no next level (ok=false).
+func (s *session) confirm(next NextStage) (bool, []int, error) {
+	top := s.top()
+	visible := Filter(top.items, top.query)
+	if len(visible) == 0 {
+		return false, nil, nil
+	}
+	chosenItem := visible[top.cursor]
+	idx := -1
+	for i, it := range top.items {
+		if it == chosenItem {
+			idx = i
+
+			break
+		}
+	}
+	if idx < 0 {
+		return true, nil, errCancelled
+	}
+	top.chosen = idx
+
+	path := make([]int, len(s.levels))
+	for i, lv := range s.levels {
+		path[i] = lv.chosen
+	}
+
+	stage, ok := next(path)
+	if !ok {
+		fmt.Fprint(s.out, "\r\n")
+
+		return true, path, nil
+	}
+	if len(stage.Items) == 0 {
+		fmt.Fprint(s.out, "\r\n")
+
+		return true, nil, errEmptyList
+	}
+	s.push(stage)
+
+	return false, nil, nil
+}
+
+func (s *session) arrow(code byte) {
+	top := s.top()
 	switch code {
 	case 'A':
-		if u.cursor > 0 {
-			u.cursor--
+		if top.cursor > 0 {
+			top.cursor--
 		}
 	case 'B':
-		if u.cursor < len(u.visibleItems())-1 {
-			u.cursor++
+		if top.cursor < len(Filter(top.items, top.query))-1 {
+			top.cursor++
 		}
 	default:
 		// other escape codes are ignored
 	}
 }
 
-func (u *ui) confirm() (bool, int, error) {
-	visible := u.visibleItems()
-	if len(visible) == 0 {
-		return false, 0, nil
+// push — enter a level: the cursor starts at the stage default.
+func (s *session) push(st Stage) {
+	cursor := st.DefaultIdx
+	if cursor < 0 || cursor >= len(st.Items) {
+		cursor = 0
 	}
-	chosen := visible[u.cursor]
-	fmt.Fprint(u.out, "\r\n")
-	for i, it := range u.items {
-		if it == chosen {
-			return true, i, nil
-		}
-	}
-
-	return true, -1, errCancelled
+	s.levels = append(s.levels, level{header: st.Header, items: st.Items, cursor: cursor, chosen: -1})
 }
 
-func (u *ui) visibleItems() []Item {
-	return Filter(u.items, u.query)
+// top — the active level.
+func (s *session) top() *level {
+	return &s.levels[len(s.levels)-1]
 }
 
-func (u *ui) render() {
-	visible := u.visibleItems()
-	if u.cursor >= len(visible) {
-		u.cursor = len(visible) - 1
+func (s *session) render() {
+	top := s.top()
+	visible := Filter(top.items, top.query)
+	if top.cursor >= len(visible) {
+		top.cursor = len(visible) - 1
 	}
-	if u.cursor < 0 {
-		u.cursor = 0
+	if top.cursor < 0 {
+		top.cursor = 0
 	}
 	var sb strings.Builder
-	// in-place repaint: climb up to the first frame and erase it
-	sb.WriteString(repaintPrefix(u.lastLines))
-	frame, lines := buildFrame(u.header, visible, u.query, u.cursor)
+	// in-place repaint: climb up to the first frame line and erase it — the
+	// next level (or the level returned to) is drawn over the old one
+	sb.WriteString(repaintPrefix(s.lastLines))
+	frame, lines := buildFrame(top.header, visible, top.query, top.cursor, len(s.levels) > 1)
 	sb.WriteString(frame)
-	u.lastLines = lines
-	_, _ = io.WriteString(u.out, sb.String())
+	s.lastLines = lines
+	_, _ = io.WriteString(s.out, sb.String())
 }
