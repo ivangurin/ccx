@@ -44,6 +44,14 @@ func Execute(args []string, stdout io.Writer) int {
 		fmt.Fprint(stdout, usage)
 
 		return 0
+	case "init":
+		return runInit(args, stdout)
+	case "list", "-l":
+		return runList(args, stdout)
+	case "status", "-s":
+		return runStatus(args, stdout)
+	case "edit", "-e":
+		return runEdit(args, stdout)
 	default:
 		fmt.Fprintf(stdout, "ccx: неизвестная команда %q\n\n%s", args[0], usage)
 

@@ -57,7 +57,9 @@ linters:
       threshold: 100
     goconst:
       min-len: 2
-      min-occurrences: 2
+      # 4 (а не 2 из эталона): в этом проекте много JSON-фикстур/шаблонов —
+      # повторы там это данные, а не дублирование кода
+      min-occurrences: 4
     revive:
       enable-all-rules: true
       rules:
@@ -106,6 +108,7 @@ linters:
         - name: unhandled-error
           arguments:
             - "fmt\\..*"
+            - "bytes\\..*"
         - name: var-naming
           arguments:
             - []

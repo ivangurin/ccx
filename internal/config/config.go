@@ -34,6 +34,13 @@ type Config struct {
 	DaemonPort         int           `env:"CCX_PORT"`
 	LockTimeout        time.Duration `env:"CCX_LOCK_TIMEOUT"`
 	DaemonStartTimeout time.Duration `env:"CCX_DAEMON_START_TIMEOUT"`
+
+	// точечные оверрайды путей (паритет CCX_PROVIDERS/… bash-версии)
+	ProvidersFile string `env:"CCX_PROVIDERS"`
+	SettingsFile  string `env:"CCX_SETTINGS"`
+	StateFile     string `env:"CCX_STATE"`
+	BackupDirPath string `env:"CCX_BACKUP_DIR"`
+	LogDirPath    string `env:"CCX_LOG_DIR"`
 }
 
 // NewFromEnv читает CCX_* переменные, применяет дефолты и валидирует.
