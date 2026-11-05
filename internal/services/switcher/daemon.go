@@ -54,6 +54,56 @@ func (d *HTTPDaemon) Ensure(ctx context.Context) error {
 	return nil
 }
 
+// Stop — best-effort shutdown of a running daemon: a no-op success if it is
+// not running; otherwise POST /admin/stop and wait for the port to close (a
+// lingering listener would break the next Ensure's spawn — port conflict).
+// Mirrors the ccms stop CLI.
+func (d *HTTPDaemon) Stop(ctx context.Context) error {
+	base, err := d.baseURL()
+	if err != nil {
+		return err
+	}
+	if !app.HealthCheck(base, time.Second) {
+		return nil
+	}
+	token := ""
+	if providers, perr := config.LoadProviders(d.cfg.ProvidersPath()); perr == nil {
+		token = providers.Daemon.AuthToken
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/admin/stop", nil)
+	if err != nil {
+		return fmt.Errorf("daemon: stop: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon: stop: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var payload struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&payload)
+
+		return fmt.Errorf("daemon: stop: %s", payload.Error)
+	}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if !app.HealthCheck(base, 250*time.Millisecond) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("the daemon is still responding (log: %s)", d.cfg.LogDir()+"/daemon.log")
+		case <-ticker.C:
+		}
+	}
+}
+
 // Use — POST /admin/use with the daemon token.
 func (d *HTTPDaemon) Use(ctx context.Context, profile, model string) error {
 	base, err := d.baseURL()

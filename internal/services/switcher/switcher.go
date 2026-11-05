@@ -1,12 +1,17 @@
 // Package switcher — profile switching: a port of bash-ccx apply_profile.
-// Invariant: first daemon readiness (Ensure + Use), only then the
+// Invariant: first readiness of everything the profile needs, only then the
 // settings.json edit; on failure ⇒ files are untouched, the user stays on
-// the previous profile.
+// the previous profile. For translated protocols (openai/copilot/codex) that
+// means daemon readiness (Ensure + Use); an anthropic passthrough goes
+// direct — the upstream URL and credential land in settings.json (bash-ccx
+// semantics), the unused daemon is stopped best-effort.
 package switcher
 
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +28,9 @@ type Daemon interface {
 	// Use — switch the daemon's translator to the profile (including the
 	// Ready check).
 	Use(ctx context.Context, profile, model string) error
+	// Stop — best-effort shutdown of a running daemon (a direct anthropic
+	// profile doesn't need it); a no-op success if it is not running.
+	Stop(ctx context.Context) error
 }
 
 // Switcher — applies a profile to settings.json under a lock.
@@ -71,6 +79,13 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 		return "", fmt.Errorf("ccms: model %s not found in profile %s (see ccms list)", modelArg, profileKey)
 	}
 
+	// An anthropic passthrough goes direct: the upstream speaks the native
+	// protocol, so there is nothing to prepare (the anthropic translator's
+	// Ready is trivial) — running the daemon would only add a hop.
+	if profile.Protocol == models.ProtocolAnthropic {
+		return s.applyDirect(ctx, providers, profile, profileKey, model)
+	}
+
 	// Invariant: the daemon is ready and the route is switched BEFORE the
 	// settings.json edit.
 	if err := s.daemon.Ensure(ctx); err != nil {
@@ -80,7 +95,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 		return "", fmt.Errorf("ccms: cancelled: translator %s not ready (%v) — settings.json untouched, you stay on the previous profile", profileKey, err)
 	}
 
-	if err := s.writeSettings(providers, profile, model); err != nil {
+	if err := s.writeSettings(providers, daemonEnv(providers, profile, model), model); err != nil {
 		return "", err
 	}
 	if err := s.writeState(profileKey, model); err != nil {
@@ -90,6 +105,71 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", providers.Daemon.Port)
 
 	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model, baseURL), nil
+}
+
+// applyDirect — a direct anthropic profile: upstream URL + credential into
+// settings.json, then a best-effort stop of the daemon (it is not needed
+// anymore; a failure to stop must not fail the already-committed switch).
+func (s *Switcher) applyDirect(
+	ctx context.Context,
+	providers *models.Providers,
+	profile *models.Profile,
+	profileKey, model string,
+) (string, error) {
+	if profile.Anthropic == nil {
+		return "", fmt.Errorf("ccms: profile %s (anthropic) has no anthropic block in providers.json — settings.json untouched", profileKey)
+	}
+	env, err := directEnv(profile, model)
+	if err != nil {
+		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous profile", err)
+	}
+
+	if err := s.writeSettings(providers, env, model); err != nil {
+		return "", err
+	}
+	if err := s.writeState(profileKey, model); err != nil {
+		return "", err
+	}
+
+	out := fmt.Sprintf("Switched: %s · model %s · %s (direct)", profile.Name, model, profile.Anthropic.BaseURL)
+	if err := s.daemon.Stop(ctx); err != nil {
+		out += fmt.Sprintf("\nnote: the daemon is still running: %v (ccms stop)", err)
+	}
+
+	return out, nil
+}
+
+// directEnv — the env block for a direct anthropic profile: the upstream URL
+// and its credential (proxy.go precedence: auth_token wins, api_key
+// otherwise — exactly one credential var is written), extra_headers →
+// ANTHROPIC_CUSTOM_HEADERS (Name: Value, newline-separated, key-sorted for
+// deterministic output), plus the profile extras and model pinning.
+func directEnv(profile *models.Profile, model string) (map[string]string, error) {
+	if profile.Anthropic.BaseURL == "" {
+		return nil, fmt.Errorf("ccms: profile %s has no anthropic.base_url — add it to providers.json", profile.Name)
+	}
+	env := map[string]string{}
+	for k, v := range profile.Env {
+		env[k] = v
+	}
+	env["ANTHROPIC_BASE_URL"] = profile.Anthropic.BaseURL
+	if profile.Anthropic.AuthToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = profile.Anthropic.AuthToken
+	} else if profile.Anthropic.APIKey != "" {
+		env["ANTHROPIC_API_KEY"] = profile.Anthropic.APIKey
+	}
+	if len(profile.Anthropic.Headers) > 0 {
+		parts := make([]string, 0, len(profile.Anthropic.Headers))
+		for _, key := range slices.Sorted(maps.Keys(profile.Anthropic.Headers)) {
+			parts = append(parts, key+": "+profile.Anthropic.Headers[key])
+		}
+		env["ANTHROPIC_CUSTOM_HEADERS"] = strings.Join(parts, "\n")
+	}
+	for _, key := range pinnedKeys {
+		env[key] = model
+	}
+
+	return env, nil
 }
 
 // daemonEnv — the env block for settings.json: the daemon URL/token + the
@@ -121,7 +201,8 @@ var pinnedKeys = []string{
 }
 
 // writeSettings: backup → atomic env edit (managed keys) → model pinning.
-func (s *Switcher) writeSettings(providers *models.Providers, profile *models.Profile, model string) error {
+// env is the fresh block to write (daemonEnv or directEnv).
+func (s *Switcher) writeSettings(providers *models.Providers, env map[string]string, model string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
 		return fmt.Errorf("ccms: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
@@ -138,9 +219,9 @@ func (s *Switcher) writeSettings(providers *models.Providers, profile *models.Pr
 			managed[k] = true
 		}
 	}
-	env := settings.Env()
+	cur := settings.Env()
 	fresh := map[string]string{}
-	for k, v := range env {
+	for k, v := range cur {
 		// all ANTHROPIC_* are wiped (not only managed ones): past profile keys
 		// and manual values must not survive a switch (parity with bash
 		// with_entries)
@@ -149,7 +230,7 @@ func (s *Switcher) writeSettings(providers *models.Providers, profile *models.Pr
 		}
 		fresh[k] = v
 	}
-	for k, v := range daemonEnv(providers, profile, model) {
+	for k, v := range env {
 		fresh[k] = v
 	}
 	settings.SetEnv(fresh)

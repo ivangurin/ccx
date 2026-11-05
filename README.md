@@ -23,14 +23,17 @@ make install                      # build + /opt/homebrew/bin/ccms (PREFIX=…)
 ccms init                         # v1 config migration or import + templates
 ccms list                         # profiles and models
 ccms auth copilot                 # GitHub OAuth (for the copilot profile)
-ccms use zai                      # switch (the daemon starts automatically)
+ccms use work                     # switch (the daemon starts automatically)
+ccms use zai                      # switch to an anthropic profile — direct, no daemon
 ccms status                       # profile/model/daemon
 ```
 
-After the first `ccms use`, `~/.claude/settings.json` no longer changes
-`ANTHROPIC_BASE_URL` — it always points at the local daemon
-(`http://127.0.0.1:4567`); switching profiles re-routes the daemon on the
-fly.
+How `ANTHROPIC_BASE_URL` ends up in `~/.claude/settings.json` depends on the
+profile's protocol: translated ones (openai/copilot/codex) point at the local
+daemon (`http://127.0.0.1:4567`) and switching re-routes the daemon on the
+fly; an anthropic passthrough goes **direct** — the upstream `base_url` and
+credential are written straight into the config (bash-ccx semantics) and the
+unused daemon is stopped.
 
 ## Config (`~/.claude/providers.json`, v2, 0600 permissions)
 
@@ -45,7 +48,7 @@ fly.
       "anthropic": {"base_url": "https://api.z.ai/api/anthropic", "auth_token": "<key>"},
       "models": [{"id": "glm-5.3[1m]", "label": "GLM 5.3", "default": true}]
     },
-    "x5": {
+    "work": {
       "name": "Work gateway",
       "protocol": "openai",
       "openai": {"base_url": "https://…/v1", "api_key": "<token>", "user_agent": "claude-cli/2.0.1"},

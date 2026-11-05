@@ -61,7 +61,8 @@ internal/
     router/                             active route (atomic.Pointer), factory by protocol,
                                          activate: build → Ready() → swap → state
     switcher/                           port of bash-ccx apply_profile: flock, backup 0600, atomic,
-                                         managed keys, model pinning, EnsureDaemon
+                                         managed keys, model pinning, EnsureDaemon; anthropic →
+                                         direct env (upstream base_url + credential, daemon stop)
     meta/                               health/version
   translators/
     translator.go                       Translator + ResponseSink interfaces
@@ -88,16 +89,21 @@ internal/
 
 ### Key invariants (from bash-ccx, mandatory)
 
-- **Readiness before settings.json**: switching a profile first brings up the
-  daemon and prepares the translator (`Ready()`); on failure,
-  `~/.claude/settings.json` is left untouched and the user stays on the
-  previous profile.
+- **Readiness before settings.json**: switching a translated profile
+  (openai/copilot/codex) first brings up the daemon and prepares the
+  translator (`Ready()`); on failure, `~/.claude/settings.json` is left
+  untouched and the user stays on the previous profile.
+- **Anthropic passthrough goes direct**: a `protocol: anthropic` profile
+  needs no translation — the upstream `base_url` + credential are written
+  straight into settings.json (bash-ccx semantics), and the unused daemon is
+  stopped best-effort.
 - **Managed keys**: only `ANTHROPIC_*` keys and profile env keys are edited;
   user variables (API_TIMEOUT_MS, MCP tokens) are preserved.
 - **Model pinning**: `model`, `availableModels=[m]`, `enforceAvailableModels`,
   all `ANTHROPIC_DEFAULT_*_MODEL` = the selected model.
-- **`ANTHROPIC_BASE_URL` is always the daemon** — it never changes when
-  switching profiles.
+- **`ANTHROPIC_BASE_URL`**: always the daemon for translated protocols (it
+  never changes when switching between them); the upstream URL itself for
+  direct anthropic profiles.
 - **`ccms-state.json`** `{profile, model, updated}` — format is 1:1 with
   bash-ccx's ccx-state.json (statusline.sh reads it — after the ccms rename
   its path must point to ccms-state.json; the JSON schema is unchanged).

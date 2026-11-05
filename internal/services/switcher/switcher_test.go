@@ -24,6 +24,8 @@ type fakeDaemon struct {
 	useOK    bool
 	ensureN  int
 	useCalls []string
+	stopN    int
+	stopErr  error
 }
 
 func (f *fakeDaemon) Ensure(_ context.Context) error {
@@ -46,6 +48,14 @@ func (f *fakeDaemon) Use(_ context.Context, profile, model string) error {
 	}
 
 	return errors.New("translator not ready")
+}
+
+func (f *fakeDaemon) Stop(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stopN++
+
+	return f.stopErr
 }
 
 func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
@@ -114,27 +124,26 @@ func readState(t *testing.T, path string) models.State {
 func TestApply_HappyPath(t *testing.T) {
 	sw, d, sp := newTestSwitcher(t)
 
-	out, err := sw.Apply(context.Background(), "zai", "")
+	// x5 (openai) — the daemon path: BASE_URL is the daemon
+	out, err := sw.Apply(context.Background(), "x5", "")
 	require.NoError(t, err)
 	require.Contains(t, out, "Switched")
-	require.Contains(t, out, "z.ai (GLM)")
-	require.Contains(t, out, "glm-5.3[1m]")
+	require.Contains(t, out, "X5")
+	require.Contains(t, out, "http://127.0.0.1:4567")
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "http://127.0.0.1:4567", env["ANTHROPIC_BASE_URL"])
 	require.Equal(t, "daemon-token", env["ANTHROPIC_AUTH_TOKEN"])
 	// pinning: all mappings point to the selected model
-	for _, key := range []string{
-		"ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
-		"ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
-	} {
-		require.Equal(t, "glm-5.3[1m]", env[key], key)
+	for _, key := range pinnedKeysList {
+		require.Equal(t, "copilot-code-large", env[key], key)
 	}
 	// user keys kept, the stale ANTHROPIC_* wiped
 	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
 	require.Equal(t, "user-token", env["IDP_TOKEN"])
 	require.NotContains(t, env, "ANTHROPIC_STALE_KEY")
+	// profile extras land in the env
+	require.Equal(t, "true", env["CLAUDE_CODE_DISABLE_EXTENDED_THINKING"])
 
 	// the model is pinned
 	var s struct {
@@ -144,20 +153,21 @@ func TestApply_HappyPath(t *testing.T) {
 		Perms   map[string]any `json:"permissions"`
 	}
 	require.NoError(t, jsonfile.ReadJSON(sp.Config.SettingsPath(), &s))
-	require.Equal(t, "glm-5.3[1m]", s.Model)
-	require.Equal(t, []string{"glm-5.3[1m]"}, s.Avail)
+	require.Equal(t, "copilot-code-large", s.Model)
+	require.Equal(t, []string{"copilot-code-large"}, s.Avail)
 	require.True(t, s.Enforce)
 	// other file fields are untouched
 	require.Equal(t, map[string]any{"allow": []any{"Bash"}}, s.Perms)
 
 	// state
 	st := readState(t, sp.Config.StatePath())
-	require.Equal(t, "zai", st.Profile)
-	require.Equal(t, "glm-5.3[1m]", st.Model)
+	require.Equal(t, "x5", st.Profile)
+	require.Equal(t, "copilot-code-large", st.Model)
 	require.NotEmpty(t, st.Updated)
 
-	// the daemon received use
-	require.Equal(t, []string{"zai/glm-5.3[1m]"}, d.useCalls)
+	// the daemon received use; the daemon stays up on the daemon path
+	require.Equal(t, []string{"x5/copilot-code-large"}, d.useCalls)
+	require.Equal(t, 0, d.stopN)
 }
 
 func TestApply_ModelByNameAlias(t *testing.T) {
@@ -192,7 +202,7 @@ func TestApply_EnsureFails_Untouched(t *testing.T) {
 	sw, d, sp := newTestSwitcher(t)
 	d.ensureOK = false
 
-	_, err := sw.Apply(context.Background(), "zai", "")
+	_, err := sw.Apply(context.Background(), "x5", "") // daemon path
 	require.ErrorContains(t, err, "untouched")
 	require.NoFileExists(t, sp.Config.StatePath())
 	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "ANTHROPIC_BASE_URL")
@@ -202,7 +212,7 @@ func TestApply_UseFails_Untouched(t *testing.T) {
 	sw, d, sp := newTestSwitcher(t)
 	d.useOK = false
 
-	_, err := sw.Apply(context.Background(), "zai", "")
+	_, err := sw.Apply(context.Background(), "x5", "") // daemon path
 	require.ErrorContains(t, err, "untouched")
 	require.NoFileExists(t, sp.Config.StatePath())
 }
