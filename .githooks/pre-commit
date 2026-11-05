@@ -1,0 +1,56 @@
+#!/bin/sh
+# Pre-commit: golangci-lint по пакетам, в которых есть staged .go-файлы;
+# при находках коммит отменяется. Пакет целиком (каталог), а не отдельные файлы:
+# golangci-lint по подмножеству файлов собирает изолированный пакет и сыплет
+# фантомными undefined на символы из не-staged соседей (хелперы соседних *_test.go).
+# Масштаб находок ограничен --new-from-rev=HEAD — только строки этого коммита.
+# Активация: make hooks (git config core.hooksPath .githooks).
+# Осознанный обход: git commit --no-verify.
+
+set -eu
+
+# merge-коммиты не проверяем: новые строки там — код из чужой ветки
+if [ -e "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+	exit 0
+fi
+
+names=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACM -- '*.go') || exit 0
+if [ -z "$names" ]; then
+	exit 0
+fi
+
+echo "▶ pre-commit: golangci-lint по пакетам staged Go-файлов..."
+
+# каталоги пакетов staged-файлов, без дублей
+dirs=$(printf '%s\n' "$names" | while IFS= read -r f; do dirname "$f"; done | sort -u)
+
+# в позиционные параметры — чтобы пережить пробелы в путях
+set --
+while IFS= read -r d; do
+	set -- "$@" "$d"
+done <<EOF
+$dirs
+EOF
+
+new_rev=HEAD
+if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+	# первый коммит в репозитории: сравнение с пустым деревом
+	new_rev=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+fi
+
+# Без --fix (как в CI): автофикс правит рабочее дерево, а не индекс —
+# коммит ушёл бы с неисправленным кодом. Фиксить локально: make lint.
+if ! go tool golangci-lint run \
+	--new-from-rev="$new_rev" \
+	--config=.golangci.yaml \
+	--max-issues-per-linter=1000 \
+	--max-same-issues=1000 \
+	"$@"; then
+	echo >&2 ""
+	echo "✖ pre-commit: линтер нашёл проблемы — коммит отменён." >&2
+	echo "  Почините (make lint), добавьте исправления и закоммитьте снова," >&2
+	echo "  либо обойдите осознанно: git commit --no-verify" >&2
+	exit 1
+fi
+
+echo "✔ pre-commit: линтер прошёл"

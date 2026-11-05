@@ -1,0 +1,134 @@
+version: "2"
+
+linters:
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - dupword
+    - errcheck
+    - errchkjson
+    - funlen
+    - goconst
+    - godox
+    - gosec
+    - govet
+    - gocyclo
+    - gocognit
+    - iface
+    - inamedparam
+    - ineffassign
+    - loggercheck
+    - musttag
+    - nilerr
+    - nilnesserr
+    - nlreturn
+    - perfsprint
+    - predeclared
+    - prealloc
+    - revive
+    - rowserrcheck
+    - spancheck
+    - sqlclosecheck
+    - sloglint
+    - staticcheck
+    - testifylint
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+  settings:
+    funlen:
+      lines: 250
+      statements: 100
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - fmt.Fprintln
+        - fmt.Fprint
+        - fmt.Fprintf
+    dupl:
+      threshold: 100
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    revive:
+      enable-all-rules: true
+      rules:
+        # Лимит аргументов функции — паритет с SonarQube go:S107 (8-й параметр
+        # уже замечание); всё сверх этого — структура-параметр. Дефолт revive — 8.
+        - name: argument-limit
+          arguments: [7]
+        - name: line-length-limit
+          disabled: true
+        - name: package-comments
+          disabled: true
+        - name: add-constant
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
+        - name: cyclomatic
+          disabled: true
+        - name: exported
+          disabled: true
+        - name: function-length
+          disabled: true
+        - name: import-alias-naming
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: unused-receiver
+          disabled: true
+        - name: get-return
+          disabled: true
+        - name: confusing-naming
+          disabled: true
+        - name: unexported-return
+          disabled: true
+        - name: flag-parameter
+          disabled: true
+        - name: package-directory-mismatch
+          disabled: true
+        - name: nested-structs
+          disabled: true
+        - name: unsecure-url-scheme
+          disabled: true
+        - name: package-naming
+          disabled: true
+        - name: blank-imports
+          disabled: true
+        - name: unhandled-error
+          arguments:
+            - "fmt\\..*"
+        - name: var-naming
+          arguments:
+            - []
+            - []
+            - [{ skipPackageNameChecks: true }]
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 15
+
+formatters:
+  enable:
+    - goimports
+
+output:
+  formats:
+    text:
+      print-linter-name: true
+      print-issued-lines: true
+      colors: true
+
+run:
+  timeout: 10m
+  issues-exit-code: 1
+  tests: true
+  concurrency: 4
