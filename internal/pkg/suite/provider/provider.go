@@ -79,13 +79,6 @@ func (p *Provider) FilePath(parts ...string) string {
 	return filepath.Join(append([]string{p.Config.Home}, parts...)...)
 }
 
-// AddCleanup регистрирует очистку (LIFO вместе с t.Cleanup провайдера).
-func (p *Provider) AddCleanup(fn func()) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.cleanups = append(p.cleanups, fn)
-}
-
 // Cleaner гасит зарегистрированные cleanups в обратном порядке.
 func (p *Provider) Cleaner() {
 	p.mu.Lock()
