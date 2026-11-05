@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// buildFrame — полный кадр меню: header, строка фильтра (если задан), пункты,
-// footer. Последняя строка без перевода: курсор остаётся на footer, чтобы
-// следующий кадр отсюда вернулся к началу (перерисовка на месте).
+// buildFrame — a full menu frame: header, filter line (if set), items,
+// footer. The last line has no newline: the cursor stays on the footer so
+// the next frame can climb back to the top from here (in-place repaint).
 func buildFrame(header string, visible []Item, query string, cursor int) (string, int) {
 	var sb strings.Builder
 	lines := 0
@@ -35,11 +35,12 @@ func buildFrame(header string, visible []Item, query string, cursor int) (string
 	return sb.String(), lines
 }
 
-// repaintPrefix — подготовка к перерисовке на месте: курсор стоит на последней
-// строке прошлого кадра (всего prevLines строк), поднимаем его к первой и
-// стираем всё ниже (\x1b[J убирает хвосты, когда фильтр сузил список).
-// Терминал, который шлёт стрелки (\x1b[A), умеет и эти последовательности.
-// Ограничение: кадр выше окна терминала размажется — списки профилей короткие.
+// repaintPrefix — preparation for in-place repaint: the cursor sits on the
+// last line of the previous frame (prevLines lines in total); we move it up
+// to the first line and clear everything below (\x1b[J removes tails when
+// the filter narrowed the list). A terminal that sends arrows (\x1b[A) also
+// understands these sequences. Limitation: a frame taller than the terminal
+// window smears — profile lists are short.
 func repaintPrefix(prevLines int) string {
 	if prevLines <= 1 {
 		return ""

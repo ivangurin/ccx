@@ -1,5 +1,5 @@
-// Package app — компоновка демона ccx serve: config → logger → closer →
-// router (restore из state) → http → сигналы → graceful shutdown.
+// Package app — daemon wiring for ccx serve: config → logger → closer →
+// router (restore from state) → http → signals → graceful shutdown.
 package app
 
 import (
@@ -22,27 +22,27 @@ import (
 	"github.com/ivangurin/ccx/internal/services/router"
 )
 
-// Version — версия демона (ldflags).
+// Version — daemon version (ldflags).
 var Version = "dev"
 
-// App — демон.
+// App — the daemon.
 type App struct {
 	cfg *config.Config
 	log *slog.Logger
 }
 
-// New создаёт App.
+// New creates an App.
 func New(cfg *config.Config, log *slog.Logger) *App {
 	return &App{cfg: cfg, log: log}
 }
 
-// Run блокирует до сигнала/отмены ctx (или /admin/stop). Двойной запуск
-// исключён: flock daemon.lock, проигравший тихо выходит (его поднимет
-// выигравший процесс — гонка двух параллельных ccx use).
+// Run blocks until a signal/ctx cancel (or /admin/stop). A double start is
+// prevented: flock daemon.lock, the loser exits quietly (the winning
+// process will serve it — a race of two parallel ccx use).
 func (a *App) Run(ctx context.Context) error {
 	lock, err := flock.TryLock(a.daemonLockPath())
 	if err != nil {
-		a.log.Info("демон уже запущен — выходим", "err", err)
+		a.log.Info("daemon already running — exiting", "err", err)
 
 		return nil
 	}
@@ -76,7 +76,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Start() }()
-	a.log.Info("ccx демон слушает", "addr", a.listenAddr(), "version", Version)
+	a.log.Info("ccx daemon listening", "addr", a.listenAddr(), "version", Version)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -85,7 +85,7 @@ func (a *App) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 	case s := <-sig:
-		a.log.Info("сигнал — останавливаюсь", "signal", s.String())
+		a.log.Info("signal — shutting down", "signal", s.String())
 	case err := <-serveErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			_ = cl.Close(context.Background())
@@ -123,5 +123,5 @@ func (a *App) pidfilePath() string {
 
 func (a *App) writePidfile() {
 	_ = os.MkdirAll(a.cfg.LogDir(), 0o750)
-	_ = os.WriteFile(a.pidfilePath(), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600) //nolint:gosec // фиксированные права
+	_ = os.WriteFile(a.pidfilePath(), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600) //nolint:gosec // fixed permissions
 }

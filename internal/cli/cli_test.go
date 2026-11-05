@@ -32,7 +32,7 @@ func TestExecute_Help(t *testing.T) {
 }
 
 func TestExecute_NoArgs_MenuWithoutProviders(t *testing.T) {
-	suite_provider.NewProvider(t) // песочница без providers.json
+	suite_provider.NewProvider(t) // sandbox without providers.json
 	var out bytes.Buffer
 
 	code := cli.Execute(nil, &out)
@@ -42,7 +42,7 @@ func TestExecute_NoArgs_MenuWithoutProviders(t *testing.T) {
 }
 
 func TestExecute_UnknownCommand(t *testing.T) {
-	// своя песочница: без неё тест читал бы ЖИВОЙ ~/.claude владельца
+	// own sandbox: without it the test would read the owner's LIVE ~/.claude
 	sp := suite_provider.NewProvider(t)
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{Version: 2}))
 	var out bytes.Buffer
@@ -50,8 +50,8 @@ func TestExecute_UnknownCommand(t *testing.T) {
 	code := cli.Execute([]string{"definitely-not-a-command"}, &out)
 
 	require.NotEqual(t, 0, code)
-	// не-команда трактуется как профиль (паритет bash): профиль не найден
-	require.Contains(t, out.String(), "неизвестный профиль")
+	// a non-command is treated as a profile (bash parity): profile not found
+	require.Contains(t, out.String(), "unknown profile")
 }
 
 func TestExecute_HelpFlag(t *testing.T) {

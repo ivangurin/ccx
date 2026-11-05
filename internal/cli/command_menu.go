@@ -11,7 +11,7 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/tui"
 )
 
-// runMenu — ccx без аргументов: профиль → модель → use.
+// runMenu — ccx with no arguments: profile → model → use.
 func runMenu(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -24,14 +24,14 @@ func runMenu(_ []string, stdout io.Writer) int {
 		return 0
 	}
 	if providers.Profiles.Len() == 0 {
-		fmt.Fprintln(stdout, "Профилей нет — ccx init или ccx edit")
+		fmt.Fprintln(stdout, "No profiles — ccx init or ccx edit")
 
 		return 0
 	}
 
 	defProfile := activeProfileIndex(cfg, providers)
 	profileItems := profileMenuItems(providers)
-	pIdx, err := tui.Select("Профиль", profileItems, defProfile, os.Stdin, stdout)
+	pIdx, err := tui.Select("Profile", profileItems, defProfile, os.Stdin, stdout)
 	if err != nil || pIdx < 0 {
 		return 0
 	}
@@ -39,13 +39,13 @@ func runMenu(_ []string, stdout io.Writer) int {
 	profile := providers.Profiles.Get(profileKey)
 
 	if len(profile.Models) == 0 {
-		fmt.Fprintf(stdout, "ccx: в профиле %s нет моделей — ccx edit\n", profileKey)
+		fmt.Fprintf(stdout, "ccx: profile %s has no models — ccx edit\n", profileKey)
 
 		return 1
 	}
 	defModel := defaultModelIndex(profile)
 	modelItems := modelMenuItems(profile)
-	mIdx, err := tui.Select("Модель · "+profileKey, modelItems, defModel, os.Stdin, stdout)
+	mIdx, err := tui.Select("Model · "+profileKey, modelItems, defModel, os.Stdin, stdout)
 	if err != nil || mIdx < 0 {
 		return 0
 	}
@@ -56,7 +56,7 @@ func runMenu(_ []string, stdout io.Writer) int {
 	return runUse([]string{"use", profileKey, model}, stdout)
 }
 
-// profileMenuItems — пункты меню профилей в порядке файла.
+// profileMenuItems — profile menu entries in file order.
 func profileMenuItems(providers *models.Providers) []tui.Item {
 	items := make([]tui.Item, 0, providers.Profiles.Len())
 	for _, key := range providers.Profiles.Keys {
@@ -66,7 +66,7 @@ func profileMenuItems(providers *models.Providers) []tui.Item {
 	return items
 }
 
-// modelMenuItems — пункты меню моделей профиля.
+// modelMenuItems — the profile's model menu entries.
 func modelMenuItems(profile *models.Profile) []tui.Item {
 	items := make([]tui.Item, 0, len(profile.Models))
 	for _, m := range profile.Models {
@@ -80,8 +80,8 @@ func modelMenuItems(profile *models.Profile) []tui.Item {
 	return items
 }
 
-// activeProfileIndex — индекс активного профиля из state (Enter продолжает
-// текущий; нет state/профиля — 0).
+// activeProfileIndex — the active profile's index from state (Enter keeps
+// the current one; no state/profile — 0).
 func activeProfileIndex(cfg *config.Config, providers *models.Providers) int {
 	var state models.State
 	if err := jsonfile.ReadJSON(cfg.StatePath(), &state); err != nil {
@@ -96,7 +96,7 @@ func activeProfileIndex(cfg *config.Config, providers *models.Providers) int {
 	return 0
 }
 
-// defaultModelIndex — индекс default-модели профиля.
+// defaultModelIndex — the index of the profile's default model.
 func defaultModelIndex(profile *models.Profile) int {
 	for i, m := range profile.Models {
 		if m.Default {

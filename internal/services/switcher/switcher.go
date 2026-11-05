@@ -1,7 +1,7 @@
-// Package switcher — переключение профилей: порт apply_profile bash-ccx.
-// Инвариант: сначала готовность демона (Ensure + Use), только потом правка
-// settings.json; провал ⇒ файлы не тронуты, пользователь остаётся на прежнем
-// профиле.
+// Package switcher — profile switching: a port of bash-ccx apply_profile.
+// Invariant: first daemon readiness (Ensure + Use), only then the
+// settings.json edit; on failure ⇒ files are untouched, the user stays on
+// the previous profile.
 package switcher
 
 import (
@@ -15,32 +15,33 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/flock"
 )
 
-// Daemon — контракт демона для переключения (реализация — HTTP-клиент к
-// /admin/*, тесты подменяют моком).
+// Daemon — the daemon contract for switching (the implementation is an
+// HTTP client to /admin/*; tests substitute a mock).
 type Daemon interface {
-	// Ensure — демон жив (поднять при необходимости, дождаться health).
+	// Ensure — the daemon is alive (spawn if needed, wait for health).
 	Ensure(ctx context.Context) error
-	// Use — переключить транслятор демона на профиль (включая Ready-проверку).
+	// Use — switch the daemon's translator to the profile (including the
+	// Ready check).
 	Use(ctx context.Context, profile, model string) error
 }
 
-// Switcher — применение профиля к settings.json под локом.
+// Switcher — applies a profile to settings.json under a lock.
 type Switcher struct {
 	cfg    *config.Config
 	daemon Daemon
 }
 
-// New создаёт Switcher.
+// New creates a Switcher.
 func New(cfg *config.Config, daemon Daemon) *Switcher {
 	return &Switcher{cfg: cfg, daemon: daemon}
 }
 
-// Apply переключает профиль; modelArg — name или id (пусто = default).
-// Возвращает строку итога для пользователя.
+// Apply switches the profile; modelArg is a name or id (empty = default).
+// Returns the summary line for the user.
 func (s *Switcher) Apply(ctx context.Context, profileKey, modelArg string) (string, error) {
 	lock, err := flock.LockWait(lockPath(s.cfg), s.cfg.LockTimeout)
 	if err != nil {
-		return "", fmt.Errorf("ccx: не удалось получить лок переключателя: %w", err)
+		return "", fmt.Errorf("ccx: failed to acquire the switcher lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
@@ -54,28 +55,29 @@ func lockPath(cfg *config.Config) string {
 func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string) (string, error) {
 	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
 	if err != nil {
-		return "", fmt.Errorf("ccx: providers.json недоступен (%v) — сначала ccx init", err)
+		return "", fmt.Errorf("ccx: providers.json unavailable (%v) — run ccx init first", err)
 	}
 	profile := providers.Profiles.Get(profileKey)
 	if profile == nil {
-		return "", fmt.Errorf("ccx: неизвестный профиль: %s (см. ccx list)", profileKey)
+		return "", fmt.Errorf("ccx: unknown profile: %s (see ccx list)", profileKey)
 	}
 
 	model, ok := profile.ResolveModel(modelArg)
 	if !ok {
 		if modelArg == "" {
-			return "", fmt.Errorf("ccx: в профиле %s нет default-модели — укажите модель: ccx %s <model>", profileKey, profileKey)
+			return "", fmt.Errorf("ccx: profile %s has no default model — specify one: ccx %s <model>", profileKey, profileKey)
 		}
 
-		return "", fmt.Errorf("ccx: модель %s не найдена в профиле %s (см. ccx list)", modelArg, profileKey)
+		return "", fmt.Errorf("ccx: model %s not found in profile %s (see ccx list)", modelArg, profileKey)
 	}
 
-	// Инвариант: демон готов и маршрут переключен ДО правки settings.json.
+	// Invariant: the daemon is ready and the route is switched BEFORE the
+	// settings.json edit.
 	if err := s.daemon.Ensure(ctx); err != nil {
-		return "", fmt.Errorf("ccx: отмена: демон не поднялся (%v) — settings.json не тронут, остаётесь на прежнем профиле", err)
+		return "", fmt.Errorf("ccx: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous profile", err)
 	}
 	if err := s.daemon.Use(ctx, profileKey, model); err != nil {
-		return "", fmt.Errorf("ccx: отмена: транслятор %s не готов (%v) — settings.json не тронут, остаётесь на прежнем профиле", profileKey, err)
+		return "", fmt.Errorf("ccx: cancelled: translator %s not ready (%v) — settings.json untouched, you stay on the previous profile", profileKey, err)
 	}
 
 	if err := s.writeSettings(providers, profile, model); err != nil {
@@ -87,12 +89,13 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", providers.Daemon.Port)
 
-	return fmt.Sprintf("Переключено: %s · модель %s · %s", profile.Name, model, baseURL), nil
+	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model, baseURL), nil
 }
 
-// daemonEnv — env-блок для settings.json: URL/токен демона + extras профиля +
-// пиннинг модели на все маппинги (haiku-класс ведёт на ту же модель — фоновые
-// задачи Claude Code остаются на выбранной).
+// daemonEnv — the env block for settings.json: the daemon URL/token + the
+// profile's extras + model pinning across all mappings (the haiku class
+// points to the same model — Claude Code background tasks stay on the
+// selected one).
 func daemonEnv(providers *models.Providers, profile *models.Profile, model string) map[string]string {
 	env := map[string]string{}
 	for k, v := range profile.Env {
@@ -117,18 +120,18 @@ var pinnedKeys = []string{
 	"ANTHROPIC_SMALL_FAST_MODEL",
 }
 
-// writeSettings: бэкап → атомарная правка env (managed keys) → пиннинг модели.
+// writeSettings: backup → atomic env edit (managed keys) → model pinning.
 func (s *Switcher) writeSettings(providers *models.Providers, profile *models.Profile, model string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
-		return fmt.Errorf("ccx: нет %s — он создаётся первым запуском Claude Code", s.cfg.SettingsPath())
+		return fmt.Errorf("ccx: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
 	}
 
 	if err := backupSettings(s.cfg, settings); err != nil {
 		return err
 	}
 
-	// managed: env-ключи всех профилей (прошлые extras уходят) + ANTHROPIC_*
+	// managed: env keys of all profiles (past extras go away) + ANTHROPIC_*
 	managed := map[string]bool{}
 	for _, key := range providers.Profiles.Keys {
 		for k := range providers.Profiles.Get(key).Env {
@@ -138,8 +141,9 @@ func (s *Switcher) writeSettings(providers *models.Providers, profile *models.Pr
 	env := settings.Env()
 	fresh := map[string]string{}
 	for k, v := range env {
-		// все ANTHROPIC_* стёрты (не только managed): прошлые ключи профилей
-		// и ручные значения не должны переживать свитч (паритет bash with_entries)
+		// all ANTHROPIC_* are wiped (not only managed ones): past profile keys
+		// and manual values must not survive a switch (parity with bash
+		// with_entries)
 		if managed[k] || strings.HasPrefix(k, "ANTHROPIC_") {
 			continue
 		}
@@ -153,10 +157,10 @@ func (s *Switcher) writeSettings(providers *models.Providers, profile *models.Pr
 
 	data, err := settings.Marshal()
 	if err != nil {
-		return fmt.Errorf("ccx: не удалось преобразовать settings.json: %w", err)
+		return fmt.Errorf("ccx: failed to render settings.json: %w", err)
 	}
 	if err := writeFileAtomic(s.cfg.SettingsPath(), data); err != nil {
-		return fmt.Errorf("ccx: запись settings.json: %w", err)
+		return fmt.Errorf("ccx: writing settings.json: %w", err)
 	}
 
 	return nil

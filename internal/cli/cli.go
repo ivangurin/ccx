@@ -1,6 +1,6 @@
-// Package cli — stdlib-диспетчер команд ccx. Команды — простые глаголы
-// с 0–2 аргументами; cobra не нужен (why: минимум зависимостей, команды
-// портируются из bash-ccx 1:1 вместе с тестами).
+// Package cli — stdlib command dispatcher for ccx. Commands are simple verbs
+// with 0–2 arguments; cobra is not needed (why: minimal dependencies, commands
+// are ported from bash-ccx 1:1 along with their tests).
 package cli
 
 import (
@@ -9,27 +9,26 @@ import (
 	"strings"
 )
 
-// Version подставляется при сборке (-X ...cli.Version=...), dev — локально.
+// Version is set at build time (-X ...cli.Version=...), dev — locally.
 var Version = "dev"
 
-const usage = `ccx — переключение LLM-провайдеров Claude Code
+const usage = `ccx — switching LLM providers for Claude Code
 
-Использование:
-  ccx                    интерактивное меню: профиль → модель
-  ccx use <профиль> [модель]
-  ccx list               профили и модели
-  ccx status             активный профиль/модель, состояние демона
-  ccx init [--force]     создать providers.json (импорт/миграция)
-  ccx edit               открыть providers.json в $EDITOR
-  ccx serve              демон (foreground, отладка)
-  ccx stop               остановить демон
-  ccx auth copilot       OAuth GitHub device flow
-  ccx auth codex         проверить логин codex CLI
-  ccx version            версия
-  ccx help               эта справка
+Usage:
+  ccx                    interactive menu: profile → model
+  ccx use <profile> [model]
+  ccx list               profiles and models
+  ccx status             active profile/model, daemon state
+  ccx init [--force]     create providers.json (import/migration)
+  ccx edit               open providers.json in $EDITOR
+  ccx serve              daemon (foreground, debugging)
+  ccx stop               the daemon
+  ccx auth copilot       GitHub OAuth device flow
+  ccx auth codex         check codex CLI login
+  ccx version            ccx help               this help
 `
 
-// Execute исполняет команду; возвращает код выхода процесса.
+// Execute runs the command; returns the process exit code.
 func Execute(args []string, stdout io.Writer) int {
 	if len(args) == 0 {
 		return runMenu(args, stdout)
@@ -60,13 +59,13 @@ func Execute(args []string, stdout io.Writer) int {
 	case "auth":
 		return runAuth(args, stdout)
 	default:
-		// не команда — вероятно, профиль: ccx zai / ccx zai glm-5.3 (паритет bash)
+		// not a command — likely a profile: ccx zai / ccx zai glm-5.3 (bash parity)
 		if !strings.HasPrefix(args[0], "-") {
 			useArgs := append([]string{"use", args[0]}, args[1:]...)
 
 			return runUse(useArgs, stdout)
 		}
-		fmt.Fprintf(stdout, "ccx: неизвестная команда %q\n\n%s", args[0], usage)
+		fmt.Fprintf(stdout, "ccx: unknown command %q\n\n%s", args[0], usage)
 
 		return 1
 	}

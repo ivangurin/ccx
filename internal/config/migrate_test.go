@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeV1 кладёт файл providers.json формата bash-ccx (без version → v1).
+// writeV1 writes a bash-ccx-format providers.json file (no version → v1).
 func writeV1(t *testing.T, path, raw string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
@@ -28,7 +28,7 @@ const (
 func TestMigrateV1_CCRToOpenAI(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	path := sp.FilePath("providers.json")
-	// ccr-конфиг недоступен — креды пустые + предупреждение (не зависит от живой машины)
+	// ccr config unavailable — empty credentials + a warning (no dependence on a live machine)
 	config.CCRConfigPath = filepath.Join(t.TempDir(), "absent.json")
 	t.Cleanup(func() { config.CCRConfigPath = "" })
 	writeV1(t, path, `{"profiles": {"x5": {
@@ -46,9 +46,9 @@ func TestMigrateV1_CCRToOpenAI(t *testing.T) {
 	require.Equal(t, models.ProtocolOpenAI, p.Profiles.Get("x5").Protocol)
 	require.NotNil(t, p.Profiles.Get("x5").OpenAI)
 	require.Equal(t, []models.Model{{ID: "m1", Label: "M1", Default: true}}, p.Profiles.Get("x5").Models)
-	// extras из v1-env переехали, ANTHROPIC_* — нет
+	// extras from the v1 env carried over, ANTHROPIC_* did not
 	require.Equal(t, map[string]string{"CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true"}, p.Profiles.Get("x5").Env)
-	// креды из ccr-конфига недоступны (config.json нет) — предупреждение
+	// ccr credentials unavailable (no config.json) — warning
 	require.NotEmpty(t, res.Warnings)
 	require.Empty(t, p.Profiles.Get("x5").OpenAI.APIKey)
 }
@@ -59,7 +59,7 @@ func TestMigrateV1_CCRPicksUpCredentials(t *testing.T) {
 	writeV1(t, path, `{"profiles": {"x5": {"name": "X5", "proxy": {"start": "ccr start"},
 		"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:3456"}, "models": []}}}`)
 
-	// ccr-конфиг в песочнице (реальный формат claude-code-router)
+	// ccr config in a sandbox (real claude-code-router format)
 	ccrPath := filepath.Join(t.TempDir(), "config.json")
 	config.CCRConfigPath = ccrPath
 	t.Cleanup(func() { config.CCRConfigPath = "" })
@@ -149,7 +149,7 @@ func TestInitProviders_ExistingWithoutForceFails(t *testing.T) {
 	writeV1(t, sp.FilePath("providers.json"), `{"profiles": {}}`)
 
 	_, err := config.InitProviders(sp.Config, false)
-	require.NoError(t, err) // первая генерация — миграция v1
+	require.NoError(t, err) // first generation — v1 migration
 
 	_, err = config.InitProviders(sp.Config, false)
 	require.ErrorIs(t, err, config.ErrProvidersExist)
@@ -170,12 +170,12 @@ func TestInitProviders_GeneratesDaemon(t *testing.T) {
 	require.Equal(t, 2, p.Version)
 	require.Equal(t, config.DefaultDaemonPort, p.Daemon.Port)
 	require.NotEmpty(t, p.Daemon.AuthToken)
-	require.Len(t, p.Daemon.AuthToken, 64) // 32 байта hex
+	require.Len(t, p.Daemon.AuthToken, 64) // 32 bytes hex
 }
 
 func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	// settings.json с env-блоком (z.ai) + обрезанный env.json (x5)
+	// settings.json with an env block (z.ai) + truncated env.json (x5)
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
 		"env": {"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-z",
 			"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-haiku",
@@ -196,17 +196,17 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	require.NotNil(t, zai)
 	require.Equal(t, models.ProtocolAnthropic, zai.Protocol)
 	require.Equal(t, "sk-z", zai.Anthropic.AuthToken)
-	// primary+haiku модели из ANTHROPIC_DEFAULT_*
+	// primary+haiku models from ANTHROPIC_DEFAULT_*
 	require.Equal(t, "glm-5.3[1m]", zai.Models[0].ID)
 	require.True(t, zai.Models[0].Default)
 	require.Equal(t, "glm-haiku", zai.Models[1].ID)
-	// юзерские ключи settings.json в профиль НЕ переносятся
+	// user keys from settings.json are NOT carried into the profile
 	require.NotContains(t, zai.Env, "API_TIMEOUT_MS")
 
 	x5 := p.Profiles.Get("x5")
 	require.NotNil(t, x5)
 	require.Equal(t, "https://api-copilot.x5.ru/aigw", x5.Anthropic.BaseURL)
-	// carry-extras: не-ANTHROPIC ключи env.json переезжают
+	// carry-extras: non-ANTHROPIC keys of env.json move over
 	require.Equal(t, map[string]string{"CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true"}, x5.Env)
 
 	for _, key := range []string{profOpenAI, profCopilot, "codex"} {
@@ -220,12 +220,12 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 func TestInitProviders_SettingsUntouched(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	settings := sp.Config.SettingsPath()
-	require.NoError(t, os.WriteFile(settings, []byte(`{"env": {"ANTHROPIC_BASE_URL": "https://x"}}`), 0o600)) //nolint:gosec // песочница теста
+	require.NoError(t, os.WriteFile(settings, []byte(`{"env": {"ANTHROPIC_BASE_URL": "https://x"}}`), 0o600)) //nolint:gosec // test sandbox
 
 	_, err := config.InitProviders(sp.Config, false)
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(settings) //nolint:gosec // песочница теста
+	data, err := os.ReadFile(settings) //nolint:gosec // test sandbox
 	require.NoError(t, err)
 	var raw struct {
 		Env map[string]string `json:"env"`

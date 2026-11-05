@@ -12,39 +12,39 @@ import (
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
 )
 
-// Translator — Anthropic → OpenAI chat/completions.
+// Translator: Anthropic → OpenAI chat/completions.
 type Translator struct {
 	cfg  *models.OpenAIConfig
 	http *http.Client
 }
 
-// New строит транслятор (client без таймаутов: SSE).
+// New builds a translator (client without timeouts: SSE).
 func New(profile *models.Profile) *Translator {
 	return &Translator{cfg: profile.OpenAI, http: &http.Client{}}
 }
 
-// Protocol — openai.
+// Protocol is openai.
 func (t *Translator) Protocol() models.Protocol {
 	return models.ProtocolOpenAI
 }
 
-// Ready — тривиально готов.
+// Ready is trivially ready.
 func (t *Translator) Ready(_ context.Context) error {
 	return nil
 }
 
-// Close — нет ресурсов.
+// Close: no resources.
 func (t *Translator) Close(_ context.Context) error {
 	return nil
 }
 
-// chatURL — base_url + /chat/completions (base — корень v1).
+// chatURL is base_url + /chat/completions (base is the v1 root).
 func (t *Translator) chatURL() string {
 	return t.cfg.BaseURL + "/chat/completions"
 }
 
 func (t *Translator) do(body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, t.chatURL(), bytes.NewReader(body)) //nolint:gosec // base_url из конфига владельца
+	req, err := http.NewRequest(http.MethodPost, t.chatURL(), bytes.NewReader(body)) //nolint:gosec // base_url from the owner config
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (t *Translator) do(body []byte) (*http.Response, error) {
 		req.Header.Set("Authorization", "Bearer "+t.cfg.APIKey)
 	}
 	if t.cfg.UserAgent != "" {
-		req.Header.Set("User-Agent", t.cfg.UserAgent) // UA-фильтры корп. шлюзов
+		req.Header.Set("User-Agent", t.cfg.UserAgent) // UA filters of corporate gateways
 	}
 	for k, v := range t.cfg.Headers {
 		req.Header.Set(k, v)
@@ -62,17 +62,17 @@ func (t *Translator) do(body []byte) (*http.Response, error) {
 	return t.http.Do(req)
 }
 
-// SerializeForTest — экспорт serialize для тестов поля max_tokens_field.
+// SerializeForTest exports serialize for tests of the max_tokens_field field.
 var SerializeForTest = serialize
 
-// serialize — ChatRequest с учётом max_tokens_field.
+// serialize serializes a ChatRequest with max_tokens_field accounted for.
 func serialize(chat *models.ChatRequest, field string) ([]byte, error) {
-	raw, err := json.Marshal(chat) //nolint:errchkjson // RawMessage — валидный JSON по построению
+	raw, err := json.Marshal(chat) //nolint:errchkjson // RawMessage is valid JSON by construction
 	if err != nil {
 		return nil, err
 	}
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil { //nolint:errchkjson // map для переименования поля
+	if err := json.Unmarshal(raw, &m); err != nil { //nolint:errchkjson // map for field renaming
 		return nil, err
 	}
 	if field == "max_completion_tokens" {
@@ -85,11 +85,11 @@ func serialize(chat *models.ChatRequest, field string) ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// ServeMessages — POST /v1/messages (стрим и не-стрим).
+// ServeMessages: POST /v1/messages (stream and non-stream).
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "невалидное тело запроса: "+err.Error())
+		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 
 		return
 	}
@@ -127,7 +127,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string) {
 	var chat models.ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		writeErr(w, http.StatusBadGateway, "невалидный ответ апстрима: "+err.Error())
+		writeErr(w, http.StatusBadGateway, "invalid upstream response: "+err.Error())
 
 		return
 	}
@@ -139,7 +139,7 @@ func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model
 	}
 }
 
-// ServeCountTokens — локальная оценка (у chat/completions нет токен-эндпоинта).
+// ServeCountTokens: local estimation (chat/completions has no token endpoint).
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -152,9 +152,9 @@ func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, `{"input_tokens":%d}`, estimateTokens(&req))
 }
 
-// estimateTokens — грубая оценка ~chars/4 (индикатор контекста Claude Code).
+// estimateTokens is a rough estimate of ~chars/4 (Claude Code's context indicator).
 func estimateTokens(req *models.MessagesRequest) int {
-	raw, _ := json.Marshal(req) //nolint:errchkjson // RawMessage по построению валиден
+	raw, _ := json.Marshal(req) //nolint:errchkjson // RawMessage is valid by construction
 	total := len(raw)
 
 	return total / 4
@@ -163,16 +163,16 @@ func estimateTokens(req *models.MessagesRequest) int {
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // msg экранирован %q
+	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // msg is escaped by %q
 }
 
-// relayUpstreamError копирует ошибку апстрима в Anthropic-формате.
+// relayUpstreamError copies the upstream error in the Anthropic format.
 func relayUpstreamError(w http.ResponseWriter, resp *http.Response) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	if json.Valid(body) {
-		_, _ = w.Write(body) // ошибка уже JSON — отдаём как есть
+		_, _ = w.Write(body) // the error is already JSON — pass it through as is
 
 		return
 	}

@@ -57,14 +57,15 @@ linters:
       threshold: 100
     goconst:
       min-len: 2
-      # 4 (а не 2 из эталона): в этом проекте много JSON-фикстур/шаблонов —
-      # повторы там это данные, а не дублирование кода
+      # 4 (not the reference's 2): this project has many JSON fixtures/templates —
+      # repetition there is data, not code duplication
       min-occurrences: 4
     revive:
       enable-all-rules: true
       rules:
-        # Лимит аргументов функции — паритет с SonarQube go:S107 (8-й параметр
-        # уже замечание); всё сверх этого — структура-параметр. Дефолт revive — 8.
+        # Function argument limit — parity with SonarQube go:S107 (the 8th
+        # parameter is already a remark); anything beyond that is a parameter
+        # struct. The revive default is 8.
         - name: argument-limit
           arguments: [7]
         - name: line-length-limit

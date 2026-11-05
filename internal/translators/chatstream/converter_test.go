@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// feed прогоняет чанки через конвертер, собирая Anthropic-события.
+// feed runs chunks through the converter, collecting Anthropic events.
 func feed(t *testing.T, chunks []*models.ChatChunk) []models.AnthropicEvent {
 	t.Helper()
 	conv := chatstream.NewStreamConverter("glm")
@@ -47,8 +47,8 @@ func names(events []models.AnthropicEvent) []string {
 
 func TestStream_TextFlow(t *testing.T) {
 	events := feed(t, []*models.ChatChunk{
-		chunk(models.ChatChunkDelta{Role: "assistant", Content: "При"}, nil),
-		chunk(models.ChatChunkDelta{Content: "вет"}, nil),
+		chunk(models.ChatChunkDelta{Role: "assistant", Content: "Hel"}, nil),
+		chunk(models.ChatChunkDelta{Content: "lo"}, nil),
 		chunk(models.ChatChunkDelta{}, strp("stop")),
 	})
 
@@ -57,10 +57,10 @@ func TestStream_TextFlow(t *testing.T) {
 		"content_block_stop", "message_delta", "message_stop",
 	}, names(events))
 
-	// message_start несёт model
+	// message_start carries the model
 	require.Equal(t, "glm", events[0].Message.Model)
-	// первая дельта — text_delta
-	require.Equal(t, "При", events[2].Delta.Text)
+	// the first delta is a text_delta
+	require.Equal(t, "Hel", events[2].Delta.Text)
 }
 
 func TestStream_FragmentedToolCalls(t *testing.T) {
@@ -69,12 +69,12 @@ func TestStream_FragmentedToolCalls(t *testing.T) {
 	_ = first
 	c2 := chunk(models.ChatChunkDelta{ToolCalls: []models.ChatToolCall{{Index: 0, Function: models.ChatFunction{Arguments: `{"cmd":`}}}}, nil)
 	c3 := chunk(models.ChatChunkDelta{ToolCalls: []models.ChatToolCall{{Index: 0, Function: models.ChatFunction{Arguments: `"ls"}`}}}}, nil)
-	events := feed(t, []*models.ChatChunk{c1, c2, chunk(models.ChatChunkDelta{Content: "готовлю вызов"}, nil), c3, chunk(models.ChatChunkDelta{}, strp("tool_calls"))})
+	events := feed(t, []*models.ChatChunk{c1, c2, chunk(models.ChatChunkDelta{Content: "preparing the call"}, nil), c3, chunk(models.ChatChunkDelta{}, strp("tool_calls"))})
 
-	// структура: message_start, text-блок, tool_use-блок, финал
+	// structure: message_start, text block, tool_use block, finale
 	got := names(events)
 	require.Contains(t, got, "content_block_start")
-	// tool_use блок: content_block_start c tool_use, input_json_delta-дельты
+	// tool_use block: content_block_start with tool_use, input_json_delta deltas
 	var toolStart, jsonDeltas int
 	for _, e := range events {
 		if e.Type == "content_block_start" && e.ContentBlock != nil && e.ContentBlock.Type == "tool_use" {
@@ -99,8 +99,8 @@ func TestStream_FragmentedToolCalls(t *testing.T) {
 
 func TestStream_ReasoningToThinking(t *testing.T) {
 	events := feed(t, []*models.ChatChunk{
-		chunk(models.ChatChunkDelta{Reasoning: "думаю"}, nil),
-		chunk(models.ChatChunkDelta{Content: "ответ"}, nil),
+		chunk(models.ChatChunkDelta{Reasoning: "pondering"}, nil),
+		chunk(models.ChatChunkDelta{Content: "the answer"}, nil),
 		chunk(models.ChatChunkDelta{}, strp("stop")),
 	})
 
@@ -113,8 +113,8 @@ func TestStream_ReasoningToThinking(t *testing.T) {
 			thinkingDelta = true
 		}
 	}
-	require.True(t, thinkingStart, "thinking-блок не открыт")
-	require.True(t, thinkingDelta, "thinking_delta не пришла")
+	require.True(t, thinkingStart, "thinking block not opened")
+	require.True(t, thinkingDelta, "thinking_delta not received")
 }
 
 func TestStream_UsageFromFinalChunk(t *testing.T) {

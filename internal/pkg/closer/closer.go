@@ -1,7 +1,7 @@
-// Package closer — LIFO-гаситель ресурсов на shutdown: последние добавленные
-// гасятся первыми (http раньше бизнес-горутин), ошибки собираются в одну,
-// повторный Close — no-op, Add после Close выполняет fn немедленно (ресурс
-// не утекает, если появился между shutdown-проходами).
+// Package closer — LIFO resource quencher on shutdown: last added is closed
+// first (http before business goroutines), errors are joined into one,
+// a repeated Close is a no-op, Add after Close runs fn immediately (a resource
+// does not leak if it appeared between shutdown passes).
 package closer
 
 import (
@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-// Closer собирает функции закрытия и гасит их в обратном порядке.
+// Closer collects close functions and runs them in reverse order.
 type Closer struct {
 	mu       sync.Mutex
 	fns      []closeFn
@@ -24,17 +24,17 @@ type closeFn struct {
 	fn   func() error
 }
 
-// New создаёт пустой Closer.
+// New creates an empty Closer.
 func New() *Closer {
 	return &Closer{}
 }
 
-// Add регистрирует функцию закрытия с именем (для диагностики ошибок).
+// Add registers a close function with a name (for error diagnostics).
 func (c *Closer) Add(name string, fn func() error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
-		// shutdown уже прошёл — гасим немедленно, иначе ресурс утечёт до выхода
+		// shutdown has already passed — quench immediately, or the resource leaks until exit
 		if err := fn(); err != nil {
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("closer: %s (late): %w", name, err))
 		}
@@ -44,9 +44,10 @@ func (c *Closer) Add(name string, fn func() error) {
 	c.fns = append(c.fns, closeFn{name: name, fn: fn})
 }
 
-// Close гасит все функции в LIFO-порядке. Ожидание каждой fn ограничено ctx:
-// блокирующаяся fn остаётся работать в фоне (прервать её извне нельзя), но
-// Close не зависает — это граница graceful shutdown.
+// Close runs all functions in LIFO order. Waiting for each fn is bounded by
+// ctx: a blocked fn keeps running in the background (it cannot be interrupted
+// from outside), but Close does not hang — this is the graceful shutdown
+// boundary.
 func (c *Closer) Close(ctx context.Context) error {
 	c.mu.Lock()
 	if c.closed {
@@ -77,7 +78,7 @@ func (c *Closer) Close(ctx context.Context) error {
 			}
 		case <-ctx.Done():
 			errs = append(errs, fmt.Errorf("closer: %s: %w", fns[i].name, ctx.Err()))
-			// оставшиеся не гасим: shutdown уже сорван по таймауту
+			// the rest are not quenched: shutdown is already broken by timeout
 			c.mu.Lock()
 			c.closeErr = errors.Join(errs...)
 			c.mu.Unlock()

@@ -20,14 +20,14 @@ func req(t *testing.T, raw string) *models.MessagesRequest {
 func TestBuild_SystemString(t *testing.T) {
 	out := openai.BuildChatRequest(req(t, `{
 		"model": "gpt", "max_tokens": 100,
-		"system": "ты ассистент",
-		"messages": [{"role": "user", "content": "привет"}]
+		"system": "you are an assistant",
+		"messages": [{"role": "user", "content": "hi"}]
 	}`), "max_tokens")
 
 	require.Equal(t, "gpt", out.Model)
 	require.Equal(t, []models.ChatMessage{
-		{Role: "system", Content: "ты ассистент"},
-		{Role: "user", Content: "привет"},
+		{Role: "system", Content: "you are an assistant"},
+		{Role: "user", Content: "hi"},
 	}, out.Messages)
 	require.Equal(t, 100, out.MaxTokens)
 }
@@ -35,11 +35,11 @@ func TestBuild_SystemString(t *testing.T) {
 func TestBuild_SystemBlocks(t *testing.T) {
 	out := openai.BuildChatRequest(req(t, `{
 		"model": "gpt", "max_tokens": 1,
-		"system": [{"type": "text", "text": "часть 1"}, {"type": "text", "text": "часть 2"}],
+		"system": [{"type": "text", "text": "part 1"}, {"type": "text", "text": "part 2"}],
 		"messages": [{"role": "user", "content": "hi"}]
 	}`), "max_tokens")
 
-	require.Equal(t, "часть 1\nчасть 2", out.Messages[0].Content)
+	require.Equal(t, "part 1\npart 2", out.Messages[0].Content)
 	require.Equal(t, "system", out.Messages[0].Role)
 }
 
@@ -47,7 +47,7 @@ func TestBuild_ToolUseAndResult(t *testing.T) {
 	out := openai.BuildChatRequest(req(t, `{
 		"model": "gpt", "max_tokens": 1,
 		"messages": [
-			{"role": "user", "content": "запусти инструмент"},
+			{"role": "user", "content": "run the tool"},
 			{"role": "assistant", "content": [
 				{"type": "tool_use", "id": "tu1", "name": "bash", "input": {"cmd": "ls"}}
 			]},
@@ -81,25 +81,25 @@ func TestBuild_ToolResultBlockContent(t *testing.T) {
 		]
 	}`), "max_tokens")
 
-	// единственное сообщение с tool_result → единственное tool-сообщение
+	// a single message with tool_result → a single tool message
 	require.Len(t, out.Messages, 1)
 	require.Equal(t, "res", out.Messages[0].Content)
 	require.Equal(t, "t1", out.Messages[0].ToolCallID)
 }
 
 func TestBuild_InlineSystemMessages(t *testing.T) {
-	// Claude Code вставляет system-хуки ПОСЛЕ user — порядок сохраняется
+	// Claude Code inserts system hooks AFTER user — order is preserved
 	out := openai.BuildChatRequest(req(t, `{
 		"model": "gpt", "max_tokens": 1,
 		"messages": [
-			{"role": "user", "content": "вопрос"},
-			{"role": "system", "content": "хук-контекст"}
+			{"role": "user", "content": "question"},
+			{"role": "system", "content": "hook-context"}
 		]
 	}`), "max_tokens")
 
 	require.Equal(t, []models.ChatMessage{
-		{Role: "user", Content: "вопрос"},
-		{Role: "system", Content: "хук-контекст"},
+		{Role: "user", Content: "question"},
+		{Role: "system", Content: "hook-context"},
 	}, out.Messages)
 }
 
@@ -147,11 +147,11 @@ func TestBuild_AssistantThinkingDropped(t *testing.T) {
 		"model": "m", "max_tokens": 1,
 		"messages": [
 			{"role": "assistant", "content": [
-				{"type": "thinking", "thinking": "размышления"},
-				{"type": "text", "text": "ответ"}
+				{"type": "thinking", "thinking": "deliberations"},
+				{"type": "text", "text": "the answer"}
 			]}
 		]
 	}`), "max_tokens")
-	require.Equal(t, "ответ", out.Messages[0].Content)
+	require.Equal(t, "the answer", out.Messages[0].Content)
 	require.Empty(t, out.Messages[0].ToolCalls)
 }

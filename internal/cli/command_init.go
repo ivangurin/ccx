@@ -8,7 +8,7 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 )
 
-// runInit — ccx init [--force]: создать/мигрировать providers.json.
+// runInit — ccx init [--force]: create/migrate providers.json.
 func runInit(args []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -21,9 +21,9 @@ func runInit(args []string, stdout io.Writer) int {
 	res, err := config.InitProviders(cfg, force)
 	if err != nil {
 		if errors.Is(err, config.ErrProvidersExist) {
-			// паритет bash-ccx: не ошибка, а подсказка
-			fmt.Fprintf(stdout, "providers.json уже существует: %s\n", cfg.ProvidersPath())
-			fmt.Fprintln(stdout, "Используйте 'ccx init --force' для перегенерации (текущий файл будет заменён).")
+			// bash-ccx parity: not an error, a hint
+			fmt.Fprintf(stdout, "providers.json already exists: %s\n", cfg.ProvidersPath())
+			fmt.Fprintln(stdout, "Use 'ccx init --force' to regenerate (the current file will be replaced).")
 
 			return 0
 		}
@@ -32,11 +32,11 @@ func runInit(args []string, stdout io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Создан %s (права 600).\n", res.Path)
+	fmt.Fprintf(stdout, "Created %s (mode 600).\n", res.Path)
 	if res.Migrated {
-		fmt.Fprintln(stdout, "Выполнена миграция v1 → v2 (proxy-команды → protocol).")
+		fmt.Fprintln(stdout, "Migrated v1 → v2 (proxy commands → protocol).")
 	}
-	fmt.Fprintln(stdout, "Профили:")
+	fmt.Fprintln(stdout, "Profiles:")
 	for _, key := range res.Profiles {
 		fmt.Fprintf(stdout, "  %s\n", key)
 	}
@@ -44,7 +44,7 @@ func runInit(args []string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "  ⚠ %s\n", w)
 	}
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Проверьте токены и списки моделей: ccx edit")
+	fmt.Fprintln(stdout, "Check tokens and model lists: ccx edit")
 
 	return 0
 }

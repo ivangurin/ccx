@@ -17,14 +17,14 @@ type staticToken struct{ token string }
 
 func (s staticToken) Token(_ context.Context) (string, error) { return s.token, nil }
 
-// capturingUpstream — фиксирует заголовки, отдаёт canned-ответ.
+// capturingUpstream captures headers, serves a canned response.
 func capturingUpstream(t *testing.T, captured *http.Header, body string, isSSE bool) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*captured = r.Header.Clone()
 		if isSSE {
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ок\"}}]}\n\n")
+			_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}\n\n")
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 
 			return
@@ -76,15 +76,15 @@ func TestCopilot_PrefillRewritten(t *testing.T) {
 	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"claude-sonnet-5.5","max_tokens":10,
-		"messages":[{"role":"user","content":"напиши"},{"role":"assistant","content":[{"type":"text","text":"полу"}]}]
+		"messages":[{"role":"user","content":"write"},{"role":"assistant","content":[{"type":"text","text":"hal"}]}]
 	}`))
 	rec := httptest.NewRecorder()
 
 	tr.ServeMessages(rec, req)
 
-	// assistant-префилл не ушёл вверх: финал — user с инструкцией
+	// the assistant prefill did not go upstream: the finale is a user message with an instruction
 	require.Contains(t, body, "[continuation]")
-	require.Contains(t, body, "полу")
+	require.Contains(t, body, "hal")
 	require.NotContains(t, body, `"role":"assistant"`)
 }
 
@@ -101,7 +101,7 @@ func TestCopilot_PrefillDisabled(t *testing.T) {
 	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(false)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"m","max_tokens":1,
-		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"пре"}]
+		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]
 	}`))
 	rec := httptest.NewRecorder()
 
@@ -123,7 +123,7 @@ func TestCopilot_Stream(t *testing.T) {
 
 	out := rec.Body.String()
 	require.Contains(t, out, "event: message_start")
-	require.Contains(t, out, "ок")
+	require.Contains(t, out, "ok")
 	require.Contains(t, out, "event: message_stop")
 }
 
@@ -132,8 +132,8 @@ func TestCopilot_Ready_UsesTokenSource(t *testing.T) {
 	require.NoError(t, tr.Ready(context.Background()))
 }
 
-// I7: профиль без prefill_fix (рукописный) — фикс всё равно применяется
-// (дефолт true по плану; шлюз Copilot отвергает prefill без него).
+// I7: a profile without prefill_fix (handwritten) — the fix is still applied
+// (default true per the plan; the Copilot gateway rejects prefill without it).
 func TestI7_PrefillDefaultTrue(t *testing.T) {
 	var body string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,16 +144,16 @@ func TestI7_PrefillDefaultTrue(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{}, staticToken{token: "t"}, up.URL) // PrefillFix не задан
+	tr := copilot.NewForTest(&models.CopilotConfig{}, staticToken{token: "t"}, up.URL) // PrefillFix not set
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"m","max_tokens":1,
-		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"пре"}]
+		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]
 	}`))
 	rec := httptest.NewRecorder()
 
 	tr.ServeMessages(rec, req)
 
-	require.Contains(t, body, "[continuation]", "prefill-фикс применён по умолчанию")
+	require.Contains(t, body, "[continuation]", "the prefill fix is applied by default")
 }
 
 func ptrBool(b bool) *bool { return &b }

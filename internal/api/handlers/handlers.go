@@ -1,6 +1,6 @@
-// Package handlers — HTTP-слой демона: Anthropic-совместимый /v1/* для
-// Claude Code и /admin/* для CLI. Один порт, статический токен из
-// providers.json (daemon.auth_token) закрывает и то, и другое.
+// Package handlers — the daemon's HTTP layer: Anthropic-compatible /v1/* for
+// Claude Code and /admin/* for the CLI. One port; a static token from
+// providers.json (daemon.auth_token) guards both.
 package handlers
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// Routerer — минимум, нужный HTTP-слою (реализация — services/router.Service).
+// Routerer — the minimum the HTTP layer needs (implemented by services/router.Service).
 type Routerer interface {
 	Use(ctx context.Context, profile, model string) error
 	Active() (string, string, bool)
@@ -25,15 +25,15 @@ type Routerer interface {
 	AuthToken() string
 }
 
-// Deps — зависимости HTTP-слоя.
+// Deps — HTTP layer dependencies.
 type Deps struct {
 	Router  Routerer
 	Version string
-	Stop    func() // graceful shutdown (вызывается из /admin/stop)
+	Stop    func() // graceful shutdown (called from /admin/stop)
 }
 
-// New собирает chi-роутер с middleware и маршрутами.
-// statusField — общее имя поля статуса в JSON-ответах.
+// New assembles a chi router with middleware and routes.
+// statusField — the shared status field name in JSON responses.
 const statusField = "status"
 
 func New(d Deps) http.Handler {
@@ -108,7 +108,7 @@ func handleAdminUse(rt Routerer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req useRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Profile == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ожидается {profile, model}"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "expected {profile, model}"})
 
 			return
 		}

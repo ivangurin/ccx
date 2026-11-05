@@ -9,8 +9,8 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// runStatus — ccx status: активный профиль/модель из ccx-state.json
-// (демон и drift-проверка добавятся в M2, когда появится сам демон).
+// runStatus — ccx status: active profile/model from ccx-state.json
+// (daemon and drift check will be added in M2, once the daemon itself exists).
 func runStatus(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -25,18 +25,18 @@ func runStatus(_ []string, stdout io.Writer) int {
 
 	var state models.State
 	if err := jsonfile.ReadJSON(cfg.StatePath(), &state); err != nil || state.Profile == "" {
-		fmt.Fprintln(stdout, "Профиль не активен — выберите: ccx <профиль> [модель]")
+		fmt.Fprintln(stdout, "No active profile — choose one: ccx <profile> [model]")
 
 		return 0
 	}
 
 	if prof := providers.Profiles.Get(state.Profile); prof == nil {
-		fmt.Fprintf(stdout, "Активный профиль: %s (нет в providers.json — удалён?)\n", state.Profile)
+		fmt.Fprintf(stdout, "Active profile: %s (missing from providers.json — deleted?)\n", state.Profile)
 	} else {
-		fmt.Fprintf(stdout, "Активный профиль: %s (%s) · %s\n", state.Profile, prof.Name, prof.Protocol)
+		fmt.Fprintf(stdout, "Active profile: %s (%s) · %s\n", state.Profile, prof.Name, prof.Protocol)
 	}
-	fmt.Fprintf(stdout, "Модель:           %s\n", state.Model)
-	fmt.Fprintf(stdout, "Обновлён:         %s\n", state.Updated)
+	fmt.Fprintf(stdout, "Model:          %s\n", state.Model)
+	fmt.Fprintf(stdout, "Updated:        %s\n", state.Updated)
 
 	return 0
 }

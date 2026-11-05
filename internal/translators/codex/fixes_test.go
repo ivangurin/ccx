@@ -31,7 +31,7 @@ func upstream(t *testing.T, events string) *httptest.Server {
 	return srv
 }
 
-// I3: пустой стрим Responses → 502 JSON (не 200-пустой-SSE).
+// I3: an empty Responses stream → 502 JSON (not a 200 empty SSE).
 func TestI3_EmptyResponsesStream_502(t *testing.T) {
 	up := upstream(t, "")
 	tr := codex.NewForTest(&models.CodexConfig{}, staticAuth{}, up.URL)
@@ -44,13 +44,13 @@ func TestI3_EmptyResponsesStream_502(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "error")
 }
 
-// I4: текст после function_call-айтема попадает в СВОЙ text-блок, не в tool_use.
+// I4: text after a function_call item goes into its OWN text block, not into tool_use.
 func TestI4_TextAfterFunctionCall_SeparateBlock(t *testing.T) {
 	up := upstream(t,
 		"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"name\":\"bash\",\"call_id\":\"c1\",\"id\":\"it1\"}}\n\n"+
 			"event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{}\",\"item_id\":\"it1\"}\n\n"+
 			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"id\":\"it2\"}}\n\n"+
-			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"готово\",\"item_id\":\"it2\"}\n\n"+
+			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"done\",\"item_id\":\"it2\"}\n\n"+
 			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
 	tr := codex.NewForTest(&models.CodexConfig{}, staticAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":9,"stream":true,"messages":[]}`))
@@ -59,21 +59,21 @@ func TestI4_TextAfterFunctionCall_SeparateBlock(t *testing.T) {
 	tr.ServeMessages(rec, req)
 
 	out := rec.Body.String()
-	// два content_block_start: tool_use и text — в правильном порядке
+	// two content_block_start events: tool_use and text — in the right order
 	toolPos := strings.Index(out, `"tool_use"`)
 	textPos := strings.Index(out, `"type":"text"`)
-	require.NotEqual(t, -1, toolPos, "tool_use-блок открыт")
-	require.NotEqual(t, -1, textPos, "text-блок открыт")
-	require.Less(t, toolPos, textPos, "text-блок идёт после tool_use")
-	// text-дельта не попала в блок tool_use: после открытия text-блока
-	require.Regexp(t, `(?s)content_block_start.*"type":"text".*text_delta.*готово`, out)
+	require.NotEqual(t, -1, toolPos, "tool_use block opened")
+	require.NotEqual(t, -1, textPos, "text block opened")
+	require.Less(t, toolPos, textPos, "the text block comes after tool_use")
+	// the text delta did not land in the tool_use block: after the text block opens
+	require.Regexp(t, `(?s)content_block_start.*"type":"text".*text_delta.*done`, out)
 }
 
-// I5: text-блоки закрываются content_block_stop.
+// I5: text blocks are closed with content_block_stop.
 func TestI5_TextBlocksClosed(t *testing.T) {
 	up := upstream(t,
 		"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"id\":\"it1\"}}\n\n"+
-			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"привет\",\"item_id\":\"it1\"}\n\n"+
+			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\",\"item_id\":\"it1\"}\n\n"+
 			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{}}}\n\n")
 	tr := codex.NewForTest(&models.CodexConfig{}, staticAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":9,"stream":true,"messages":[]}`))
@@ -85,12 +85,12 @@ func TestI5_TextBlocksClosed(t *testing.T) {
 	starts := strings.Count(out, "event: content_block_start")
 	stops := strings.Count(out, "event: content_block_stop")
 	require.Equal(t, 1, starts)
-	require.Equal(t, stops, starts, "каждый открытый блок закрыт")
+	require.Equal(t, stops, starts, "every opened block is closed")
 }
 
-// I6: рукописный профиль anthropic/openai без protocol-блока — ошибка, не паника.
+// I6: a handwritten anthropic/openai profile without a protocol block — an error, not a panic.
 func TestI6_NilConfigBlockNoPanic(t *testing.T) {
-	// проверяется на уровне router factory: см. router-тест; здесь — сами трансляторы
+	// checked at the router factory level: see the router test; here — the translators themselves
 	require.NotPanics(t, func() {
 		_ = codex.NewForTest(&models.CodexConfig{}, staticAuth{}, "http://127.0.0.1:1")
 	})

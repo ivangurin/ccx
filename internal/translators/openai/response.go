@@ -4,7 +4,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// stopReasonMap — finish_reason → stop_reason.
+// stopReasonMap maps finish_reason → stop_reason.
 var stopReasonMap = map[string]string{
 	"stop":           "end_turn",
 	"tool_calls":     blockToolUse,
@@ -12,7 +12,7 @@ var stopReasonMap = map[string]string{
 	"content_filter": "refusal",
 }
 
-// BuildMessagesResponse конвертирует нестримовый ответ в MessagesResponse.
+// BuildMessagesResponse converts a non-stream response into a MessagesResponse.
 func BuildMessagesResponse(resp *models.ChatResponse, model string) *models.MessagesResponse {
 	out := &models.MessagesResponse{
 		ID:    resp.ID,

@@ -1,37 +1,38 @@
 # ccx
 
-Единый Go-бинарник для переключения LLM-провайдеров Claude Code: CLI
-переключает профили, встроенный демон транслирует Anthropic Messages API в
-протокол активного провайдера. Переписывание bash-инструмента
-[`ccx`](../ccx) (эталон поведения) без внешних прокси: ccr, copilot-api и
-copilot-bridge заменены встроенными трансляторами, claude-codex — встроенным
-codex-клиентом.
+A single Go binary for switching Claude Code LLM providers: the CLI switches
+profiles, the embedded daemon translates the Anthropic Messages API into the
+active provider's protocol. A rewrite of the bash tool
+[`ccx`](../ccx) (the behavior reference) with no external proxies: ccr,
+copilot-api and copilot-bridge are replaced by built-in translators,
+claude-codex by a built-in codex client.
 
-## Протоколы (поле `protocol` профиля)
+## Protocols (profile `protocol` field)
 
-| protocol | Апстрим | Заменяет |
+| protocol | Upstream | Replaces |
 |---|---|---|
-| `anthropic` | прямой Anthropic-совместимый API (z.ai, …) | — (passthrough) |
-| `openai` | OpenAI chat/completions (api.openai.com, корп. шлюзы) | claude-code-router |
-| `copilot` | GitHub Copilot (OAuth device flow + prefill-фикс) | copilot-api + copilot-bridge |
-| `codex` | ChatGPT Responses API (подписка) | claude-codex |
+| `anthropic` | direct Anthropic-compatible API (z.ai, …) | — (passthrough) |
+| `openai` | OpenAI chat/completions (api.openai.com, corporate gateways) | claude-code-router |
+| `copilot` | GitHub Copilot (OAuth device flow + prefill fix) | copilot-api + copilot-bridge |
+| `codex` | ChatGPT Responses API (subscription) | claude-codex |
 
-## Быстрый старт
+## Quick start
 
 ```bash
-make install                      # сборка + /opt/homebrew/bin/ccx (PREFIX=…)
-ccx init                          # миграция v1-конфига или импорт + шаблоны
-ccx list                          # профили и модели
-ccx auth copilot                  # OAuth GitHub (для copilot-профиля)
-ccx use zai                       # переключить (демон поднимется сам)
-ccx status                        # профиль/модель/демон
+make install                      # build + /opt/homebrew/bin/ccx (PREFIX=…)
+ccx init                          # v1 config migration or import + templates
+ccx list                          # profiles and models
+ccx auth copilot                  # GitHub OAuth (for the copilot profile)
+ccx use zai                       # switch (the daemon starts automatically)
+ccx status                        # profile/model/daemon
 ```
 
-`~/.claude/settings.json` после первого `ccx use` больше не меняет
-`ANTHROPIC_BASE_URL` — он всегда указывает на локальный демон
-(`http://127.0.0.1:4567`), переключение профиля меняет маршрут демона на лету.
+After the first `ccx use`, `~/.claude/settings.json` no longer changes
+`ANTHROPIC_BASE_URL` — it always points at the local daemon
+(`http://127.0.0.1:4567`); switching profiles re-routes the daemon on the
+fly.
 
-## Конфиг (`~/.claude/providers.json`, v2, права 600)
+## Config (`~/.claude/providers.json`, v2, 0600 permissions)
 
 ```jsonc
 {
@@ -41,33 +42,34 @@ ccx status                        # профиль/модель/демон
     "zai": {
       "name": "z.ai (GLM)",
       "protocol": "anthropic",
-      "anthropic": {"base_url": "https://api.z.ai/api/anthropic", "auth_token": "<ключ>"},
+      "anthropic": {"base_url": "https://api.z.ai/api/anthropic", "auth_token": "<key>"},
       "models": [{"id": "glm-5.3[1m]", "label": "GLM 5.3", "default": true}]
     },
     "x5": {
-      "name": "Рабочий шлюз",
+      "name": "Work gateway",
       "protocol": "openai",
-      "openai": {"base_url": "https://…/v1", "api_key": "<токен>", "user_agent": "claude-cli/2.0.1"},
+      "openai": {"base_url": "https://…/v1", "api_key": "<token>", "user_agent": "claude-cli/2.0.1"},
       "models": […]
     }
   }
 }
 ```
 
-## Команды
+## Commands
 
-`ccx` (меню) · `ccx use <профиль> [модель]` (алиас `ccx <профиль>`) · `list` ·
-`status` · `init [--force]` · `edit` · `serve` (демон foreground) · `stop` ·
-`auth copilot` · `auth codex` · `version` · `help`
+`ccx` (menu) · `ccx use <profile> [model]` (alias `ccx <profile>`) · `list` ·
+`status` · `init [--force]` · `edit` · `serve` (daemon in foreground) ·
+`stop` · `auth copilot` · `auth codex` · `version` · `help`
 
-## Разработка
+## Development
 
 ```bash
-make test        # тесты с покрытием (порог ≥80%)
-make lint        # golangci-lint по изменённым
-make lint-full   # по всем файлам
-make generate    # моки + форматирование
+make test        # tests with coverage (threshold ≥80%)
+make lint        # golangci-lint on changed files
+make lint-full   # on all files
+make generate    # mocks + formatting
 ```
 
-Структура и конвенции — CLAUDE.md (по образцу idp-port-forward: один файл на
-метод/ручку, foo_test.go, suite provider в internal/pkg/suite/provider).
+Structure and conventions — see CLAUDE.md (modeled after idp-port-forward:
+one file per method/handler, foo_test.go, suite provider in
+internal/pkg/suite/provider).

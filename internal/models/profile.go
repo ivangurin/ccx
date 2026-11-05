@@ -1,24 +1,25 @@
-// Package models — доменные DTO ccx. Профиль v2: креды апстрима живут в
-// protocol-блоке (выбирается по Protocol), env — только пользовательские
-// extras для settings.json (не ANTHROPIC_*).
+// Package models holds ccx domain DTOs. Profile v2: upstream credentials live
+// in the protocol block (selected by Protocol), env holds only user extras
+// for settings.json (not ANTHROPIC_*).
 package models
 
-// Protocol — протокол апстрима провайдера; определяет транслятор демона.
+// Protocol is the provider's upstream protocol; it determines the daemon's translator.
 type Protocol string
 
 const (
-	// ProtocolAnthropic — прямой Anthropic-совместимый API (passthrough).
+	// ProtocolAnthropic is a direct Anthropic-compatible API (passthrough).
 	ProtocolAnthropic Protocol = "anthropic"
-	// ProtocolOpenAI — OpenAI-совместимый chat/completions.
+	// ProtocolOpenAI is an OpenAI-compatible chat/completions API.
 	ProtocolOpenAI Protocol = "openai"
-	// ProtocolCopilot — GitHub Copilot (OAuth device flow).
+	// ProtocolCopilot is GitHub Copilot (OAuth device flow).
 	ProtocolCopilot Protocol = "copilot"
-	// ProtocolCodex — ChatGPT Codex Responses API (подписка).
+	// ProtocolCodex is the ChatGPT Codex Responses API (subscription).
 	ProtocolCodex Protocol = "codex"
 )
 
-// Model — модель провайдера: id — реальный идентификатор (пишется в
-// settings.json), name — алиас без спец-суффиксов для CLI, label — для меню.
+// Model is a provider model: id is the real identifier (written to
+// settings.json), name is an alias without special suffixes for the CLI,
+// label is for the menu.
 type Model struct {
 	ID      string `json:"id"`
 	Name    string `json:"name,omitempty"`
@@ -26,48 +27,49 @@ type Model struct {
 	Default bool   `json:"default,omitempty"`
 }
 
-// AnthropicConfig — прямой Anthropic-совместимый апстрим.
+// AnthropicConfig is a direct Anthropic-compatible upstream.
 type AnthropicConfig struct {
 	BaseURL   string            `json:"base_url"`
 	AuthToken string            `json:"auth_token,omitempty"` // Authorization: Bearer
-	APIKey    string            `json:"api_key,omitempty"`    // x-api-key (нативные Anthropic)
+	APIKey    string            `json:"api_key,omitempty"`    // x-api-key (native Anthropic)
 	Headers   map[string]string `json:"extra_headers,omitempty"`
 }
 
-// OpenAIConfig — OpenAI-совместимый апстрим (api.openai.com, корп. шлюзы).
+// OpenAIConfig is an OpenAI-compatible upstream (api.openai.com, corporate gateways).
 type OpenAIConfig struct {
 	BaseURL      string            `json:"base_url"`
 	APIKey       string            `json:"api_key,omitempty"`
-	UserAgent    string            `json:"user_agent,omitempty"` // UA-фильтры шлюзов (x5)
+	UserAgent    string            `json:"user_agent,omitempty"` // gateway UA filters (x5)
 	MaxTokensFld string            `json:"max_tokens_field,omitempty"`
 	PrefillFix   bool              `json:"prefill_fix,omitempty"`
 	Reasoning    bool              `json:"reasoning_to_thinking,omitempty"`
 	Headers      map[string]string `json:"extra_headers,omitempty"`
 }
 
-// CopilotConfig — GitHub Copilot: маскировка под VSCode-клиент обязательна
-// (шлюз фильтрует), prefill-фикс включён по умолчанию (шлюз отвергает
-// финальное assistant-сообщение — прецедент copilot-bridge).
+// CopilotConfig is GitHub Copilot: masquerading as a VSCode client is
+// mandatory (the gateway filters others out), the prefill fix is on by
+// default (the gateway rejects a final assistant message — the
+// copilot-bridge precedent).
 type CopilotConfig struct {
 	DeviceClientID string `json:"device_client_id,omitempty"`
 	IntegrationID  string `json:"integration_id,omitempty"`
 	EditorVersion  string `json:"editor_version,omitempty"`
 	EditorPlugin   string `json:"editor_plugin_version,omitempty"`
 	UserAgent      string `json:"user_agent,omitempty"`
-	// PrefillFix: nil = включён (дефолт — шлюз Copilot отвергает prefill без
-	// фикса); явный false — выключить.
+	// PrefillFix: nil = enabled (default — the Copilot gateway rejects
+	// prefill without the fix); explicit false disables it.
 	PrefillFix *bool `json:"prefill_fix,omitempty"`
 }
 
-// CodexConfig — ChatGPT подписка через Responses API; логин переиспользует
-// codex CLI (auth.json), собственная авторизация не нужна.
+// CodexConfig is a ChatGPT subscription via the Responses API; login reuses
+// the codex CLI (auth.json), no separate authentication is needed.
 type CodexConfig struct {
 	AuthFile   string `json:"auth_file,omitempty"`
 	Originator string `json:"originator,omitempty"`
 	UserAgent  string `json:"user_agent,omitempty"`
 }
 
-// Profile — один провайдер.
+// Profile is a single provider.
 type Profile struct {
 	Name      string            `json:"name"`
 	Protocol  Protocol          `json:"protocol"`
@@ -79,9 +81,10 @@ type Profile struct {
 	Models    []Model           `json:"models"`
 }
 
-// ResolveModel находит модель по name или id; возвращает реальный id
-// (семантика bash-ccx: алиас без скобок вводится, id применяется).
-// model="" и ровно одна default-модель → default; пусто и нет default — "".
+// ResolveModel finds a model by name or id and returns the real id
+// (bash-ccx semantics: the alias without brackets is what the user types,
+// the id is what gets applied).
+// model="" with exactly one default model → default; empty and no default → "".
 func (p *Profile) ResolveModel(model string) (string, bool) {
 	if model == "" {
 		for _, m := range p.Models {
@@ -101,7 +104,7 @@ func (p *Profile) ResolveModel(model string) (string, bool) {
 	return "", false
 }
 
-// DefaultModel — id модели с default:true (первая, если несколько).
+// DefaultModel returns the id of the model with default:true (first one if several).
 func (p *Profile) DefaultModel() (string, bool) {
 	return p.ResolveModel("")
 }

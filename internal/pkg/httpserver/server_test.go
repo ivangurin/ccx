@@ -28,7 +28,7 @@ func TestServer_ServesRequests(t *testing.T) {
 	go func() { _ = srv.Start() }()
 	t.Cleanup(func() { _ = srv.Stop(context.Background()) })
 	require.Eventually(t, func() bool {
-		resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // тестовый локальный адрес
+		resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // local test address
 		if err != nil {
 			return false
 		}
@@ -53,7 +53,7 @@ func TestServer_StartReturnsAfterStop(t *testing.T) {
 	go func() { done <- srv.Start() }()
 
 	require.Eventually(t, func() bool {
-		resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // тестовый локальный адрес
+		resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // local test address
 		if err != nil {
 			return false
 		}
@@ -78,7 +78,7 @@ func TestServer_RefusesAfterStop(t *testing.T) {
 
 	go func() { _ = srv.Start() }()
 	require.Eventually(t, func() bool {
-		resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // тестовый локальный адрес
+		resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // local test address
 		if err != nil {
 			return false
 		}
@@ -89,7 +89,7 @@ func TestServer_RefusesAfterStop(t *testing.T) {
 
 	require.NoError(t, srv.Stop(context.Background()))
 
-	resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // тестовый локальный адрес
+	resp, err := http.Get("http://" + srv.Addr() + "/ping") //nolint:gosec // local test address
 	if err == nil {
 		_ = resp.Body.Close()
 	}

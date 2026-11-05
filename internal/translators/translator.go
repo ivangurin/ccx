@@ -1,7 +1,7 @@
-// Package translators — трансляторы Anthropic Messages API в протоколы
-// провайдеров. Контракт — http-handler-стиль: транслятор получает исходный
-// запрос и полностью владеет ответом (passthrough копирует стрим байт-в-байт,
-// протокольные трансляторы декодируют тело и конвертят SSE).
+// Package translators: translators from the Anthropic Messages API to provider
+// protocols. The contract is http-handler style: a translator receives the
+// original request and fully owns the response (passthrough copies the stream
+// byte-for-byte, protocol translators decode the body and convert SSE).
 package translators
 
 import (
@@ -11,19 +11,19 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// Translator — активный транслятор демона. Строится фабрикой при переключении
-// профиля, живёт до следующего переключения; in-flight запросы держат свою
-// ссылку (переключение не рвёт их).
+// Translator is the daemon's active translator. Built by the factory on profile
+// switch, lives until the next switch; in-flight requests keep their own
+// reference (switching does not cut them off).
 type Translator interface {
-	// Protocol — протокол профиля.
+	// Protocol is the profile's protocol.
 	Protocol() models.Protocol
-	// Ready — проверка готовности ДО переключения на этот транслятор
-	// (валидность OAuth-токенов и т.п.); anthropic/openai — тривиально OK.
+	// Ready is the readiness check performed BEFORE switching to this
+	// translator (OAuth token validity etc.); anthropic/openai — trivially OK.
 	Ready(ctx context.Context) error
-	// ServeMessages обрабатывает POST /v1/messages (стрим и не-стрим).
+	// ServeMessages handles POST /v1/messages (stream and non-stream).
 	ServeMessages(w http.ResponseWriter, r *http.Request)
-	// ServeCountTokens обрабатывает POST /v1/messages/count_tokens.
+	// ServeCountTokens handles POST /v1/messages/count_tokens.
 	ServeCountTokens(w http.ResponseWriter, r *http.Request)
-	// Close освобождает ресурсы после drain.
+	// Close releases resources after drain.
 	Close(ctx context.Context) error
 }

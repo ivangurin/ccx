@@ -16,11 +16,11 @@ func body(t *testing.T, raw string) map[string]any {
 	return m
 }
 
-// asString — type-assert с фейлом теста (errcheck: проверять обязателен).
+// asString is a type-assert with a test failure (errcheck: checking is mandatory).
 func asString(t *testing.T, v any) string {
 	t.Helper()
 	s, ok := v.(string)
-	require.True(t, ok, "ожидалась строка, получено %T", v)
+	require.True(t, ok, "expected a string, got %T", v)
 
 	return s
 }
@@ -51,8 +51,8 @@ func TestRewrite_UserFinal_Noop(t *testing.T) {
 
 func TestRewrite_AssistantTextPrefill(t *testing.T) {
 	in := body(t, `{"messages":[
-		{"role":"user","content":"напиши story"},
-		{"role":"assistant","content":[{"type":"text","text":"Жил-был"}]}
+		{"role":"user","content":"write a story"},
+		{"role":"assistant","content":[{"type":"text","text":"Once upon"}]}
 	]}`)
 	out, note := prefill.Rewrite(in)
 
@@ -61,34 +61,34 @@ func TestRewrite_AssistantTextPrefill(t *testing.T) {
 	require.Equal(t, "user", m[len(m)-1]["role"])
 	content := asString(t, m[len(m)-1]["content"])
 	require.Contains(t, content, "[continuation]")
-	require.Contains(t, content, "Жил-был")
-	// assistant-prefill удалён
+	require.Contains(t, content, "Once upon")
+	// the assistant prefill is removed
 	for _, msg := range m {
 		require.NotEqual(t, "assistant", msg["role"])
 	}
 }
 
 func TestRewrite_AssistantStringPrefill(t *testing.T) {
-	in := body(t, `{"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"начало"}]}`)
+	in := body(t, `{"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"the beginning"}]}`)
 	out, note := prefill.Rewrite(in)
 	require.Contains(t, note, "prefill:text")
 	m := msgs(t, out)
-	require.Contains(t, asString(t, m[len(m)-1]["content"]), "начало")
+	require.Contains(t, asString(t, m[len(m)-1]["content"]), "the beginning")
 }
 
 func TestRewrite_ThinkingOnlyPrefill(t *testing.T) {
 	in := body(t, `{"messages":[
 		{"role":"user","content":"x"},
-		{"role":"assistant","content":[{"type":"thinking","thinking":"мысли"}]}
+		{"role":"assistant","content":[{"type":"thinking","thinking":"thoughts"}]}
 	]}`)
 	out, note := prefill.Rewrite(in)
 
 	require.Contains(t, note, "prefill:thinking")
 	m := msgs(t, out)
 	content := asString(t, m[len(m)-1]["content"])
-	// thinking не переносится — заглушка «без текста»
-	require.Contains(t, content, "оборвался без текста")
-	require.NotContains(t, content, "мысли")
+	// thinking is not carried over — the "without text" stub
+	require.Contains(t, content, "cut off without text")
+	require.NotContains(t, content, "thoughts")
 }
 
 func TestRewrite_EmptyAssistantPrefill(t *testing.T) {
@@ -111,76 +111,76 @@ func TestRewrite_ToolUsePrefill(t *testing.T) {
 }
 
 func TestRewrite_AssistantBeforeSystemTail(t *testing.T) {
-	// Claude Code: system-хук-контекст ПОСЛЕ префилла — хвост переносится перед user
+	// Claude Code: system hook context AFTER the prefill — the tail is moved before the user
 	in := body(t, `{"messages":[
 		{"role":"user","content":"x"},
-		{"role":"assistant","content":[{"type":"text","text":"полу"}]},
-		{"role":"system","content":"хук-контекст"}
+		{"role":"assistant","content":[{"type":"text","text":"hal"}]},
+		{"role":"system","content":"hook-context"}
 	]}`)
 	out, note := prefill.Rewrite(in)
 
 	require.Contains(t, note, "sys-tail:1")
 	m := msgs(t, out)
-	require.Equal(t, "user", m[len(m)-1]["role"])   // финал — user
-	require.Equal(t, "system", m[len(m)-2]["role"]) // system-хвост ПЕРЕД user
-	require.Contains(t, asString(t, m[len(m)-1]["content"]), "полу")
+	require.Equal(t, "user", m[len(m)-1]["role"])   // the finale is user
+	require.Equal(t, "system", m[len(m)-2]["role"]) // the system tail BEFORE the user
+	require.Contains(t, asString(t, m[len(m)-1]["content"]), "hal")
 }
 
 func TestRewrite_UserFinalWithSystemTail_Merged(t *testing.T) {
 	in := body(t, `{"messages":[
-		{"role":"user","content":"вопрос"},
-		{"role":"system","content":"хук-инфо"}
+		{"role":"user","content":"question"},
+		{"role":"system","content":"hook-info"}
 	]}`)
 	out, note := prefill.Rewrite(in)
 
 	require.Contains(t, note, "sys-tail-merged:1")
 	m := msgs(t, out)
-	require.Len(t, m, 1) // только user
+	require.Len(t, m, 1) // user only
 	content := asString(t, m[0]["content"])
-	require.Contains(t, content, "вопрос")
+	require.Contains(t, content, "question")
 	require.Contains(t, content, "[system context]")
-	require.Contains(t, content, "хук-инфо")
+	require.Contains(t, content, "hook-info")
 }
 
 func TestRewrite_UserBlocksWithSystemTail_Merged(t *testing.T) {
 	in := body(t, `{"messages":[
-		{"role":"user","content":[{"type":"text","text":"вопрос"}]},
-		{"role":"system","content":"хук"}
+		{"role":"user","content":[{"type":"text","text":"question"}]},
+		{"role":"system","content":"hook"}
 	]}`)
 	out, _ := prefill.Rewrite(in)
 
 	m := msgs(t, out)
 	require.Len(t, m, 1)
 	blocks, ok := m[0]["content"].([]any)
-	require.True(t, ok, "ожидались блоки")
-	require.Len(t, blocks, 2) // исходный блок + system-блок
+	require.True(t, ok, "blocks expected")
+	require.Len(t, blocks, 2) // the original block + the system block
 	lastBlock, lok := blocks[1].(map[string]any)
 	require.True(t, lok)
 	require.Contains(t, asString(t, lastBlock["text"]), "[system context]")
 }
 
 func TestRewrite_SystemOnlyMessages(t *testing.T) {
-	in := body(t, `{"messages":[{"role":"system","content":"только системное"}]}`)
+	in := body(t, `{"messages":[{"role":"system","content":"system only"}]}`)
 	out, note := prefill.Rewrite(in)
 
 	require.Contains(t, note, "sys-only:1")
 	m := msgs(t, out)
 	require.Len(t, m, 1)
 	require.Equal(t, "user", m[0]["role"])
-	require.Contains(t, asString(t, m[0]["content"]), "только системное")
+	require.Contains(t, asString(t, m[0]["content"]), "system only")
 }
 
 func TestRewrite_InstructionExact(t *testing.T) {
-	in := body(t, `{"messages":[{"role":"assistant","content":[{"type":"text","text":"прод"}]}]}`)
+	in := body(t, `{"messages":[{"role":"assistant","content":[{"type":"text","text":"cont"}]}]}`)
 	out, _ := prefill.Rewrite(in)
 	m := msgs(t, out)
 	require.Contains(t, asString(t, m[len(m)-1]["content"]),
-		"[continuation] Предыдущий ответ оборвался на тексте ниже. Продолжи его точно с места обрыва: не повторяй написанное, не комментируй, сразу продолжение:")
+		"[continuation] The previous response was cut off at the text below. Continue it exactly from the point of the cut: do not repeat what was written, do not comment, continue immediately:")
 }
 
 func TestRewrite_DoesNotMutateInput(t *testing.T) {
-	in := body(t, `{"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"пре"}]}`)
-	snapshot := body(t, `{"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"пре"}]}`)
+	in := body(t, `{"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]}`)
+	snapshot := body(t, `{"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]}`)
 
 	_, _ = prefill.Rewrite(in)
 	require.Equal(t, snapshot, in)

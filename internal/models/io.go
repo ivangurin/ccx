@@ -6,9 +6,9 @@ import (
 	"os"
 )
 
-// readRawJSON — общий ридер для raw-моделей (Settings и подобные).
+// readRawJSON is the shared reader for raw models (Settings and the like).
 func readRawJSON(path string, v any) error {
-	data, err := os.ReadFile(path) //nolint:gosec // путь — из конфига владельца
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from the owning config
 	if err != nil {
 		return fmt.Errorf("models: read %s: %w", path, err)
 	}

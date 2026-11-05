@@ -2,7 +2,7 @@ package models
 
 import "encoding/json"
 
-// ChatMessage — сообщение chat/completions.
+// ChatMessage is a chat/completions message.
 type ChatMessage struct {
 	Role       string         `json:"role"` // system | user | assistant | tool
 	Content    string         `json:"content"`
@@ -10,38 +10,38 @@ type ChatMessage struct {
 	ToolCallID string         `json:"tool_call_id,omitempty"`
 }
 
-// ChatToolCall — вызов инструмента в ответе ассистента.
+// ChatToolCall is a tool call in an assistant response.
 type ChatToolCall struct {
-	Index    int          `json:"index,omitempty"` // фрагментация стрима
+	Index    int          `json:"index,omitempty"` // stream fragmentation
 	ID       string       `json:"id,omitempty"`
 	Type     string       `json:"type,omitempty"` // function
 	Function ChatFunction `json:"function"`
 }
 
-// ChatFunction — имя+аргументы вызова (arguments — JSON-строка!).
+// ChatFunction is a call's name + arguments (arguments is a JSON string!).
 type ChatFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-// ChatTool — определение инструмента.
+// ChatTool is a tool definition.
 type ChatTool struct {
 	Type     string          `json:"type"` // function
 	Function ChatFunctionDef `json:"function"`
 }
 
-// ChatFunctionDef — определение функции.
+// ChatFunctionDef is a function definition.
 type ChatFunctionDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-// ChatRequest — POST /v1/chat/completions.
+// ChatRequest is POST /v1/chat/completions.
 type ChatRequest struct {
 	Model         string        `json:"model"`
 	Messages      []ChatMessage `json:"messages"`
-	MaxTokens     int           `json:"max_tokens,omitempty"` // поле задаёт max_tokens_field
+	MaxTokens     int           `json:"max_tokens,omitempty"` // the field named by max_tokens_field
 	Stream        bool          `json:"stream,omitempty"`
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
@@ -54,15 +54,15 @@ type ChatRequest struct {
 	User        string          `json:"-"`
 }
 
-// ChatChunkDelta — дельта стрима.
+// ChatChunkDelta is a stream delta.
 type ChatChunkDelta struct {
 	Role      string         `json:"role,omitempty"`
 	Content   string         `json:"content,omitempty"`
 	Reasoning string         `json:"reasoning_content,omitempty"`
-	ToolCalls []ChatToolCall `json:"tool_calls,omitempty"` // фрагментированные: id/name или arguments
+	ToolCalls []ChatToolCall `json:"tool_calls,omitempty"` // fragmented: id/name or arguments
 }
 
-// ChatChunk — SSE-чанк chat/completions.
+// ChatChunk is an SSE chunk of chat/completions.
 type ChatChunk struct {
 	ID      string `json:"id"`
 	Choices []struct {
@@ -73,7 +73,7 @@ type ChatChunk struct {
 	Usage *Usage `json:"usage,omitempty"`
 }
 
-// ChatResponse — нестримовый ответ.
+// ChatResponse is a non-streaming response.
 type ChatResponse struct {
 	ID      string `json:"id"`
 	Choices []struct {

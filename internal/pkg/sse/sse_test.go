@@ -38,7 +38,7 @@ func TestReader_EventsAndData(t *testing.T) {
 }
 
 func TestReader_DefaultEventName(t *testing.T) {
-	// без event: — имя "message" (спецификация SSE)
+	// without event: the name is "message" (SSE spec)
 	events := readAll(t, sse.NewReader(strings.NewReader("data: hi\n\n")))
 	require.Len(t, events, 1)
 	require.Equal(t, "message", events[0].Name)

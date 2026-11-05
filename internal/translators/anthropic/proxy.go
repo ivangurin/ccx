@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// hopHeaders — hop-by-hop заголовки, не форварсятся прокси (RFC 7230).
+// hopHeaders are hop-by-hop headers, not forwarded by the proxy (RFC 7230).
 var hopHeaders = []string{
 	"Connection",
 	"Proxy-Connection",
@@ -20,10 +20,11 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-// upstreamRequest строит запрос к апстриму: путь/запрос клиента, тело как есть,
-// авторизация профиля (Bearer|x-api-key) вместо клиентского токена демона.
+// upstreamRequest builds the request to the upstream: the client's path/query,
+// the body as is, the profile's authorization (Bearer|x-api-key) instead of the
+// client's daemon token.
 func (t *Translator) upstreamRequest(r *http.Request, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, t.cfg.BaseURL+r.URL.RequestURI(), body) //nolint:gosec // base_url — из конфига владельца
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, t.cfg.BaseURL+r.URL.RequestURI(), body) //nolint:gosec // base_url comes from the owner config
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: build request: %w", err)
 	}
@@ -35,7 +36,7 @@ func (t *Translator) upstreamRequest(r *http.Request, body io.Reader) (*http.Req
 			req.Header.Add(key, v)
 		}
 	}
-	// авторизация: клиентский токен демона заменяется кредами профиля
+	// authorization: the client's daemon token is replaced with the profile's credentials
 	req.Header.Del("Authorization")
 	req.Header.Del("X-Api-Key")
 	if t.cfg.AuthToken != "" {
@@ -60,7 +61,7 @@ func isHopHeader(name string) bool {
 	return false
 }
 
-// relay копирует ответ апстрима клиенту с flush после каждого чанка (SSE).
+// relay copies the upstream response to the client with a flush after each chunk (SSE).
 func relay(w http.ResponseWriter, resp *http.Response) {
 	for key, vals := range resp.Header {
 		for _, v := range vals {
@@ -103,19 +104,19 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
 	relay(w, resp)
 }
 
-// ServeMessages — POST /v1/messages (форвард с телом и SSE как есть).
+// ServeMessages: POST /v1/messages (forward with body and SSE as is).
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	t.proxy(w, r)
 }
 
-// ServeCountTokens — POST /v1/messages/count_tokens (форвард).
+// ServeCountTokens: POST /v1/messages/count_tokens (forward).
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	t.proxy(w, r)
 }
 
-// writeError — Anthropic-формат ошибок.
+// writeError writes errors in the Anthropic format.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // msg экранирован %q //nolint:gosec // msg экранирован %q
+	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // msg is escaped by %q //nolint:gosec // msg is escaped by %q
 }

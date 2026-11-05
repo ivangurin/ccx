@@ -11,7 +11,7 @@ import (
 func TestNewProvider_SandboxHome(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 
-	// песочница: CCX_HOME указывает в t.TempDir, живой ~/.claude недостижим
+	// sandbox: CCX_HOME points into t.TempDir; the live ~/.claude is unreachable
 	require.NotEmpty(t, sp.Config.Home)
 	info, err := os.Stat(sp.Config.Home)
 	require.NoError(t, err)
@@ -23,7 +23,7 @@ func TestNewProvider_QuietLogger(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 
 	require.NotNil(t, sp.Logger())
-	// уровень error: обычные Info не пишутся (тихий прогон тестов)
+	// error level: ordinary Info is not written (silent test runs)
 	sp.Logger().Info("should-not-fail-anything")
 }
 
@@ -35,7 +35,7 @@ func TestNewProvider_Context(t *testing.T) {
 }
 
 func TestNewProvider_EnvIsolated(t *testing.T) {
-	// второй провайдер в том же тесте получает ДРУГУЮ песочницу
+	// a second provider in the same test gets a DIFFERENT sandbox
 	sp1 := suite_provider.NewProvider(t)
 	sp2 := suite_provider.NewProvider(t)
 

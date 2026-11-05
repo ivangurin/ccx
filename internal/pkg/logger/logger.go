@@ -1,6 +1,6 @@
-// Package logger — фабрика slog-логгеров: dev (text, человеческие читаемые)
-// и json (машиночитаемые), уровень задаётся строкой. Тихий error-логгер для
-// тестов — New(w, "error", "json").
+// Package logger — a factory of slog loggers: dev (text, human-readable)
+// and json (machine-readable), with the level set by string. A silent
+// error-level logger for tests — New(w, "error", "json").
 package logger
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// New строит slog.Logger для формата dev|json и уровня debug|info|warn|error.
+// New builds an slog.Logger for the dev|json format and debug|info|warn|error level.
 func New(out io.Writer, level, format string) (*slog.Logger, error) {
 	var lvl slog.Level
 	switch strings.ToLower(level) {

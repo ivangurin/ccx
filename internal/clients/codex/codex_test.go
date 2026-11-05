@@ -29,7 +29,7 @@ func writeAuth(t *testing.T, path, access, refresh string) {
 
 func futureJWT(t *testing.T) string {
 	t.Helper()
-	// header.payload.signature; payload {"exp": <now+1h>} без подписи (нам не_verify)
+	// header.payload.signature; payload {"exp": <now+1h>} without a signature (we don't verify)
 	payload := `{"exp":` + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + `}`
 
 	return "eyJhbGciOiJKV1QifQ." + b64url(payload) + ".sig"
@@ -85,7 +85,7 @@ func TestClient_Token_ExpiredRefreshes(t *testing.T) {
 	require.Equal(t, "refresh_token", gotGrant)
 	require.Equal(t, "old-refresh", gotRefresh)
 
-	// ротация сохранена в auth.json
+	// rotation saved into auth.json
 	auth, err := codex.LoadAuth(path)
 	require.NoError(t, err)
 	require.Equal(t, "new-refresh", auth.RefreshToken)
@@ -107,7 +107,7 @@ func TestClient_Token_ValidCached(t *testing.T) {
 	tok, err := client.Token(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, valid, tok.AccessToken)
-	require.Equal(t, 0, calls) // рефреш не дёргался
+	require.Equal(t, 0, calls) // refresh not triggered
 }
 
 func TestClient_Token_NotLoggedIn(t *testing.T) {
@@ -129,7 +129,7 @@ func TestSaveAuth_PreservesPermissions(t *testing.T) {
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
-// b64url — простой base64url без паддинга (для JWT-полезной нагрузки теста).
+// b64url is plain base64url without padding (for the test's JWT payload).
 func b64url(s string) string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 	var out []byte

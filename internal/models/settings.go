@@ -6,15 +6,16 @@ import (
 	"fmt"
 )
 
-// Settings — settings.json Claude Code с точечной правкой: читается в
-// raw-представление, патчатся только ключи env/model/availableModels/
-// enforceAvailableModels — остальные поля файла переживают свитч байт-в-байт
-// (инвариант bash-ccx: ccx не владеет чужими настройками).
+// Settings is Claude Code's settings.json with surgical patching: read into
+// a raw representation, only the env/model/availableModels/
+// enforceAvailableModels keys are patched — all other fields of the file
+// survive a switch byte-for-byte (bash-ccx invariant: ccx does not own
+// settings that belong to someone else).
 type Settings struct {
 	Raw map[string]json.RawMessage
 }
 
-// LoadSettings читает settings.json целиком (включая неизвестные поля).
+// LoadSettings reads settings.json in full (including unknown fields).
 func LoadSettings(path string) (*Settings, error) {
 	var raw map[string]json.RawMessage
 	if err := readRawJSON(path, &raw); err != nil {
@@ -24,17 +25,17 @@ func LoadSettings(path string) (*Settings, error) {
 	return &Settings{Raw: raw}, nil
 }
 
-// Env возвращает копию env-блока (пустая карта, если нет).
+// Env returns a copy of the env block (empty map if absent).
 func (s *Settings) Env() map[string]string {
 	env := map[string]string{}
 	if raw, ok := s.Raw["env"]; ok {
-		_ = json.Unmarshal(raw, &env) // невалидный env-блок — работаем с пустым
+		_ = json.Unmarshal(raw, &env) // invalid env block — proceed with an empty one
 	}
 
 	return env
 }
 
-// SetEnv заменяет env-блок.
+// SetEnv replaces the env block.
 func (s *Settings) SetEnv(env map[string]string) {
 	data, err := json.MarshalIndent(env, "", "  ")
 	if err != nil {
@@ -43,7 +44,7 @@ func (s *Settings) SetEnv(env map[string]string) {
 	s.Raw["env"] = data
 }
 
-// SetModelPin запинняет модель: model/availableModels/enforceAvailableModels.
+// SetModelPin pins a model: model/availableModels/enforceAvailableModels.
 func (s *Settings) SetModelPin(model string) {
 	put := func(key string, v any) {
 		data, err := json.Marshal(v)
@@ -57,8 +58,8 @@ func (s *Settings) SetModelPin(model string) {
 	put("enforceAvailableModels", true)
 }
 
-// Marshal выдаёт файл (ключи в исходном порядке не гарантируются — Go map;
-// semantic-эквивалентность важнее, Claude Code файл перечитывает целиком).
+// Marshal emits the file (original key order is not guaranteed — Go map;
+// semantic equivalence matters more, Claude Code re-reads the file in full).
 func (s *Settings) Marshal() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')

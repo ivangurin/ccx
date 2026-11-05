@@ -1,6 +1,6 @@
-// Package codex — Anthropic → ChatGPT Responses API (подписка): system →
+// Package codex: Anthropic → ChatGPT Responses API (subscription): system →
 // instructions, tool_use → function_call, tool_result → function_call_output;
-// SSE-события Responses конвертятся в Anthropic-события.
+// Responses SSE events are converted into Anthropic events.
 package codex
 
 import (
@@ -18,7 +18,7 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/sse"
 )
 
-// константы ролей/типов (goconst).
+// role/type constants (goconst).
 const (
 	evError        = "error"
 	typeToolUse    = "tool_use"
@@ -27,7 +27,7 @@ const (
 	roleAssistantS = "assistant"
 )
 
-// ResponsesItem — элемент input[] Responses API.
+// ResponsesItem is an element of the Responses API input[].
 type ResponsesItem struct {
 	Type      string          `json:"type"` // message | function_call | function_call_output
 	Role      string          `json:"role,omitempty"`
@@ -39,7 +39,7 @@ type ResponsesItem struct {
 	ItemID    string          `json:"item_id,omitempty"`
 }
 
-// ResponsesTool — определение функции.
+// ResponsesTool is a function definition.
 type ResponsesTool struct {
 	Type        string          `json:"type"`
 	Name        string          `json:"name"`
@@ -48,7 +48,7 @@ type ResponsesTool struct {
 	Strict      bool            `json:"strict"`
 }
 
-// ResponsesRequest — POST /codex/responses.
+// ResponsesRequest is POST /codex/responses.
 type ResponsesRequest struct {
 	Model           string          `json:"model"`
 	Instructions    string          `json:"instructions,omitempty"`
@@ -58,12 +58,12 @@ type ResponsesRequest struct {
 	Stream          bool            `json:"stream,omitempty"`
 }
 
-// AuthSource — источник токена (реализация — clients/codex.Client).
+// AuthSource is the token source (implementation — clients/codex.Client).
 type AuthSource interface {
 	Token(ctx context.Context) (codex.Auth, error)
 }
 
-// Translator — codex-транслятор.
+// Translator is the codex translator.
 type Translator struct {
 	cfg   *models.CodexConfig
 	auths AuthSource
@@ -71,7 +71,7 @@ type Translator struct {
 	http  *http.Client
 }
 
-// New строит транслятор.
+// New builds a translator.
 func New(profile *models.Profile, auths AuthSource) *Translator {
 	cfg := profile.Codex
 	if cfg == nil {
@@ -81,29 +81,29 @@ func New(profile *models.Profile, auths AuthSource) *Translator {
 	return &Translator{cfg: cfg, auths: auths, base: codex.APIBase, http: &http.Client{}}
 }
 
-// NewForTest — с переопределённым base.
+// NewForTest is one with an overridden base.
 func NewForTest(cfg *models.CodexConfig, auths AuthSource, baseURL string) *Translator {
 	return &Translator{cfg: cfg, auths: auths, base: baseURL, http: &http.Client{}}
 }
 
-// Protocol — codex.
+// Protocol is codex.
 func (t *Translator) Protocol() models.Protocol {
 	return models.ProtocolCodex
 }
 
-// Ready — токен доступен.
+// Ready: the token is available.
 func (t *Translator) Ready(ctx context.Context) error {
 	_, err := t.auths.Token(ctx)
 
 	return err
 }
 
-// Close — нет ресурсов.
+// Close: no resources.
 func (t *Translator) Close(_ context.Context) error {
 	return nil
 }
 
-// BuildResponsesRequest маппит Messages → Responses.
+// BuildResponsesRequest maps Messages → Responses.
 func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 	out := &ResponsesRequest{
 		Model:           req.Model,
@@ -191,7 +191,7 @@ func convertMessage(msg models.Message) []ResponsesItem {
 				Output: toolResultText(b),
 			})
 		default:
-			// thinking/image и неизвестные — пропускаем (reasoning на стороне Responses)
+			// thinking/image and unknown ones are skipped (reasoning is on the Responses side)
 		}
 	}
 	if msg.Role == roleAssistantS && (len(texts) > 0 || len(out) == 0) {
@@ -209,7 +209,7 @@ func contentJSON(role, text string) string {
 	if role == roleAssistantS {
 		field = "output_text"
 	}
-	data, _ := json.Marshal([]map[string]string{{"type": field, "text": text}}) //nolint:errchkjson // константная структура
+	data, _ := json.Marshal([]map[string]string{{"type": field, "text": text}}) //nolint:errchkjson // constant structure
 
 	return string(data)
 }
@@ -244,7 +244,7 @@ func deref(s *string) string {
 	return *s
 }
 
-// ServeMessages — POST /v1/messages.
+// ServeMessages: POST /v1/messages.
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -264,7 +264,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, t.base+"/responses", bytes.NewReader(body)) //nolint:gosec // base — константа/тест
+	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, t.base+"/responses", bytes.NewReader(body)) //nolint:gosec // base is a constant/test
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 
@@ -295,16 +295,16 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !req.Stream {
-		// нестримовый режим Responses здесь не декодируется: Claude Code
-		// всегда стримит; отдаём ошибку-заглушку
-		writeErr(w, http.StatusNotImplemented, "codex: нестримовый режим не поддерживается")
+		// the non-stream mode of Responses is not decoded here: Claude Code
+		// always streams; return a stub error
+		writeErr(w, http.StatusNotImplemented, "codex: non-stream mode is not supported")
 
 		return
 	}
 	t.serveStream(w, resp, req.Model)
 }
 
-// streamEvent — типизированное событие Responses SSE.
+// streamEvent is a typed Responses SSE event.
 type streamEvent struct {
 	Type   string `json:"type"`
 	Delta  string `json:"delta"`
@@ -320,7 +320,7 @@ type streamEvent struct {
 	} `json:"response"`
 }
 
-//nolint:gocognit,gocyclo // линейный диспетчер по типам SSE-событий Responses
+//nolint:gocognit,gocyclo // linear dispatcher over Responses SSE event types
 func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, model string) {
 	reader := sse.NewReader(resp.Body)
 	nextIndex := 0
@@ -349,9 +349,9 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 	for {
 		ev, err := reader.Next()
 		if err != nil {
-			// обрыв/пустой стрим до единого события — обычный JSON-ответ 502
+			// break/empty stream before a single event — a plain 502 JSON response
 			if writer == nil {
-				writeErr(w, http.StatusBadGateway, "codex: пустой стрим апстрима")
+				writeErr(w, http.StatusBadGateway, "codex: empty upstream stream")
 
 				return
 			}
@@ -369,7 +369,7 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 		if jsonErr := json.Unmarshal([]byte(ev.Data), &se); jsonErr != nil {
 			continue
 		}
-		if writer == nil { // первое событие — открываем сообщение (headers лениво)
+		if writer == nil { // first event — open the message (headers lazily)
 			emit(models.AnthropicEvent{
 				Type: "message_start",
 				Message: &models.AnthropicMessagePayload{
@@ -392,7 +392,7 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 			}
 		case "response.output_text.delta":
 			if _, ok := itemIdx[se.ItemID]; !ok {
-				// дельта без output_item.added — ленивый text-блок
+				// a delta without output_item.added — a lazy text block
 				openBlock(se.ItemID, models.AnthropicBlock{Type: typeText})
 			}
 			idx := itemIdx[se.ItemID]
@@ -425,15 +425,15 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 				Error: &models.AnthropicError{Type: "api_error", Message: se.Delta},
 			})
 		default:
-			// прочие события Responses игнорируем
+			// other Responses events are ignored
 		}
 	}
 	if writer == nil {
-		writeErr(w, http.StatusBadGateway, "codex: пустой стрим апстрима")
+		writeErr(w, http.StatusBadGateway, "codex: empty upstream stream")
 
 		return
 	}
-	// закрыть ВСЕ блоки в порядке открытия
+	// close ALL blocks in opening order
 	for _, id := range itemOrder {
 		idx := itemIdx[id]
 		emit(models.AnthropicEvent{Type: "content_block_stop", Index: &idx})
@@ -454,7 +454,7 @@ func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	raw, _ := json.Marshal(req) //nolint:errchkjson // RawMessage по построению
+	raw, _ := json.Marshal(req) //nolint:errchkjson // RawMessage by construction
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, `{"input_tokens":%d}`, len(raw)/4)
@@ -463,7 +463,7 @@ func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // %q экранирует
+	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // %q escapes
 }
 
 func relayError(w http.ResponseWriter, resp *http.Response) {

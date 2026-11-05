@@ -23,7 +23,7 @@ func TestCommandUse_UnknownProfileFails(t *testing.T) {
 	code := cli.Execute([]string{cmdUse, "ghost"}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "неизвестный профиль")
+	require.Contains(t, out.String(), "unknown profile")
 }
 
 func TestCommandUse_MissingProfileArg(t *testing.T) {
@@ -33,7 +33,7 @@ func TestCommandUse_MissingProfileArg(t *testing.T) {
 	code := cli.Execute([]string{cmdUse}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "укажите профиль")
+	require.Contains(t, out.String(), "specify a profile")
 }
 
 func TestCommandUse_NoDefaultModel(t *testing.T) {
@@ -46,7 +46,7 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 	code := cli.Execute([]string{cmdUse, "bare"}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "нет default-модели")
+	require.Contains(t, out.String(), "no default model")
 }
 
 func TestCommandUse_NoProvidersHint(t *testing.T) {
@@ -71,7 +71,7 @@ func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	code := cli.Execute([]string{"stop"}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "не запущен")
+	require.Contains(t, out.String(), "not running")
 }
 
 func TestCommandAuth_UnknownProvider(t *testing.T) {
@@ -81,7 +81,7 @@ func TestCommandAuth_UnknownProvider(t *testing.T) {
 	code := cli.Execute([]string{"auth", "unknown"}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "неизвестный провайдер")
+	require.Contains(t, out.String(), "unknown provider")
 }
 
 func TestCommandAuth_CodexHint(t *testing.T) {
@@ -95,7 +95,7 @@ func TestCommandAuth_CodexHint(t *testing.T) {
 }
 
 func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {
-	// не-tty stdin: меню → выбор номера → use падает на отсутствующем демоне
+	// non-tty stdin: menu → number choice → use fails on the missing daemon
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{Version: 2}
 	p.Profiles.Set("zai", &models.Profile{
@@ -106,16 +106,16 @@ func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	var out bytes.Buffer
 
-	// stdin — не терминал (go test): fallback-меню печатает список и ждёт ввод;
-	// EOF без выбора — отмена без паники
+	// stdin is not a terminal (go test): the fallback menu prints the list and waits for input;
+	// EOF without a choice — cancel without panic
 	code := cli.Execute(nil, &out)
 
-	require.Contains(t, out.String(), "Выберите")
+	require.Contains(t, out.String(), "Choose")
 	require.Equal(t, 0, code)
 }
 
-// freePort — свободный TCP-порт (тест не зависит от дефолтного 4567:
-// на машине может жить настоящий демон).
+// freePort — a free TCP port (the test doesn't depend on the default 4567:
+// a real daemon may be running on the machine).
 func freePort(t *testing.T) int {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

@@ -46,7 +46,7 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 func TestHealth_NoAuth(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	resp, err := http.Get(srv.URL + "/health") //nolint:gosec // тестовый сервер
+	resp, err := http.Get(srv.URL + "/health") //nolint:gosec // test server
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -56,7 +56,7 @@ func TestHealth_NoAuth(t *testing.T) {
 func TestMessages_NoToken_401(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	resp, err := http.Post(srv.URL+"/v1/messages", "application/json", strings.NewReader(`{}`)) //nolint:gosec // тест
+	resp, err := http.Post(srv.URL+"/v1/messages", "application/json", strings.NewReader(`{}`)) //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -65,7 +65,7 @@ func TestMessages_NoToken_401(t *testing.T) {
 func TestMessages_WrongToken_401(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer wrong")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestMessages_WrongToken_401(t *testing.T) {
 func TestMessages_ValidToken_NoActive_503(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -98,15 +98,15 @@ func TestAdminUse_SwitchesRoute(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	body := bytes.NewBufferString(`{"profile":"zai","model":"glm"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/use", body) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/use", body) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// теперь /v1/messages проходит и попадает в апстрим
-	req2, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // тест
+	// now /v1/messages passes and reaches the upstream
+	req2, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
 	req2.Header.Set("Authorization", "Bearer test-token")
 	resp2, err := http.DefaultClient.Do(req2)
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestAdminUse_UnknownProfile_400(t *testing.T) {
 	srv, _ := newTestApp(t)
 
 	body := bytes.NewBufferString(`{"profile":"nope","model":"m"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/use", body) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/use", body) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestAdminUse_UnknownProfile_400(t *testing.T) {
 func TestAdminReady_NoRoute_503(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/ready", nil) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/ready", nil) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestAdminReady_NoRoute_503(t *testing.T) {
 func TestAdminHealth_WithoutRoute(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/health", nil) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/health", nil) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -157,7 +157,7 @@ func TestAdminStop_TriggersCallback(t *testing.T) {
 	local := httptest.NewServer(h)
 	t.Cleanup(local.Close)
 
-	req, _ := http.NewRequest(http.MethodPost, local.URL+"/admin/stop", nil) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodPost, local.URL+"/admin/stop", nil) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestAdminStop_TriggersCallback(t *testing.T) {
 	select {
 	case <-stopped:
 	case <-contextAfter(t):
-		t.Fatal("stop callback не вызвался")
+		t.Fatal("stop callback was not called")
 	}
 	_ = srv
 }
@@ -186,9 +186,9 @@ func contextAfter(t *testing.T) <-chan struct{} {
 func TestModels_ListsActive(t *testing.T) {
 	srv, sp := newTestApp(t)
 	svc := router.New(sp.Config, sp.Logger())
-	_ = svc // активируем маршрут через admin — уже покрыто; здесь только формат
+	_ = svc // activating the route via admin is already covered; here only the format matters
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/models", nil) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/models", nil) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer test-token")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

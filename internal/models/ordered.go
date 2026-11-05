@@ -6,14 +6,14 @@ import (
 	"fmt"
 )
 
-// OrderedMap — JSON-объект как map с сохранением порядка ключей файла:
-// порядок = порядок меню и ccx list (jq в bash-ccx порядок сохранял, Go map — нет).
+// OrderedMap is a JSON object as a map preserving the file's key order:
+// order = the order of the menu and ccx list (jq in bash-ccx preserved order, a Go map does not).
 type OrderedMap[V any] struct {
 	Keys []string
 	m    map[string]V
 }
 
-// Get возвращает значение по ключу (zero value, если нет).
+// Get returns the value for a key (zero value if absent).
 func (om *OrderedMap[V]) Get(key string) V {
 	if om.m == nil {
 		var zero V
@@ -24,14 +24,14 @@ func (om *OrderedMap[V]) Get(key string) V {
 	return om.m[key]
 }
 
-// Has сообщает о наличии ключа.
+// Has reports whether the key is present.
 func (om *OrderedMap[V]) Has(key string) bool {
 	_, ok := om.m[key]
 
 	return ok
 }
 
-// Set добавляет/заменяет значение; новый ключ попадает в конец порядка.
+// Set adds/replaces a value; a new key is appended to the end of the order.
 func (om *OrderedMap[V]) Set(key string, v V) {
 	if om.m == nil {
 		om.m = map[string]V{}
@@ -42,12 +42,12 @@ func (om *OrderedMap[V]) Set(key string, v V) {
 	om.m[key] = v
 }
 
-// Len — число элементов.
+// Len is the number of entries.
 func (om *OrderedMap[V]) Len() int {
 	return len(om.Keys)
 }
 
-// MarshalJSON пишет объект в порядке Keys (стабильный файл — чистые диффы).
+// MarshalJSON writes the object in Keys order (stable file — clean diffs).
 func (om OrderedMap[V]) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')
@@ -72,7 +72,7 @@ func (om OrderedMap[V]) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// UnmarshalJSON читает объект, извлекая ключи в порядке следования в файле.
+// UnmarshalJSON reads an object, extracting keys in the order they appear in the file.
 func (om *OrderedMap[V]) UnmarshalJSON(b []byte) error {
 	om.m = map[string]V{}
 	om.Keys = nil

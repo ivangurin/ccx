@@ -11,10 +11,10 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 )
 
-// runAuth — ccx auth copilot: GitHub device flow интерактивно.
+// runAuth — ccx auth copilot: GitHub device flow, interactive.
 func runAuth(args []string, stdout io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stdout, "ccx: укажите провайдера: ccx auth copilot")
+		fmt.Fprintln(stdout, "ccx: specify a provider: ccx auth copilot")
 
 		return 1
 	}
@@ -29,11 +29,11 @@ func runAuth(args []string, stdout io.Writer) int {
 	case "copilot":
 		return authCopilot(cfg, stdout)
 	case "codex":
-		fmt.Fprintln(stdout, "codex использует логин codex CLI (codex login); ccx читает ~/.codex/auth.json автоматически")
+		fmt.Fprintln(stdout, "codex uses the codex CLI login (codex login); ccx reads ~/.codex/auth.json automatically")
 
 		return 0
 	default:
-		fmt.Fprintf(stdout, "ccx: неизвестный провайдер %q (copilot | codex)\n", args[1])
+		fmt.Fprintf(stdout, "ccx: unknown provider %q (copilot | codex)\n", args[1])
 
 		return 1
 	}
@@ -49,9 +49,9 @@ func authCopilot(cfg *config.Config, stdout io.Writer) int {
 
 		return 1
 	}
-	fmt.Fprintln(stdout, "Откройте в браузере: "+res.VerificationURI)
-	fmt.Fprintln(stdout, "Введите код:         "+res.UserCode)
-	fmt.Fprintln(stdout, "Ожидаю подтверждение…")
+	fmt.Fprintln(stdout, "Open in browser: "+res.VerificationURI)
+	fmt.Fprintln(stdout, "Enter code:      "+res.UserCode)
+	fmt.Fprintln(stdout, "Waiting for confirmation...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
@@ -61,7 +61,7 @@ func authCopilot(cfg *config.Config, stdout io.Writer) int {
 
 		return 1
 	}
-	fmt.Fprintf(stdout, "Готово: токены сохранены в %s\n", store)
+	fmt.Fprintf(stdout, "Done: tokens saved to %s\n", store)
 
 	return 0
 }

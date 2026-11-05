@@ -1,19 +1,19 @@
 package models
 
-// Daemon — параметры локального демона ccx (единственный HTTP-эндпоинт,
-// на который указывает ANTHROPIC_BASE_URL; auth_token — статический токен
-// клиента: и для Claude Code → демон, и для admin-API).
+// Daemon holds the local ccx daemon's parameters (the single HTTP endpoint
+// ANTHROPIC_BASE_URL points to; auth_token is the static client token:
+// used both for Claude Code → daemon and for the admin API).
 type Daemon struct {
 	Port      int    `json:"port"`
 	AuthToken string `json:"auth_token"`
 }
 
-// Providers — корень providers.json v2.
+// Providers is the root of providers.json v2.
 type Providers struct {
 	Version  int        `json:"version"`
 	Daemon   Daemon     `json:"daemon"`
 	Profiles ProfileMap `json:"profiles"`
 }
 
-// ProfileMap — профили в порядке файла (см. OrderedMap).
+// ProfileMap is profiles in file order (see OrderedMap).
 type ProfileMap = OrderedMap[*Profile]

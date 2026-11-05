@@ -25,7 +25,7 @@ type ui struct {
 	query     string
 	tty       *os.File
 	out       io.Writer
-	lastLines int // \u0441\u0442\u0440\u043e\u043a \u0432 \u043f\u0440\u043e\u0448\u043b\u043e\u043c \u043a\u0430\u0434\u0440\u0435 \u2014 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0440\u0438\u0441\u043e\u0432\u043a\u0438 \u043d\u0430 \u043c\u0435\u0441\u0442\u0435
+	lastLines int // lines in the previous frame \u2014 needed for in-place repaint
 }
 
 // runInteractive \u2014 raw-mode loop: render, arrows, filter, Enter/Esc.
@@ -129,7 +129,7 @@ func (u *ui) render() {
 		u.cursor = 0
 	}
 	var sb strings.Builder
-	// перерисовка на месте: подняться к первому кадру и стереть его
+	// in-place repaint: climb up to the first frame and erase it
 	sb.WriteString(repaintPrefix(u.lastLines))
 	frame, lines := buildFrame(u.header, visible, u.query, u.cursor)
 	sb.WriteString(frame)

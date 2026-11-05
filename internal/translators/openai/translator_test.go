@@ -24,7 +24,7 @@ func TestServeMessages_NonStream(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth, gotUA = r.Header.Get("Authorization"), r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"c1","choices":[{"message":{"role":"assistant","content":"ответ"},"finish_reason":"stop"}],"usage":{"input_tokens":5,"output_tokens":2}}`))
+		_, _ = w.Write([]byte(`{"id":"c1","choices":[{"message":{"role":"assistant","content":"the answer"},"finish_reason":"stop"}],"usage":{"input_tokens":5,"output_tokens":2}}`))
 	}))
 	t.Cleanup(up.Close)
 
@@ -35,7 +35,7 @@ func TestServeMessages_NonStream(t *testing.T) {
 	tr.ServeMessages(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "ответ")
+	require.Contains(t, rec.Body.String(), "the answer")
 	require.Contains(t, rec.Body.String(), "end_turn")
 	require.Equal(t, "Bearer sk-test", gotAuth)
 	require.Equal(t, "ccx-test/1", gotUA)
@@ -44,8 +44,8 @@ func TestServeMessages_NonStream(t *testing.T) {
 func TestServeMessages_Stream(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"При\"}}]}\n\n")
-		_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"вет\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hel\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"}}]}\n\n")
 		_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
@@ -60,8 +60,8 @@ func TestServeMessages_Stream(t *testing.T) {
 	out := rec.Body.String()
 	require.Contains(t, out, "event: message_start")
 	require.Contains(t, out, "text_delta")
-	require.Contains(t, out, "При")
-	require.Contains(t, out, "вет")
+	require.Contains(t, out, "Hel")
+	require.Contains(t, out, "lo")
 	require.Contains(t, out, "event: message_stop")
 	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
 }

@@ -11,27 +11,27 @@ import (
 func TestBuildFrame_CountsLinesAndMarksCursor(t *testing.T) {
 	items := []Item{{Label: "a"}, {Label: "b"}, {Label: "c"}}
 
-	frame, lines := buildFrame("Заголовок", items, "", 1)
-	// header + 3 пункта + footer
+	frame, lines := buildFrame("Header", items, "", 1)
+	// header + 3 items + footer
 	require.Equal(t, 5, lines)
-	require.Contains(t, frame, "Заголовок\r\n")
+	require.Contains(t, frame, "Header\r\n")
 	require.Contains(t, frame, "> b\r\n")
 	require.NotContains(t, frame, "> a")
-	// последняя строка — без перевода: курсор остаётся на footer
+	// the last line has no newline: the cursor stays on the footer
 	require.True(t, strings.HasSuffix(frame, "cancel\r"), frame)
 }
 
 func TestBuildFrame_FilterLineWhenQuery(t *testing.T) {
 	frame, lines := buildFrame("h", []Item{{Label: "a"}}, "q", 0)
-	// header + filter + пункт + footer
+	// header + filter + item + footer
 	require.Equal(t, 4, lines)
 	require.Contains(t, frame, "filter: q\r\n")
 }
 
 func TestRepaintPrefix(t *testing.T) {
-	// первый кадр — нечего очищать
+	// first frame — nothing to clear
 	require.Empty(t, repaintPrefix(0))
-	// 4 строки прошлого фрейма: вверх на 3 + стереть всё ниже
+	// 4 lines of the previous frame: up 3 + clear everything below
 	require.Equal(t, "\r\x1b[3A\x1b[J", repaintPrefix(4))
 }
 
@@ -41,12 +41,12 @@ func TestRender_RedrawsInPlace(t *testing.T) {
 
 	u.render()
 	first := buf.String()
-	require.NotContains(t, first, "\x1b[", "первый кадр рисуется без escape-очистки")
+	require.NotContains(t, first, "\x1b[", "first frame is drawn without escape clearing")
 
 	u.cursor = 1
 	u.render()
 	second := buf.String()[len(first):]
-	// header + 2 пункта + footer = 4 строки: курсор поднят на 3 и экран стёрт
-	require.True(t, strings.HasPrefix(second, "\r\x1b[3A\x1b[J"), "второй кадр должен перезаписать первый на месте: %q", second)
+	// header + 2 items + footer = 4 lines: cursor moved up 3 and screen cleared
+	require.True(t, strings.HasPrefix(second, "\r\x1b[3A\x1b[J"), "second frame must overwrite the first in place: %q", second)
 	require.Contains(t, second, "> b")
 }

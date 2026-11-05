@@ -37,12 +37,12 @@ func TestWriteAtomicJSON_SetsPermissions(t *testing.T) {
 
 func TestWriteAtomicJSON_PreservesExistingPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.json")
-	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o644)) //nolint:gosec // намеренные права для теста сохранения
+	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o644)) //nolint:gosec // deliberate perms for the preservation test
 
 	require.NoError(t, jsonfile.WriteAtomicJSON(path, sample{Name: "x"}, 0o600))
 
-	// Инвариант bash-ccx: атомарная подмена возвращает исходные права файла
-	// (chmod tmp под права цели ДО rename).
+	// bash-ccx invariant: atomic replacement keeps the file's original perms
+	// (chmod tmp to the target's perms BEFORE rename).
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
@@ -61,7 +61,7 @@ func TestWriteAtomicJSON_NoTmpLeftovers(t *testing.T) {
 }
 
 func TestWriteAtomicJSON_CreatesMissingDir(t *testing.T) {
-	// mkdir -p семантика: каталоги бэкапов/логов создаются на записи (как в bash-ccx)
+	// mkdir -p semantics: backup/log directories are created on write (as in bash-ccx)
 	path := filepath.Join(t.TempDir(), "no-such-dir", "data.json")
 
 	require.NoError(t, jsonfile.WriteAtomicJSON(path, sample{Name: "x"}, 0o600))

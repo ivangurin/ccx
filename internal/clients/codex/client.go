@@ -1,6 +1,7 @@
-// Package codex — доступ к подписке ChatGPT через Responses API: логин
-// переиспользует codex CLI (~/.codex/auth.json), access-токен рефрешится
-// лениво с ротацией refresh-токена (запись сразу, flock — конкурентный codex CLI).
+// Package codex accesses the ChatGPT subscription via the Responses API:
+// login reuses the codex CLI (~/.codex/auth.json), the access token is
+// refreshed lazily with refresh-token rotation (written immediately, flock —
+// against the concurrent codex CLI).
 package codex
 
 import (
@@ -19,25 +20,25 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// ErrNotLoggedIn — ~/.codex/auth.json нет/пуст (нужен codex login).
-var ErrNotLoggedIn = errors.New("codex: не выполнен codex login (нет ~/.codex/auth.json)")
+// ErrNotLoggedIn means ~/.codex/auth.json is missing/empty (codex login needed).
+var ErrNotLoggedIn = errors.New("codex: codex login not performed (no ~/.codex/auth.json)")
 
-// AuthBase — OAuth-сервер OpenAI (публичный client_id codex CLI).
+// AuthBase is OpenAI's OAuth server (the codex CLI's public client_id).
 const (
 	AuthBase = "https://auth.openai.com"
 	ClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 	APIBase  = "https://chatgpt.com/backend-api/codex"
 )
 
-// Auth — вырезка ~/.codex/auth.json.
+// Auth is the slice of ~/.codex/auth.json we need.
 type Auth struct {
 	AccessToken  string
 	RefreshToken string
-	AccountID    string // tokens.account_id живого файла
+	AccountID    string // tokens.account_id of the live file
 }
 
-// authFile — полный формат живого auth.json (поля codex CLI обязаны
-// переживать наш рефреш: RMW-патч, не пересоздание файла).
+// authFile is the full live auth.json format (codex CLI fields must survive
+// our refresh: an RMW patch, not a file recreation).
 type authFile struct {
 	AuthMode    string `json:"auth_mode"`
 	LastRefresh string `json:"last_refresh,omitempty"`
@@ -50,14 +51,14 @@ type authFile struct {
 	} `json:"tokens"`
 }
 
-// DefaultAuthPath — ~/.codex/auth.json.
+// DefaultAuthPath is ~/.codex/auth.json.
 func DefaultAuthPath() string {
 	home, _ := os.UserHomeDir()
 
 	return home + "/.codex/auth.json"
 }
 
-// LoadAuth читает логин codex CLI.
+// LoadAuth reads the codex CLI login.
 func LoadAuth(path string) (Auth, error) {
 	var f authFile
 	if err := jsonfile.ReadJSON(path, &f); err != nil {
@@ -74,13 +75,14 @@ func LoadAuth(path string) (Auth, error) {
 	}, nil
 }
 
-// SaveAuth — read-modify-write: читает существующий файл и патчит ТОЛЬКО
-// tokens.access/refresh/last_refresh — auth_mode, id_token, account_id и
-// прочие поля codex CLI переживают рефреш нетронутыми (инвариант: файл чужой,
-// мы гости). Файла нет — создаёт минимальный.
+// SaveAuth is read-modify-write: it reads the existing file and patches ONLY
+// tokens.access/refresh/last_refresh — auth_mode, id_token, account_id and
+// other codex CLI fields survive the refresh untouched (invariant: the file
+// belongs to someone else, we are guests). If the file is missing, it
+// creates a minimal one.
 func SaveAuth(path string, auth Auth) error {
 	var f authFile
-	_ = jsonfile.ReadJSON(path, &f) // отсутствие файла — ок, создадим
+	_ = jsonfile.ReadJSON(path, &f) // missing file is fine — we will create it
 	f.Tokens.AccessToken = auth.AccessToken
 	f.Tokens.RefreshToken = auth.RefreshToken
 	if f.Tokens.AccountID == "" {
@@ -93,8 +95,8 @@ func SaveAuth(path string, auth Auth) error {
 	return jsonfile.WriteAtomicJSON(path, f, 0o600)
 }
 
-// TokenValid — exp из JWT-полезной нагрузки (без верификации подписи —
-// доверяем своему ключнику, не проверяем его подпись).
+// TokenValid reads exp from the JWT payload (no signature verification —
+// we trust our own key holder and do not verify its signature).
 func TokenValid(jwt string, now time.Time) bool {
 	parts := strings.Split(jwt, ".")
 	if len(parts) != 3 {
@@ -114,24 +116,24 @@ func TokenValid(jwt string, now time.Time) bool {
 	return now.Unix() < claims.Exp-60
 }
 
-// Client — источник токена подписки.
+// Client is the subscription token source.
 type Client struct {
 	authPath string
 	authURL  string
 	mu       sync.Mutex
 }
 
-// New — клиент над ~/.codex/auth.json.
+// New is a client over ~/.codex/auth.json.
 func New(authPath string) *Client {
 	return NewWithBase(authPath, AuthBase+"/oauth/token")
 }
 
-// NewWithBase — с переопределённым URL рефреша (тесты).
+// NewWithBase uses an overridden refresh URL (tests).
 func NewWithBase(authPath, authURL string) *Client {
 	return &Client{authPath: authPath, authURL: authURL}
 }
 
-// Token — валидный access-токен (ленивый рефреш с ротацией refresh).
+// Token returns a valid access token (lazy refresh with refresh rotation).
 func (c *Client) Token(ctx context.Context) (Auth, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -144,7 +146,7 @@ func (c *Client) Token(ctx context.Context) (Auth, error) {
 		return auth, nil
 	}
 	if auth.RefreshToken == "" {
-		return Auth{}, errors.New("codex: access истёк, refresh-токена нет — codex login")
+		return Auth{}, errors.New("codex: access expired, no refresh token — codex login")
 	}
 
 	form := url.Values{
@@ -152,7 +154,7 @@ func (c *Client) Token(ctx context.Context) (Auth, error) {
 		"refresh_token": {auth.RefreshToken},
 		"client_id":     {ClientID},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.authURL, strings.NewReader(form.Encode())) //nolint:gosec // константы
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.authURL, strings.NewReader(form.Encode())) //nolint:gosec // constants
 	if err != nil {
 		return Auth{}, err
 	}
@@ -160,25 +162,25 @@ func (c *Client) Token(ctx context.Context) (Auth, error) {
 
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return Auth{}, fmt.Errorf("codex: рефреш: %w", err)
+		return Auth{}, fmt.Errorf("codex: refresh: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return Auth{}, fmt.Errorf("codex: рефреш: статус %d — возможно, нужен codex login", resp.StatusCode)
+		return Auth{}, fmt.Errorf("codex: refresh: status %d — codex login may be needed", resp.StatusCode)
 	}
 	var payload struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil || payload.AccessToken == "" {
-		return Auth{}, errors.New("codex: рефреш: неожиданный ответ")
+		return Auth{}, errors.New("codex: refresh: unexpected response")
 	}
 	auth.AccessToken = payload.AccessToken
 	if payload.RefreshToken != "" {
-		auth.RefreshToken = payload.RefreshToken // ротация
+		auth.RefreshToken = payload.RefreshToken // rotation
 	}
 	if err := SaveAuth(c.authPath, auth); err != nil {
-		return Auth{}, fmt.Errorf("codex: сохранить auth.json: %w", err)
+		return Auth{}, fmt.Errorf("codex: save auth.json: %w", err)
 	}
 
 	return auth, nil

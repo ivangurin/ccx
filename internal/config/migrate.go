@@ -15,35 +15,35 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// DefaultDaemonPort — порт демона по умолчанию (фиксированный: settings.json
-// указывает на него один раз; конфликт портов — понятная ошибка + CCX_PORT).
+// DefaultDaemonPort is the default daemon port (fixed: settings.json points
+// at it once; a port conflict is a comprehensible error + CCX_PORT).
 const DefaultDaemonPort = 4567
 
-// zaiProfileName — отображаемое имя профиля импорта из settings.json.
+// zaiProfileName is the display name of the profile imported from settings.json.
 const zaiProfileName = "z.ai (GLM)"
 
-// ErrProvidersExist — providers.json уже есть, init без --force отказывает
-// (паритет с bash-ccx: не затираем пользовательские креды молча).
+// ErrProvidersExist means providers.json already exists; init without
+// --force refuses (bash-ccx parity: never silently overwrite user credentials).
 var ErrProvidersExist = errors.New("config: providers.json already exists (use --force)")
 
-// InitResult — итог ccx init для вывода пользователю.
+// InitResult is the outcome of ccx init for display to the user.
 type InitResult struct {
 	Path     string
-	Migrated bool     // конвертировали v1 (proxy{}) → v2 (protocol)
-	Profiles []string // ключи в порядке создания
-	Warnings []string // что заполнить руками
+	Migrated bool     // converted v1 (proxy{}) → v2 (protocol)
+	Profiles []string // keys in creation order
+	Warnings []string // things to fill in by hand
 }
 
-// InitProviders создаёт providers.json v2: миграция v1 либо импорт из
-// settings.json/env.json + шаблоны. settings.json не трогает никогда.
-// Существующий v1-файл мигрируется без --force (это и есть путь обновления);
-// отказ — только если там уже v2.
+// InitProviders creates providers.json v2: v1 migration or import from
+// settings.json/env.json + templates. It never touches settings.json.
+// An existing v1 file is migrated without --force (that is the upgrade path);
+// refusal happens only if it is already v2.
 func InitProviders(cfg *Config, force bool) (*InitResult, error) {
 	path := cfg.ProvidersPath()
 	res := &InitResult{Path: path}
 	var providers *models.Providers
 
-	if raw, err := os.ReadFile(path); err == nil && looksLikeV1(raw) { //nolint:gosec // путь — из конфига владельца
+	if raw, err := os.ReadFile(path); err == nil && looksLikeV1(raw) { //nolint:gosec // path comes from the owning config
 		providers, res.Warnings = migrateV1(raw)
 		res.Migrated = true
 	} else {
@@ -101,7 +101,7 @@ type v1Proxy struct {
 	StopPattrn string `json:"stop_pattern"`
 }
 
-// looksLikeV1 — файл без "version": 2 (v1 его не писала).
+// looksLikeV1 checks for a file without "version": 2 (v1 never wrote it).
 func looksLikeV1(raw []byte) bool {
 	var probe struct {
 		Version int `json:"version"`
@@ -113,13 +113,13 @@ func looksLikeV1(raw []byte) bool {
 	return probe.Version != 2
 }
 
-// migrateV1 конвертирует v1-файл по правилам: proxy.start называет внешний
-// транслятор (ccr/copilot-api/claude-codex) → соответствующий protocol;
-// без proxy → прямой anthropic из env-кредов.
+// migrateV1 converts a v1 file by the rules: proxy.start naming an external
+// translator (ccr/copilot-api/claude-codex) → the matching protocol;
+// no proxy → direct anthropic from env credentials.
 func migrateV1(raw []byte) (*models.Providers, []string) {
 	var v1 v1File
 	if err := json.Unmarshal(raw, &v1); err != nil {
-		return &models.Providers{}, []string{fmt.Sprintf("v1-файл не читается (%v), созданы только шаблоны", err)}
+		return &models.Providers{}, []string{fmt.Sprintf("v1 file unreadable (%v), only templates created", err)}
 	}
 
 	var warnings []string
@@ -155,7 +155,7 @@ func migrateProfile(key string, vp *v1Profile) (*models.Profile, []string) {
 		prof.OpenAI = &models.OpenAIConfig{MaxTokensFld: "max_tokens"}
 		baseURL, apiKey, err := loadCCRProvider()
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: не удалось взять креды из ~/.claude-code-router/config.json (%v) — заполните openai.base_url/api_key в ccx edit", key, err))
+			warnings = append(warnings, fmt.Sprintf("%s: failed to load credentials from ~/.claude-code-router/config.json (%v) — fill in openai.base_url/api_key via ccx edit", key, err))
 		} else {
 			prof.OpenAI.BaseURL, prof.OpenAI.APIKey = baseURL, apiKey
 		}
@@ -166,15 +166,15 @@ func migrateProfile(key string, vp *v1Profile) (*models.Profile, []string) {
 		prof.Protocol = models.ProtocolCodex
 		prof.Codex = &CodexDefaults
 	case start != "":
-		// нераспознанный прокси: прямой anthropic + предупреждение
+		// unrecognized proxy: direct anthropic + a warning
 		prof.Protocol = models.ProtocolAnthropic
 		prof.Anthropic = anthropicFromEnv(vp.Env)
-		warnings = append(warnings, fmt.Sprintf("%s: нераспознанный proxy.start %q — профиль переведён как anthropic, проверьте вручную", key, start))
+		warnings = append(warnings, fmt.Sprintf("%s: unrecognized proxy.start %q — profile converted as anthropic, review it manually", key, start))
 	default:
 		prof.Protocol = models.ProtocolAnthropic
 		prof.Anthropic = anthropicFromEnv(vp.Env)
 		if isLocalhostURL(prof.Anthropic.BaseURL) {
-			warnings = append(warnings, fmt.Sprintf("%s: base_url %s — локальный прокси прошлой версии; в v2 демон сам себе прокси, укажите реальный апстрим", key, prof.Anthropic.BaseURL))
+			warnings = append(warnings, fmt.Sprintf("%s: base_url %s is a local proxy from the previous version; in v2 the daemon is its own proxy, point at the real upstream", key, prof.Anthropic.BaseURL))
 		}
 	}
 
@@ -204,7 +204,7 @@ func isLocalhostURL(u string) bool {
 	return strings.Contains(u, "127.0.0.1") || strings.Contains(u, "localhost")
 }
 
-// ccrConfig — вырезка config.json claude-code-router (нужны только креды).
+// ccrConfig is the slice of claude-code-router's config.json we need (credentials only).
 type ccrConfig struct {
 	Providers []struct {
 		Name       string `json:"name"`
@@ -213,12 +213,13 @@ type ccrConfig struct {
 	} `json:"Providers"`
 }
 
-// CCRConfigPath — переопределяет путь ccr-конфига (тесты песочницы);
-// пусто — ~/.claude-code-router/config.json.
+// CCRConfigPath overrides the ccr config path (sandbox tests);
+// empty — ~/.claude-code-router/config.json.
 var CCRConfigPath string
 
-// loadCCRProvider достаёт единственного/первого провайдера ccr и отрезает
-// суффикс /chat/completions (в v2 base_url — корень, транслятор сам строит путь).
+// loadCCRProvider fetches the sole/first ccr provider and strips the
+// /chat/completions suffix (in v2 base_url is the root; the translator
+// builds the path itself).
 func loadCCRProvider() (baseURL, apiKey string, err error) {
 	path := CCRConfigPath
 	if path == "" {
@@ -228,7 +229,7 @@ func loadCCRProvider() (baseURL, apiKey string, err error) {
 		}
 		path = filepath.Join(home, ".claude-code-router", "config.json")
 	}
-	raw, err := os.ReadFile(path) //nolint:gosec // путь — из конфига владельца, не пользовательский ввод
+	raw, err := os.ReadFile(path) //nolint:gosec // path comes from the owning config, not user input
 	if err != nil {
 		return "", "", err
 	}
@@ -246,10 +247,11 @@ func loadCCRProvider() (baseURL, apiKey string, err error) {
 	return baseURL, p.APIKey, nil
 }
 
-// --- импорт окружения (bash-init семантика) ---
+// --- environment import (bash-init semantics) ---
 
-// buildFromEnvironment повторяет bash-init: zai из settings.json env-блока,
-// x5 из env.json (carry-extras), плюс шаблоны openai/copilot/codex.
+// buildFromEnvironment mirrors bash-init: zai from the settings.json env
+// block, x5 from env.json (carry-extras), plus the openai/copilot/codex
+// templates.
 func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 	var warnings []string
 	providers := &models.Providers{}
@@ -259,7 +261,7 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 		providers.Profiles.Set("zai", zai)
 	} else {
 		providers.Profiles.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Anthropic: &models.AnthropicConfig{}, Env: map[string]string{}})
-		warnings = append(warnings, "zai: в settings.json не найден ANTHROPIC_BASE_URL — профиль пустой, заполните ccx edit")
+		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccx edit")
 	}
 
 	if x5 := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); x5 != nil {
@@ -273,9 +275,9 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 	return providers, warnings
 }
 
-// profileFromSettings — прямой профиль из текущего env-блока settings.json;
-// юзерские ключи (API_TIMEOUT_MS и пр.) НЕ переносятся — они остаются в
-// settings.json навсегда (bash-семантика).
+// profileFromSettings builds a direct profile from the current settings.json
+// env block; user keys (API_TIMEOUT_MS etc.) are NOT carried over — they
+// stay in settings.json forever (bash semantics).
 func profileFromSettings(path string) *models.Profile {
 	var settings struct {
 		Env map[string]string `json:"env"`
@@ -303,12 +305,12 @@ func profileFromSettings(path string) *models.Profile {
 	return prof
 }
 
-// envJSONTail — чинит «обрезанный» env.json без обёртывающих скобок
-// (устаревшая копипаста; паритет try_read_env_block bash-версии).
+// envJSONTail repairs a "truncated" env.json without wrapping braces
+// (a stale copy-paste; parity with the bash version's try_read_env_block).
 var envJSONTail = regexp.MustCompile(`,\s*}`)
 
 func profileFromEnvJSON(path string) *models.Profile {
-	raw, err := os.ReadFile(path) //nolint:gosec // путь — из конфига владельца, не пользовательский ввод
+	raw, err := os.ReadFile(path) //nolint:gosec // path comes from the owning config, not user input
 	if err != nil {
 		return nil
 	}
@@ -326,7 +328,7 @@ func profileFromEnvJSON(path string) *models.Profile {
 	}
 
 	return &models.Profile{
-		Name:      "Рабочий шлюз X5 (Copilot)",
+		Name:      "X5 Work Gateway (Copilot)",
 		Protocol:  models.ProtocolAnthropic,
 		Anthropic: anthropicFromEnv(env),
 		Env:       dropAnthropicKeys(env),

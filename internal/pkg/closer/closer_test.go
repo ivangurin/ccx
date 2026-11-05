@@ -81,8 +81,8 @@ func TestClose_HonorsContext(t *testing.T) {
 }
 
 func TestAdd_AfterClose_RunsImmediately(t *testing.T) {
-	// Ресурс, добавленный после shutdown, не должен утекать: Close уже прошёл,
-	// Add выполняет fn немедленно.
+	// A resource added after shutdown must not leak: Close has already run,
+	// so Add runs fn immediately.
 	ran := false
 	c := closer.New()
 	require.NoError(t, c.Close(context.Background()))

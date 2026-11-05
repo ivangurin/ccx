@@ -2,8 +2,8 @@ package models
 
 import "encoding/json"
 
-// AnthropicEvent — типизированное SSE-событие Anthropic Messages stream.
-// Одна структура на все типы: сериализация по Type, пустые подобъекты — omitempty.
+// AnthropicEvent is a typed SSE event of the Anthropic Messages stream.
+// One struct for all types: serialization is driven by Type, empty subobjects are omitempty.
 type AnthropicEvent struct {
 	Type            string                   `json:"type"`
 	Message         *AnthropicMessagePayload `json:"message,omitempty"`
@@ -16,7 +16,7 @@ type AnthropicEvent struct {
 	ContentBlockRaw json.RawMessage          `json:"-"`
 }
 
-// AnthropicMessagePayload — message_start.message / message_stop.
+// AnthropicMessagePayload is message_start.message / message_stop.
 type AnthropicMessagePayload struct {
 	ID         string `json:"id"`
 	Type       string `json:"type"`
@@ -27,7 +27,7 @@ type AnthropicMessagePayload struct {
 	Usage      Usage  `json:"usage"`
 }
 
-// AnthropicBlock — content_block_start.content_block.
+// AnthropicBlock is content_block_start.content_block.
 type AnthropicBlock struct {
 	Type     string          `json:"type"`
 	Text     string          `json:"text,omitempty"`
@@ -37,7 +37,7 @@ type AnthropicBlock struct {
 	Input    json.RawMessage `json:"input,omitempty"`
 }
 
-// AnthropicDelta — content_block_delta.delta.
+// AnthropicDelta is content_block_delta.delta.
 type AnthropicDelta struct {
 	Type        string `json:"type"` // text_delta | thinking_delta | input_json_delta | signature_delta
 	Text        string `json:"text,omitempty"`
@@ -46,13 +46,13 @@ type AnthropicDelta struct {
 	StopReason  string `json:"stop_reason,omitempty"`
 }
 
-// AnthropicMessageDelta — message_delta (usage + stop_reason).
+// AnthropicMessageDelta is message_delta (usage + stop_reason).
 type AnthropicMessageDelta struct {
 	StopReason string `json:"stop_reason"`
 	Usage      Usage  `json:"usage"`
 }
 
-// AnthropicError — error-событие.
+// AnthropicError is the error event.
 type AnthropicError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`

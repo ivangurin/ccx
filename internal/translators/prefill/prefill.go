@@ -1,27 +1,29 @@
-// Package prefill — перепаковка assistant-prefill для шлюзов, отвергающих
-// финальное assistant-сообщение (GitHub Copilot: 400 "must end with a user
-// message"). Точный порт rewrite_body из copilot-bridge.py: прецеденты и
-// формулировки инструкций сохранены 1:1 — они выверены на живом шлюзе.
+// Package prefill repacks the assistant prefill for gateways that reject a
+// final assistant message (GitHub Copilot: 400 "must end with a user message").
+// An exact port of rewrite_body from copilot-bridge.py: the precedents and the
+// wording of the instructions are preserved 1:1 — they were tuned against the
+// live gateway.
 package prefill
 
 import "strings"
 
-// Instruction — текст инструкции продолжения (1:1 с bridge).
+// Instruction is the continuation instruction text (1:1 with the bridge).
 
 const (
 	blockTypeText = "text"
-	Instruction   = "[continuation] Предыдущий ответ оборвался на тексте ниже. " +
-		"Продолжи его точно с места обрыва: не повторяй написанное, не комментируй, " +
-		"сразу продолжение:\n\n"
+	Instruction   = "[continuation] The previous response was cut off at the text below. " +
+		"Continue it exactly from the point of the cut: do not repeat what was written, " +
+		"do not comment, continue immediately:\n\n"
 )
 
-// NoTextStub — заглушка, когда в префилле не было текста (thinking/пусто).
-const NoTextStub = "(предыдущий ответ оборвался без текста — просто продолжи его с места остановки)"
+// NoTextStub is a stub for when the prefill had no text (thinking/empty).
+const NoTextStub = "(the previous response was cut off without text — just continue it from where it stopped)"
 
-// Rewrite перепаковывает prefill-запрос. Политика: последнее сообщение ОТ
-// assistant любого вида (текст/thinking/пусто/tool_use) никогда не уходит
-// upstream — заменяется финальным user с инструкцией продолжить; thinking и
-// tool_use не переносятся. Возвращает (новый body, note); вход не мутируется.
+// Rewrite repacks a prefill request. Policy: the last message FROM the
+// assistant of any kind (text/thinking/empty/tool_use) never goes upstream —
+// it is replaced with a final user message with an instruction to continue;
+// thinking and tool_use are not carried over. Returns (new body, note); the
+// input is not mutated.
 func Rewrite(body map[string]any) (map[string]any, string) {
 	rawMsgs, ok := body["messages"].([]any)
 	if !ok || len(rawMsgs) == 0 {
@@ -29,8 +31,9 @@ func Rewrite(body map[string]any) (map[string]any, string) {
 	}
 	msgs := asMaps(rawMsgs)
 
-	// Claude Code вставляет system-хук-контекст В КОНЕЦ messages, в т.ч.
-	// после assistant-префилла; ищем assistant перед хвостом из system.
+	// Claude Code inserts system hook context AT THE END of messages,
+	// including after the assistant prefill; look for the assistant before
+	// the system tail.
 	k := len(msgs)
 	for k > 0 && role(msgs[k-1]) == "system" {
 		k--
@@ -55,8 +58,8 @@ func Rewrite(body map[string]any) (map[string]any, string) {
 		payload += NoTextStub
 	}
 
-	// system-хвост сохраняем, но ставим ПЕРЕД финальным user (шлюз требует
-	// user-финал; хук-контекст остаётся в разговоре)
+	// the system tail is preserved but placed BEFORE the final user (the
+	// gateway requires a user finale; the hook context stays in the dialogue)
 	fresh := copyBody(body)
 	fresh["messages"] = appendMaps(msgs[:k-1], systemTail,
 		map[string]any{"role": "user", "content": payload})
@@ -64,8 +67,9 @@ func Rewrite(body map[string]any) (map[string]any, string) {
 	return fresh, note
 }
 
-// rewriteNonAssistantFinal — финал не assistant: no-op, либо слив system-хвоста
-// в user (шлюз требует СТРОГО user-финал — [user, system] тоже отвергается).
+// rewriteNonAssistantFinal: the finale is not the assistant's — no-op, or
+// merging the system tail into the user (the gateway requires a STRICTLY user
+// finale — [user, system] is rejected too).
 func rewriteNonAssistantFinal(body map[string]any, msgs []map[string]any, k int, tail []map[string]any) (map[string]any, string) {
 	if len(tail) == 0 {
 		return body, "no-prefill"
@@ -79,7 +83,7 @@ func rewriteNonAssistantFinal(body map[string]any, msgs []map[string]any, k int,
 		return fresh, "sys-tail-merged:" + itoa(len(tail))
 	}
 	if k == 0 && len(sysTexts) > 0 {
-		// messages — только system: всё в одно user-сообщение
+		// messages are only system: put everything into one user message
 		fresh := copyBody(body)
 		fresh["messages"] = []any{
 			map[string]any{"role": "user", "content": strings.Join(sysTexts, "\n\n")},
@@ -91,9 +95,9 @@ func rewriteNonAssistantFinal(body map[string]any, msgs []map[string]any, k int,
 	return body, "no-prefill"
 }
 
-// prefillContent извлекает тексты и виды блоков assistant-префилла.
+// prefillContent extracts the texts and block kinds of the assistant prefill.
 //
-//nolint:gocognit // точный порт rewrite_body (1:1 с copilot-bridge.py)
+//nolint:gocognit // exact port of rewrite_body (1:1 with copilot-bridge.py)
 func prefillContent(content any) (texts, kinds []string) {
 	switch c := content.(type) {
 	case string:
@@ -109,19 +113,19 @@ func prefillContent(content any) (texts, kinds []string) {
 			if !ok {
 				continue
 			}
-			blockType, _ := block["type"].(string) //nolint:revive // дефолт "?" ниже
+			blockType, _ := block["type"].(string) //nolint:revive // default "?" below
 			if blockType == "" {
 				blockType = "?"
 			}
 			kinds = append(kinds, blockType)
 			if blockType == blockTypeText {
-				if text, _ := block["text"].(string); text != "" { //nolint:revive // пустая строка == нет текста
+				if text, _ := block["text"].(string); text != "" { //nolint:revive // an empty string == no text
 					texts = append(texts, text)
 				}
 			}
 		}
 	default:
-		// прочие типы контента — только в kinds
+		// other content types — kinds only
 	}
 	if len(kinds) == 0 {
 		kinds = []string{"empty"}
@@ -130,9 +134,9 @@ func prefillContent(content any) (texts, kinds []string) {
 	return texts, kinds
 }
 
-// systemTexts — тексты system-сообщений (строка или text-блоки).
+// systemTexts returns the texts of system messages (a string or text blocks).
 //
-//nolint:gocognit // точный порт _system_texts из copilot-bridge.py (1:1)
+//nolint:gocognit // exact port of _system_texts from copilot-bridge.py (1:1)
 func systemTexts(systemMsgs []map[string]any) []string {
 	var texts []string
 	for _, m := range systemMsgs {
@@ -145,21 +149,21 @@ func systemTexts(systemMsgs []map[string]any) []string {
 			for _, raw := range c {
 				if block, ok := raw.(map[string]any); ok {
 					if block["type"] == blockTypeText {
-						if text, _ := block["text"].(string); text != "" { //nolint:revive // пустая строка == нет текста //nolint:revive // пустая строка == нет текста
+						if text, _ := block["text"].(string); text != "" { //nolint:revive // an empty string == no text //nolint:revive // an empty string == no text
 							texts = append(texts, text)
 						}
 					}
 				}
 			}
 		default:
-			// прочий контент игнорируем
+			// other content is ignored
 		}
 	}
 
 	return texts
 }
 
-// mergeIntoUser дописывает system-тексты в user-сообщение (строка или блоки).
+// mergeIntoUser appends system texts to a user message (a string or blocks).
 func mergeIntoUser(userMsg map[string]any, sysTexts []string) map[string]any {
 	merged := copyMap(userMsg)
 	add := strings.Join(sysTexts, "\n\n")
@@ -181,7 +185,7 @@ func mergeIntoUser(userMsg map[string]any, sysTexts []string) map[string]any {
 }
 
 func role(msg map[string]any) string {
-	r, _ := msg["role"].(string) //nolint:revive // нет роли == пустая строка
+	r, _ := msg["role"].(string) //nolint:revive // no role == empty string
 
 	return r
 }
@@ -197,7 +201,7 @@ func asMaps(items []any) []map[string]any {
 	return out
 }
 
-// appendMaps собирает map-сообщения в []any (порядок: a, b, tail...).
+// appendMaps assembles map messages into []any (order: a, b, tail...).
 func appendMaps(a, b []map[string]any, tail ...map[string]any) []any {
 	out := make([]any, 0, len(a)+len(b)+len(tail))
 	for _, m := range a {

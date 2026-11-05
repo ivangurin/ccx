@@ -6,10 +6,10 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// имена событий (goconst).
+// event names (goconst).
 const evMessageDelta = "message_delta"
 
-// stopReason — finish_reason → stop_reason.
+// stopReason maps finish_reason → stop_reason.
 func stopReason(finish string) string {
 	switch finish {
 	case "tool_calls":
@@ -18,30 +18,30 @@ func stopReason(finish string) string {
 		return "max_tokens"
 	case "content_filter":
 		return "refusal"
-	default: // stop и неизвестные
+	default: // stop and unknown
 		return "end_turn"
 	}
 }
 
-// StreamConverter превращает SSE-чанки chat/completions в события
-// Anthropic Messages. Состояние: текущий блок (text/thinking/tool_use per index),
-// финальный stop_reason/usage. Чистый конвертер — golden-тестируем.
+// StreamConverter turns chat/completions SSE chunks into Anthropic Messages
+// events. State: the current block (text/thinking/tool_use per index), the
+// final stop_reason/usage. A pure converter — golden-testable.
 type StreamConverter struct {
 	model     string
 	started   bool
 	nextIndex int
-	// открытые блоки: tool_use по openai-index → anthropic-index
+	// open blocks: tool_use by openai-index → anthropic-index
 	toolBlocks map[int]int
 	usage      *models.Usage
 	stopReason string
 }
 
-// NewStreamConverter создаёт конвертер для модели.
+// NewStreamConverter creates a converter for the model.
 func NewStreamConverter(model string) *StreamConverter {
 	return &StreamConverter{model: model, toolBlocks: map[int]int{}}
 }
 
-// Feed принимает чанк, возвращает события.
+// Feed accepts a chunk, returns events.
 func (c *StreamConverter) Feed(chunk *models.ChatChunk) []models.AnthropicEvent {
 	var events []models.AnthropicEvent
 	if !c.started {
@@ -75,7 +75,7 @@ func (c *StreamConverter) feedChoice(choice struct {
 	d := choice.Delta
 
 	if d.Reasoning != "" {
-		// thinking-блок открывается лениво (при первом reasoning-фрагменте)
+		// the thinking block opens lazily (on the first reasoning fragment)
 		if _, open := c.toolBlocks[-1]; !open {
 			c.toolBlocks[-1] = c.nextIndex
 			events = append(events, blockStart(c.nextIndex, models.AnthropicBlock{Type: "thinking"}))
@@ -113,8 +113,8 @@ func (c *StreamConverter) feedChoice(choice struct {
 	return events
 }
 
-// Finish закрывает открытые блоки (в порядке открытия — детерминизм) и
-// завершает сообщение; message_stop строго без payload.
+// Finish closes open blocks (in opening order — determinism) and completes the
+// message; message_stop strictly without a payload.
 func (c *StreamConverter) Finish() []models.AnthropicEvent {
 	if !c.started {
 		return nil
@@ -138,8 +138,9 @@ func (c *StreamConverter) Finish() []models.AnthropicEvent {
 	return events
 }
 
-// FinishBroken — финал после обрыва апстрима: блоки закрыты, stop_reason
-// не подменяет ошибку (SSE-error уже эмитнут релеем до этого).
+// FinishBroken is the finale after an upstream break: blocks are closed,
+// stop_reason does not mask the error (the SSE error has already been emitted
+// by the relay before this).
 func (c *StreamConverter) FinishBroken() []models.AnthropicEvent {
 	if !c.started {
 		return nil
@@ -154,7 +155,7 @@ func (c *StreamConverter) FinishBroken() []models.AnthropicEvent {
 	return events
 }
 
-// closeBlocks — content_block_stop по возрастанию индекса (порядок открытия).
+// closeBlocks emits content_block_stop in ascending index order (opening order).
 func (c *StreamConverter) closeBlocks() []models.AnthropicEvent {
 	indexes := make([]int, 0, len(c.toolBlocks))
 	seenIdx := map[int]bool{}
@@ -193,7 +194,7 @@ func deltaEvent(index int, deltaType, value string) models.AnthropicEvent {
 		delta.Thinking = value
 	case "input_json_delta":
 		delta.PartialJSON = value
-	default: // text_delta и прочие текстовые
+	default: // text_delta and other textual ones
 		delta.Text = value
 	}
 

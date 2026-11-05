@@ -1,6 +1,6 @@
-// Package tui — встроенное меню выбора (стрелки/Enter/фильтр) без внешнего
-// fzf: единый бинарник самодостаточен. Без терминала — нумерованный fallback
-// (порт pick_from_list bash-ccx).
+// Package tui — a built-in selection menu (arrows/Enter/filter) without an
+// external fzf: the single binary is self-sufficient. Without a terminal —
+// a numbered fallback (a port of bash-ccx pick_from_list).
 package tui
 
 import (
@@ -13,13 +13,14 @@ import (
 	"golang.org/x/term"
 )
 
-// Item — строка меню: Label — основная, Detail — вторичная (модель/протокол).
+// Item — a menu row: Label is the primary text, Detail the secondary one
+// (model/protocol).
 type Item struct {
 	Label  string
 	Detail string
 }
 
-// Filter отбирает элементы по подстроке (case-insensitive, по Label и Detail).
+// Filter selects items by substring (case-insensitive, over Label and Detail).
 func Filter(items []Item, query string) []Item {
 	if query == "" {
 		return items
@@ -35,9 +36,9 @@ func Filter(items []Item, query string) []Item {
 	return out
 }
 
-// Select — интерактивный выбор; in/out позволяют тестировать fallback.
-// Терминал (raw mode): ↑↓/Ctrl-P/N, Enter — выбор, Esc/Ctrl-C — отмена,
-// остальной ввод — фильтр. Не-терминал → FallbackSelect.
+// Select — interactive selection; in/out make the fallback testable.
+// Terminal (raw mode): ↑↓/Ctrl-P/N, Enter — select, Esc/Ctrl-C — cancel,
+// any other input — filter. Non-terminal → FallbackSelect.
 func Select(header string, items []Item, defaultIdx int, in io.Reader, out io.Writer) (int, error) {
 	if len(items) == 0 {
 		return -1, errEmptyList
@@ -50,9 +51,9 @@ func Select(header string, items []Item, defaultIdx int, in io.Reader, out io.Wr
 	return runInteractive(header, items, defaultIdx, f, out)
 }
 
-// FallbackSelect — нумерованный выбор без TUI: ввод номера, пусто = default.
+// FallbackSelect — numbered selection without a TUI: enter a number, empty = default.
 func FallbackSelect(items []Item, defaultIdx int, in *bufio.Reader, out io.Writer) (int, error) {
-	fmt.Fprintln(out, "Выберите (Enter = по умолчанию):")
+	fmt.Fprintln(out, "Choose (Enter = default):")
 	for i, it := range items {
 		mark := "  "
 		if i == defaultIdx {
@@ -78,6 +79,6 @@ func FallbackSelect(items []Item, defaultIdx int, in *bufio.Reader, out io.Write
 		if _, err := fmt.Sscanf(line, "%d", &n); err == nil && n >= 1 && n <= len(items) {
 			return n - 1, nil
 		}
-		fmt.Fprintf(out, "Введите число 1..%d\n", len(items))
+		fmt.Fprintf(out, "Enter a number 1..%d\n", len(items))
 	}
 }

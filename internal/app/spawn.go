@@ -13,16 +13,16 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 )
 
-// SpawnDetached поднимает демон-ребёнка: своя сессия (Setsid — смерть
-// терминала не убивает), stdout/stderr → daemon.log, stdin → /dev/null.
+// SpawnDetached starts a child daemon: its own session (Setsid — terminal
+// death doesn't kill it), stdout/stderr → daemon.log, stdin → /dev/null.
 func SpawnDetached(cfg *config.Config) error {
 	logPath := filepath.Join(cfg.LogDir(), "daemon.log")
 	if err := os.MkdirAll(cfg.LogDir(), 0o750); err != nil {
-		return fmt.Errorf("spawn: лог-каталог: %w", err)
+		return fmt.Errorf("spawn: log dir: %w", err)
 	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // фиксированные права
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // fixed permissions
 	if err != nil {
-		return fmt.Errorf("spawn: лог-файл: %w", err)
+		return fmt.Errorf("spawn: log file: %w", err)
 	}
 	defer func() { _ = logFile.Close() }()
 
@@ -30,20 +30,20 @@ func SpawnDetached(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("spawn: executable: %w", err)
 	}
-	cmd := exec.Command(exe, "serve", "--daemon") //nolint:gosec // наш собственный бинарник
+	cmd := exec.Command(exe, "serve", "--daemon") //nolint:gosec // our own binary
 	cmd.Stdin = nil
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // отцепиться от группы терминала
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from the terminal group
 	cmd.Env = os.Environ()
 
 	return cmd.Start()
 }
 
-// HealthCheck — жив ли демон (любой HTTP-ответ = жив; паритет bash-семантики).
+// HealthCheck — whether the daemon is alive (any HTTP response = alive; bash semantics parity).
 func HealthCheck(baseURL string, timeout time.Duration) bool {
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(baseURL + "/health") //nolint:gosec // локальный адрес демона
+	resp, err := client.Get(baseURL + "/health") //nolint:gosec // local daemon address
 	if err != nil {
 		return false
 	}
@@ -52,7 +52,7 @@ func HealthCheck(baseURL string, timeout time.Duration) bool {
 	return true
 }
 
-// WaitForHealth поллит /health до таймаута.
+// WaitForHealth polls /health until the timeout.
 func WaitForHealth(ctx context.Context, baseURL string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

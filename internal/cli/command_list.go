@@ -8,7 +8,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// runList — ccx list: профили и модели в порядке файла.
+// runList — ccx list: profiles and models in file order.
 func runList(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -22,7 +22,7 @@ func runList(_ []string, stdout io.Writer) int {
 	}
 
 	if providers.Profiles.Len() == 0 {
-		fmt.Fprintln(stdout, "Профилей нет — добавьте в providers.json или ccx init")
+		fmt.Fprintln(stdout, "No profiles — add them to providers.json or run ccx init")
 
 		return 0
 	}
@@ -38,8 +38,8 @@ func runList(_ []string, stdout io.Writer) int {
 	return 0
 }
 
-// modelLine — строка модели в списке: label, id (вводится пользователем),
-// метки default и алиаса.
+// modelLine — the model's list line: label, id (typed by the user),
+// default and alias markers.
 func modelLine(m models.Model) string {
 	label := m.Label
 	if label == "" {

@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// freePort — свободный TCP-порт для демона теста.
+// freePort — a free TCP port for the test daemon.
 func freePort(t *testing.T) int {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -34,10 +34,10 @@ func freePort(t *testing.T) int {
 }
 
 func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
-	// фейк-апстрим Anthropic-совместимого провайдера
+	// fake upstream of an Anthropic-compatible provider
 	upstream := startFakeUpstream(t)
 
-	// песочница CCX_HOME + providers.json c живым апстримом
+	// CCX_HOME sandbox + providers.json with a live upstream
 	home := t.TempDir()
 	port := freePort(t)
 	t.Setenv("CCX_HOME", home)
@@ -57,7 +57,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, config.SaveProviders(cfg.ProvidersPath(), providers))
 
-	// state: рестарт-сценарий — маршрут восстанавливается из state
+	// state: restart scenario — the route is restored from state
 	require.NoError(t, os.WriteFile(cfg.StatePath(), []byte(`{"profile":"zai","model":"glm-5.3[1m]","updated":"now"}`), 0o600))
 
 	log, err := logger.New(os.Stderr, "error", "json")
@@ -68,7 +68,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	go func() { _ = app.New(cfg, log).Run(ctx) }()
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	require.Eventually(t, func() bool { return alive(base + "/health") }, 5*time.Second, 50*time.Millisecond, "демон не поднялся")
+	require.Eventually(t, func() bool { return alive(base + "/health") }, 5*time.Second, 50*time.Millisecond, "daemon did not come up")
 
 	t.Run("restore from state routes messages", func(t *testing.T) {
 		body := postJSON(t, base+"/v1/messages", "e2e-token", `{"model":"glm-5.3[1m]","stream":false}`)
@@ -76,7 +76,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	})
 
 	t.Run("unauthorized without token", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodPost, base+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // тест
+		req, _ := http.NewRequest(http.MethodPost, base+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer func() { _ = resp.Body.Close() }()
@@ -84,7 +84,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	})
 
 	t.Run("admin health reports active", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, base+"/admin/health", nil) //nolint:gosec // тест
+		req, _ := http.NewRequest(http.MethodGet, base+"/admin/health", nil) //nolint:gosec // test
 		req.Header.Set("Authorization", "Bearer e2e-token")
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
@@ -100,7 +100,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	})
 
 	t.Run("models endpoint", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil) //nolint:gosec // тест
+		req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil) //nolint:gosec // test
 		req.Header.Set("Authorization", "Bearer e2e-token")
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
@@ -122,7 +122,7 @@ func startFakeUpstream(t *testing.T) *httptest.Server {
 }
 
 func alive(url string) bool {
-	resp, err := (&http.Client{Timeout: time.Second}).Get(url) //nolint:gosec // тест
+	resp, err := (&http.Client{Timeout: time.Second}).Get(url) //nolint:gosec // test
 	if err != nil {
 		return false
 	}
@@ -133,7 +133,7 @@ func alive(url string) bool {
 
 func postJSON(t *testing.T, url, token, body string) string {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body)) //nolint:gosec // тест
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body)) //nolint:gosec // test
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	require.NoError(t, err)

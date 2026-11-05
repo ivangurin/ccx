@@ -1,8 +1,8 @@
-// Package router — активный маршрут демона: профиль → транслятор.
-// Use(): перечитать providers.json → построить транслятор по protocol →
-// Ready() → атомарный swap (in-flight остаются на старом) → Close старого.
-// Демон stateless по пользовательским файлам: маршрут восстанавливает из
-// ccx-state.json (read-only) при старте.
+// Package router — the daemon's active route: profile → translator.
+// Use(): reread providers.json → build a translator by protocol →
+// Ready() → atomic swap (in-flight requests stay on the old one) → Close
+// the old one. The daemon is stateless regarding user files: the route is
+// restored from ccx-state.json (read-only) at startup.
 package router
 
 import (
@@ -28,14 +28,14 @@ import (
 	"github.com/ivangurin/ccx/internal/translators/openai"
 )
 
-// route — связка профиль+модель+транслятор; immutable после установки.
+// route — a profile+model+translator bundle; immutable once installed.
 type route struct {
 	profile    string
 	model      string
 	translator translators.Translator
 }
 
-// Service — маршрутизатор демона.
+// Service — the daemon's router.
 type Service struct {
 	cfg     *config.Config
 	log     *slog.Logger
@@ -43,8 +43,8 @@ type Service struct {
 	authTok atomic.Pointer[string]
 }
 
-// New создаёт сервис роутера; клиентский токен демона грузится сразу
-// (middleware авторизации работает до первого Use).
+// New creates the router service; the daemon's client token is loaded right
+// away (the auth middleware works before the first Use).
 func New(cfg *config.Config, log *slog.Logger) *Service {
 	s := &Service{cfg: cfg, log: log}
 	s.authTok.Store(new(string))
@@ -52,13 +52,13 @@ func New(cfg *config.Config, log *slog.Logger) *Service {
 		token := providers.Daemon.AuthToken
 		s.authTok.Store(&token)
 	} else {
-		log.Warn("providers.json недоступен на старте демона", "err", err)
+		log.Warn("providers.json unavailable at daemon startup", "err", err)
 	}
 
 	return s
 }
 
-// Use переключает активный профиль (перечитывая providers.json).
+// Use switches the active profile (rereading providers.json).
 func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
 	if err != nil {
@@ -69,7 +69,7 @@ func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 
 	profile := providers.Profiles.Get(profileKey)
 	if profile == nil {
-		return fmt.Errorf("router: неизвестный профиль: %s", profileKey)
+		return fmt.Errorf("router: unknown profile: %s", profileKey)
 	}
 
 	tr, err := buildTranslator(s.cfg, profile)
@@ -79,30 +79,30 @@ func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 	if err := tr.Ready(ctx); err != nil {
 		_ = tr.Close(ctx)
 
-		return fmt.Errorf("router: профиль %s не готов: %w", profileKey, err)
+		return fmt.Errorf("router: profile %s not ready: %w", profileKey, err)
 	}
 
 	old := s.active.Swap(&route{profile: profileKey, model: model, translator: tr})
 	if old != nil {
-		_ = old.translator.Close(ctx) // in-flight уже держат свою ссылку
+		_ = old.translator.Close(ctx) // in-flight requests already hold their own reference
 	}
 	s.log.Info("route activated", "profile", profileKey, "model", model, "protocol", profile.Protocol)
 
 	return nil
 }
 
-// buildTranslator — реестр protocol → транслятор.
+// buildTranslator — the protocol → translator registry.
 func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.Translator, error) {
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
 		if profile.Anthropic == nil {
-			return nil, errors.New("профиль без блока anthropic (base_url) — заполните ccx edit")
+			return nil, errors.New("profile has no anthropic block (base_url) — fill it in via ccx edit")
 		}
 
 		return anthropic.New(profile), nil
 	case models.ProtocolOpenAI:
 		if profile.OpenAI == nil {
-			return nil, errors.New("профиль без блока openai (base_url) — заполните ccx edit")
+			return nil, errors.New("profile has no openai block (base_url) — fill it in via ccx edit")
 		}
 
 		return openai.New(profile), nil
@@ -118,11 +118,11 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 
 		return codex_tr.New(profile, codex.New(authPath)), nil
 	default:
-		return nil, fmt.Errorf("router: неизвестный protocol %q", profile.Protocol)
+		return nil, fmt.Errorf("router: unknown protocol %q", profile.Protocol)
 	}
 }
 
-// Restore восстанавливает маршрут из ccx-state.json (старт демона).
+// Restore restores the route from ccx-state.json (daemon startup).
 func (s *Service) Restore(ctx context.Context) {
 	var state models.State
 	if err := jsonfile.ReadJSON(s.cfg.StatePath(), &state); err != nil || state.Profile == "" {
@@ -135,7 +135,7 @@ func (s *Service) Restore(ctx context.Context) {
 	}
 }
 
-// Active — (профиль, модель, есть ли маршрут).
+// Active — (profile, model, whether a route exists).
 func (s *Service) Active() (profile, model string, ok bool) {
 	routeRef := s.active.Load()
 	if routeRef == nil {
@@ -145,39 +145,39 @@ func (s *Service) Active() (profile, model string, ok bool) {
 	return routeRef.profile, routeRef.model, true
 }
 
-// Ready — активный транслятор готов (маршрут есть).
+// Ready — the active translator is ready (a route exists).
 func (s *Service) Ready() bool {
 	return s.active.Load() != nil
 }
 
-// AuthToken — клиентский токен демона из providers.json.
+// AuthToken — the daemon's client token from providers.json.
 func (s *Service) AuthToken() string {
 	return *s.authTok.Load()
 }
 
-// ServeMessages делегирует /v1/messages активному транслятору.
+// ServeMessages delegates /v1/messages to the active translator.
 func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	routeRef := s.active.Load()
 	if routeRef == nil {
-		writeAnthropicError(w, http.StatusServiceUnavailable, "нет активного профиля — выполните ccx use")
+		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccx use")
 
 		return
 	}
 	routeRef.translator.ServeMessages(w, r)
 }
 
-// ServeCountTokens делегирует /v1/messages/count_tokens.
+// ServeCountTokens delegates /v1/messages/count_tokens.
 func (s *Service) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	routeRef := s.active.Load()
 	if routeRef == nil {
-		writeAnthropicError(w, http.StatusServiceUnavailable, "нет активного профиля — выполните ccx use")
+		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccx use")
 
 		return
 	}
 	routeRef.translator.ServeCountTokens(w, r)
 }
 
-// Models — /v1/models из models активного профиля.
+// Models — /v1/models from the active profile's models.
 func (s *Service) Models() []models.Model {
 	r := s.active.Load()
 	if r == nil {
@@ -194,7 +194,7 @@ func (s *Service) Models() []models.Model {
 	return nil
 }
 
-// Close гасит активный транслятор.
+// Close quenches the active translator.
 func (s *Service) Close(ctx context.Context) error {
 	if r := s.active.Load(); r != nil {
 		return r.translator.Close(ctx)
@@ -209,7 +209,7 @@ func writeAnthropicError(w http.ResponseWriter, status int, msg string) {
 	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg)
 }
 
-// expandHome — раскрыть ~ в путях конфига (auth_file codex).
+// expandHome — expand ~ in config paths (codex auth_file).
 func expandHome(path string) string {
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {

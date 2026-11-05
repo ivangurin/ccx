@@ -9,15 +9,15 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/sse"
 )
 
-// ServeChatStream — общий релей chat/completions-SSE → Anthropic-SSE
-// (openai и copilot трансляторы). Семантика:
-//   - writer ленивый: до первого события заголовки не пишутся (ошибка
-//     пустого стрима отдаётся как 502 JSON, а не пустой SSE);
-//   - [DONE] обязателен: EOF без него = обрыв апстрима → SSE-error + финал
-//     без маскировки под нормальное завершение;
-//   - message_stop строго {"type":"message_stop"}.
+// ServeChatStream is the shared chat/completions-SSE → Anthropic-SSE relay
+// (openai and copilot translators). Semantics:
+//   - the writer is lazy: headers are not written before the first event
+//     (an empty-stream error is returned as 502 JSON, not an empty SSE);
+//   - [DONE] is mandatory: EOF without it = upstream break → SSE error + finale
+//     without masquerading as a normal completion;
+//   - message_stop is strictly {"type":"message_stop"}.
 //
-//nolint:gocognit // релей: ленивый writer + обработка обрыва, разбиение затемнит
+//nolint:gocognit // relay: lazy writer + break handling, splitting would obscure
 func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string) {
 	reader := sse.NewReader(resp.Body)
 	conv := NewStreamConverter(model)
@@ -33,7 +33,7 @@ func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string) {
 	for {
 		ev, err := reader.Next()
 		if err != nil {
-			// обрыв до [DONE]: не тихий end_turn — явная ошибка клиенту
+			// break before [DONE]: not a silent end_turn — an explicit error to the client
 			if writer != nil {
 				emit(models.AnthropicEvent{
 					Type:  "error",
@@ -74,5 +74,5 @@ func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string) {
 func writeStreamError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // %q экранирует
+	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // %q escapes
 }

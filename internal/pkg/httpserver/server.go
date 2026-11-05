@@ -1,6 +1,6 @@
-// Package httpserver — http.Server c собственным листенером (порт известен
-// до старта — тесты на :0) и graceful Stop. WriteTimeout нулевой сознательно:
-// SSE-стримы Claude Code живут дольше любого разумного таймаута записи.
+// Package httpserver — http.Server with its own listener (the port is known
+// before start — tests use :0) and graceful Stop. WriteTimeout is zero
+// deliberately: Claude Code SSE streams outlive any reasonable write timeout.
 package httpserver
 
 import (
@@ -11,13 +11,13 @@ import (
 	"time"
 )
 
-// Server — обёртка http.Server с готовым листенером.
+// Server — an http.Server wrapper with a ready listener.
 type Server struct {
 	srv *http.Server
 	lis net.Listener
 }
 
-// New создаёт сервер и биндит адрес (порт :0 — свободный).
+// New creates the server and binds the address (port :0 — a free one).
 func New(addr string, handler http.Handler) (*Server, error) {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -25,11 +25,11 @@ func New(addr string, handler http.Handler) (*Server, error) {
 	}
 	srv := &http.Server{
 		Handler: handler,
-		// Большие контексты Claude Code едут в теле — не рвём чтение тела
+		// Large Claude Code contexts travel in the body — do not cut body reads
 		ReadTimeout: 0,
-		// медленный-loris защита: заголовки обязаны прийти быстро
+		// slow-loris protection: headers must arrive quickly
 		ReadHeaderTimeout: 30 * time.Second,
-		// SSE: таймаут записи выключен (см. комментарий пакета)
+		// SSE: write timeout is off (see the package comment)
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
 	}
@@ -37,12 +37,12 @@ func New(addr string, handler http.Handler) (*Server, error) {
 	return &Server{srv: srv, lis: lis}, nil
 }
 
-// Addr возвращает реальный адрес листенера.
+// Addr returns the listener's real address.
 func (s *Server) Addr() string {
 	return s.lis.Addr().String()
 }
 
-// Start блокирует, обслуживая соединения; возвращает nil после Stop.
+// Start blocks while serving connections; returns nil after Stop.
 func (s *Server) Start() error {
 	if err := s.srv.Serve(s.lis); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("httpserver: serve: %w", err)
@@ -51,7 +51,7 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Stop гасит сервер gracefully в пределах ctx.
+// Stop shuts the server down gracefully within ctx.
 func (s *Server) Stop(ctx context.Context) error {
 	if err := s.srv.Shutdown(ctx); err != nil {
 		return fmt.Errorf("httpserver: shutdown: %w", err)

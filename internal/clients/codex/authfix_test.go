@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// liveAuthJSON — структура РЕАЛЬНОГО ~/.codex/auth.json (tokens.account_id,
-// auth_mode, id_token, last_refresh — всё должно переживать наш рефреш).
+// liveAuthJSON mirrors the REAL ~/.codex/auth.json shape (tokens.account_id,
+// auth_mode, id_token, last_refresh — all of it must survive our refresh).
 const liveAuthJSON = `{
 	"OPENAI_API_KEY": null,
 	"auth_mode": "chatgpt",
@@ -33,7 +33,7 @@ func TestC1_LiveAuthShape_AccountIDFromTokens(t *testing.T) {
 
 	auth, err := codex.LoadAuth(path)
 	require.NoError(t, err)
-	require.Equal(t, "acc-live-42", auth.AccountID, "account_id живого файла лежит в tokens")
+	require.Equal(t, "acc-live-42", auth.AccountID, "the live file's account_id lives in tokens")
 }
 
 func TestC1_RefreshPreservesAllFields(t *testing.T) {
@@ -51,8 +51,8 @@ func TestC1_RefreshPreservesAllFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "acc-live-42", auth.AccountID)
 
-	// файл после рефреша: токены обновлены, auth_mode/id_token/account_id/last_refresh сохранены
-	rawData, err := os.ReadFile(path) //nolint:gosec // путь песочницы теста
+	// file after refresh: tokens updated, auth_mode/id_token/account_id/last_refresh preserved
+	rawData, err := os.ReadFile(path) //nolint:gosec // test sandbox path
 	require.NoError(t, err)
 	raw := string(rawData)
 	require.Contains(t, raw, `"auth_mode": "chatgpt"`)
@@ -63,7 +63,7 @@ func TestC1_RefreshPreservesAllFields(t *testing.T) {
 }
 
 func TestC1_AuthTokenEndpointNotRequiredWhenValid(t *testing.T) {
-	// валидный access — рефреш не дёргается, поля не трогаются
+	// valid access — refresh not triggered, fields untouched
 	path := filepath.Join(t.TempDir(), "auth.json")
 	full := `{"auth_mode":"chatgpt","tokens":{"access_token":"` + futureJWT(t) + `","refresh_token":"r","account_id":"a","id_token":"i","last_refresh":"x"}}`
 	require.NoError(t, writeFile(path, full))

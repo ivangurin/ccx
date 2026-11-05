@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeGitHub — эмулирует github.com: device-code, access_token (поллинг),
-// copilot_internal/v2/token (обмен на copilot-token).
+// fakeGitHub emulates github.com: device-code, access_token (polling),
+// copilot_internal/v2/token (copilot-token exchange).
 type fakeGitHub struct {
 	exchangeCalls atomic.Int32
 }
@@ -65,7 +65,7 @@ func TestDeviceFlow_Auth(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "gho_user", token)
 
-	// пользовательский токен сохранён
+	// user token saved
 	var saved map[string]any
 	require.NoError(t, jsonfile.ReadJSON(store, &saved))
 	require.Equal(t, "gho_user", saved["user_access_token"])
@@ -76,7 +76,7 @@ func TestToken_LazyExchangeAndCache(t *testing.T) {
 	gh := httptest.NewServer(fg.handler(t))
 	t.Cleanup(gh.Close)
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
-	// уже авторизован
+	// already authenticated
 	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{"user_access_token": "gho_user"}, 0o600))
 
 	client := newClient(t, gh, store)
@@ -84,7 +84,7 @@ func TestToken_LazyExchangeAndCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "tid_copilot_secret", tok1)
 
-	// второй вызов — из кэша (один обмен)
+	// second call — from cache (a single exchange)
 	tok2, err := client.Token(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, tok1, tok2)
@@ -95,7 +95,7 @@ func TestToken_RefreshOnExpiry(t *testing.T) {
 	gh := httptest.NewServer((&fakeGitHub{}).handler(t))
 	t.Cleanup(gh.Close)
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
-	// copilot-token уже протух
+	// copilot-token already expired
 	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{
 		"user_access_token": "gho_user",
 		"copilot_token":     "tid_old",

@@ -24,9 +24,9 @@ func (fakeAuth) Token(_ context.Context) (codexauth.Auth, error) {
 func TestBuildResponsesRequest(t *testing.T) {
 	var req models.MessagesRequest
 	require.NoError(t, jsonUnmarshal(`{
-		"model":"gpt-6.1-codex","max_tokens":100,"system":"ты кодер",
+		"model":"gpt-6.1-codex","max_tokens":100,"system":"you are a coder",
 		"messages":[
-			{"role":"user","content":"сделай"},
+			{"role":"user","content":"do it"},
 			{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{"cmd":"ls"}}]},
 			{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}
 		],
@@ -35,7 +35,7 @@ func TestBuildResponsesRequest(t *testing.T) {
 
 	out := codex.BuildResponsesRequest(&req)
 	require.Equal(t, "gpt-6.1-codex", out.Model)
-	require.Equal(t, "ты кодер", out.Instructions)
+	require.Equal(t, "you are a coder", out.Instructions)
 	require.Equal(t, 100, out.MaxOutputTokens)
 	require.Len(t, out.Input, 3)
 	require.Equal(t, "message", out.Input[0].Type)
@@ -52,8 +52,8 @@ func TestServeMessages_Stream(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\"}}\n\n")
-		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"При\"}\n\n")
-		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"вет\"}\n\n")
+		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Hel\"}\n\n")
+		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"lo\"}\n\n")
 		_, _ = io.WriteString(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":4,\"output_tokens\":2}}}\n\n")
 	}))
 	t.Cleanup(up.Close)
@@ -68,8 +68,8 @@ func TestServeMessages_Stream(t *testing.T) {
 	out := rec.Body.String()
 	require.Contains(t, out, "event: message_start")
 	require.Contains(t, out, "text_delta")
-	require.Contains(t, out, "При")
-	require.Contains(t, out, "вет")
+	require.Contains(t, out, "Hel")
+	require.Contains(t, out, "lo")
 	require.Contains(t, out, "event: message_stop")
 }
 

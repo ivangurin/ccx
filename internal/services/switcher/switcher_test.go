@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeDaemon — мок демона: помнит вызовы, умеет падать.
+// fakeDaemon — a daemon mock: remembers calls, can fail on demand.
 type fakeDaemon struct {
 	mu       sync.Mutex
 	ensureOK bool
@@ -52,7 +52,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 
-	// providers.json: zai (anthropic, extras нет), x5 (openai + extra-ключ)
+	// providers.json: zai (anthropic, no extras), x5 (openai + an extra key)
 	p := &models.Providers{
 		Version: 2,
 		Daemon:  models.Daemon{Port: 4567, AuthToken: "daemon-token"},
@@ -76,7 +76,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	// settings.json с юзерскими ключами (не трогаются) и мусорным ANTHROPIC_*
+	// settings.json with user keys (left untouched) and a stale ANTHROPIC_*
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
 		"env": {
 			"API_TIMEOUT_MS": "3000000",
@@ -116,14 +116,14 @@ func TestApply_HappyPath(t *testing.T) {
 
 	out, err := sw.Apply(context.Background(), "zai", "")
 	require.NoError(t, err)
-	require.Contains(t, out, "Переключено")
+	require.Contains(t, out, "Switched")
 	require.Contains(t, out, "z.ai (GLM)")
 	require.Contains(t, out, "glm-5.3[1m]")
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "http://127.0.0.1:4567", env["ANTHROPIC_BASE_URL"])
 	require.Equal(t, "daemon-token", env["ANTHROPIC_AUTH_TOKEN"])
-	// пиннинг: все маппинги на выбранную модель
+	// pinning: all mappings point to the selected model
 	for _, key := range []string{
 		"ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
@@ -131,12 +131,12 @@ func TestApply_HappyPath(t *testing.T) {
 	} {
 		require.Equal(t, "glm-5.3[1m]", env[key], key)
 	}
-	// юзерские сохранены, устаревший ANTHROPIC_* стёрт
+	// user keys kept, the stale ANTHROPIC_* wiped
 	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
 	require.Equal(t, "user-token", env["IDP_TOKEN"])
 	require.NotContains(t, env, "ANTHROPIC_STALE_KEY")
 
-	// модель запинена
+	// the model is pinned
 	var s struct {
 		Model   string         `json:"model"`
 		Avail   []string       `json:"availableModels"`
@@ -147,7 +147,7 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, "glm-5.3[1m]", s.Model)
 	require.Equal(t, []string{"glm-5.3[1m]"}, s.Avail)
 	require.True(t, s.Enforce)
-	// прочие поля файла не тронуты
+	// other file fields are untouched
 	require.Equal(t, map[string]any{"allow": []any{"Bash"}}, s.Perms)
 
 	// state
@@ -156,16 +156,16 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, "glm-5.3[1m]", st.Model)
 	require.NotEmpty(t, st.Updated)
 
-	// демон получил use
+	// the daemon received use
 	require.Equal(t, []string{"zai/glm-5.3[1m]"}, d.useCalls)
 }
 
 func TestApply_ModelByNameAlias(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 
-	out, err := sw.Apply(context.Background(), "zai", "glm-5.3") // name без суффикса
+	out, err := sw.Apply(context.Background(), "zai", "glm-5.3") // name without the suffix
 	require.NoError(t, err)
-	require.Contains(t, out, "glm-5.3[1m]") // применился реальный id
+	require.Contains(t, out, "glm-5.3[1m]") // the real id was applied
 
 	st := readState(t, sp.Config.StatePath())
 	require.Equal(t, "glm-5.3[1m]", st.Model)
@@ -176,7 +176,7 @@ func TestApply_UnknownProfile(t *testing.T) {
 	before := readSettings(t, sp.Config.SettingsPath())
 
 	_, err := sw.Apply(context.Background(), "nope", "")
-	require.ErrorContains(t, err, "неизвестный профиль")
+	require.ErrorContains(t, err, "unknown profile")
 	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
 }
 
@@ -184,7 +184,7 @@ func TestApply_UnknownModel(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 
 	_, err := sw.Apply(context.Background(), "zai", "no-model")
-	require.ErrorContains(t, err, "не найдена")
+	require.ErrorContains(t, err, "not found")
 	require.NoFileExists(t, sp.Config.StatePath())
 }
 
@@ -193,7 +193,7 @@ func TestApply_EnsureFails_Untouched(t *testing.T) {
 	d.ensureOK = false
 
 	_, err := sw.Apply(context.Background(), "zai", "")
-	require.ErrorContains(t, err, "не тронут")
+	require.ErrorContains(t, err, "untouched")
 	require.NoFileExists(t, sp.Config.StatePath())
 	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "ANTHROPIC_BASE_URL")
 }
@@ -203,7 +203,7 @@ func TestApply_UseFails_Untouched(t *testing.T) {
 	d.useOK = false
 
 	_, err := sw.Apply(context.Background(), "zai", "")
-	require.ErrorContains(t, err, "не тронут")
+	require.ErrorContains(t, err, "untouched")
 	require.NoFileExists(t, sp.Config.StatePath())
 }
 
@@ -273,7 +273,7 @@ func TestApply_Idempotent(t *testing.T) {
 
 func readSettings(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(path), filepath.Base(path))) //nolint:gosec // песочница
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(path), filepath.Base(path))) //nolint:gosec // sandbox path
 	require.NoError(t, err)
 
 	return string(data)

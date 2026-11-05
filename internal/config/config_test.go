@@ -47,7 +47,7 @@ func TestNewFromEnv_TildeHomeExpanded(t *testing.T) {
 }
 
 func TestNewFromEnv_DefaultHomeIsDotClaude(t *testing.T) {
-	// без CCX_HOME: home из USER/HOME → ~/.claude (паритет с bash-ccx)
+	// no CCX_HOME: home from USER/HOME → ~/.claude (bash-ccx parity)
 	t.Setenv("CCX_HOME", "")
 
 	cfg, err := config.NewFromEnv()

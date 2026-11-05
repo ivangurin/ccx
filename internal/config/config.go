@@ -1,6 +1,6 @@
-// Package config — env-конфиг ccx (паритет CCX_* с bash-версией: тесты и
-// песочницы подменяют CCX_HOME). .env сознательно не поддерживается: ccx —
-// CLI пользователя, а не сервис с деплой-окружением.
+// Package config is ccx's env configuration (CCX_* parity with the bash
+// version: tests and sandboxes override CCX_HOME). .env is deliberately not
+// supported: ccx is a user CLI, not a service with a deployment environment.
 package config
 
 import (
@@ -12,9 +12,9 @@ import (
 	"github.com/caarlos0/env/v7"
 )
 
-// Таймауты-дефолты (перенос bash-ccx: lock 60с — прокси/демон может
-// стартовать до 10с, ждём очереди; старт демона — 10с вместо bash-20с:
-// Go-демон готов за миллисекунды).
+// Timeout defaults (ported from bash-ccx: lock 60s — a proxy/daemon may take
+// up to 10s to start, we wait in line; daemon start is 10s instead of the
+// bash 20s: the Go daemon is ready in milliseconds).
 const (
 	DefaultLockTimeout        = 60 * time.Second
 	DefaultDaemonStartTimeout = 10 * time.Second
@@ -23,9 +23,9 @@ const (
 	maxPort                   = 65535
 )
 
-// Config — окружение процесса ccx (CLI и демон читают одно и то же).
+// Config is the ccx process environment (CLI and daemon read the same one).
 type Config struct {
-	// Home — корень данных Claude Code (по умолчанию ~/.claude); внутри него
+	// Home is the Claude Code data root (default ~/.claude); it holds
 	// providers.json, settings.json, ccx-state.json, backups/, ccx/logs/.
 	Home string `env:"CCX_HOME"`
 
@@ -35,7 +35,7 @@ type Config struct {
 	LockTimeout        time.Duration `env:"CCX_LOCK_TIMEOUT"`
 	DaemonStartTimeout time.Duration `env:"CCX_DAEMON_START_TIMEOUT"`
 
-	// точечные оверрайды путей (паритет CCX_PROVIDERS/… bash-версии)
+	// targeted path overrides (CCX_PROVIDERS/... parity with the bash version)
 	ProvidersFile string `env:"CCX_PROVIDERS"`
 	SettingsFile  string `env:"CCX_SETTINGS"`
 	StateFile     string `env:"CCX_STATE"`
@@ -43,7 +43,7 @@ type Config struct {
 	LogDirPath    string `env:"CCX_LOG_DIR"`
 }
 
-// NewFromEnv читает CCX_* переменные, применяет дефолты и валидирует.
+// NewFromEnv reads CCX_* variables, applies defaults, and validates.
 func NewFromEnv() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
@@ -81,7 +81,7 @@ func NewFromEnv() (*Config, error) {
 	return cfg, nil
 }
 
-// Validate — fail-fast на старте: уровень/формат логов и порт демона.
+// Validate fails fast at startup: log level/format and daemon port.
 func (c *Config) Validate() error {
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":
@@ -93,7 +93,7 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("config: invalid CCX_LOG_FORMAT %q", c.LogFormat)
 	}
-	// 0 = «порт из providers.json daemon.port» — легитимное значение
+	// 0 = "port from providers.json daemon.port" — a legitimate value
 	if c.DaemonPort < 0 || c.DaemonPort > maxPort {
 		return fmt.Errorf("config: invalid CCX_PORT %d", c.DaemonPort)
 	}

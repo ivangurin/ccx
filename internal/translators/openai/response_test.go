@@ -13,7 +13,7 @@ func TestBuildResponse_Text(t *testing.T) {
 	resp.Choices = append(resp.Choices, struct {
 		Message      models.ChatMessage `json:"message"`
 		FinishReason *string            `json:"finish_reason"`
-	}{Message: models.ChatMessage{Role: "assistant", Content: "привет"}})
+	}{Message: models.ChatMessage{Role: "assistant", Content: "hello"}})
 	stop := "stop"
 	resp.Choices[0].FinishReason = &stop
 	resp.Usage = models.Usage{InputTokens: 10, OutputTokens: 5}
@@ -23,7 +23,7 @@ func TestBuildResponse_Text(t *testing.T) {
 	require.Equal(t, "assistant", out.Role)
 	require.Len(t, out.Content, 1)
 	require.Equal(t, "text", out.Content[0].Type)
-	require.Equal(t, "привет", *out.Content[0].Text)
+	require.Equal(t, "hello", *out.Content[0].Text)
 	require.NotNil(t, out.StopReason)
 	require.Equal(t, "end_turn", *out.StopReason)
 	require.Equal(t, 10, out.Usage.InputTokens)
@@ -60,7 +60,7 @@ func TestBuildResponse_Length(t *testing.T) {
 	resp.Choices = append(resp.Choices, struct {
 		Message      models.ChatMessage `json:"message"`
 		FinishReason *string            `json:"finish_reason"`
-	}{Message: models.ChatMessage{Content: "длинный"}})
+	}{Message: models.ChatMessage{Content: "a long one"}})
 	length := "length"
 	resp.Choices[0].FinishReason = &length
 

@@ -1,6 +1,6 @@
-// Package anthropic — passthrough-транслятор: прямой Anthropic-совместимый
-// апстрим. Тело и SSE копируются байт-в-байт (нулевой риск трансформации),
-// подменяется только авторизация апстрима из профиля.
+// Package anthropic: passthrough translator for a direct Anthropic-compatible
+// upstream. Body and SSE are copied byte-for-byte (zero risk of transformation),
+// only the upstream authorization is replaced with the profile's.
 package anthropic
 
 import (
@@ -10,31 +10,31 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// Translator — passthrough на profile.Anthropic.BaseURL.
+// Translator is a passthrough to profile.Anthropic.BaseURL.
 type Translator struct {
 	cfg  *models.AnthropicConfig
 	http *http.Client
 }
 
-// New строит passthrough-транслятор.
+// New builds a passthrough translator.
 func New(profile *models.Profile) *Translator {
 	return &Translator{
 		cfg:  profile.Anthropic,
-		http: &http.Client{}, // без таймаутов: SSE живёт долго
+		http: &http.Client{}, // no timeouts: SSE lives long
 	}
 }
 
-// Protocol — anthropic.
+// Protocol is anthropic.
 func (t *Translator) Protocol() models.Protocol {
 	return models.ProtocolAnthropic
 }
 
-// Ready — тривиально готов (нативный протокол, OAuth не нужен).
+// Ready is trivially ready (native protocol, no OAuth needed).
 func (t *Translator) Ready(_ context.Context) error {
 	return nil
 }
 
-// Close — нет ресурсов.
+// Close: no resources.
 func (t *Translator) Close(_ context.Context) error {
 	return nil
 }

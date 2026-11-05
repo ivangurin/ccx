@@ -1,5 +1,5 @@
-// Package openai — транслятор Anthropic Messages → OpenAI chat/completions
-// (api.openai.com и корпоративные OpenAI-совместимые шлюзы).
+// Package openai: translator from Anthropic Messages to OpenAI chat/completions
+// (api.openai.com and corporate OpenAI-compatible gateways).
 package openai
 
 import (
@@ -9,15 +9,15 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// типы блоков/ролей (goconst).
+// block/role types (goconst).
 const (
 	blockText     = "text"
 	blockToolUse  = "tool_use"
 	roleAssistant = "assistant"
 )
 
-// BuildChatRequest маппит MessagesRequest в chat/completions. maxTokensField —
-// имя поля лимита токенов из профиля (max_tokens | max_completion_tokens).
+// BuildChatRequest maps a MessagesRequest to chat/completions. maxTokensField
+// is the token-limit field name from the profile (max_tokens | max_completion_tokens).
 func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *models.ChatRequest {
 	out := &models.ChatRequest{
 		Model:       req.Model,
@@ -27,7 +27,7 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 		TopP:        req.TopP,
 		Stop:        req.StopSequences,
 	}
-	_ = maxTokensField // имя поля применяется на сериализации (custom MarshalJSON)
+	_ = maxTokensField // the field name is applied at serialization (custom MarshalJSON)
 	if req.Stream {
 		out.StreamOptions = &struct {
 			IncludeUsage bool `json:"include_usage"`
@@ -57,7 +57,7 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 	return out
 }
 
-// systemText извлекает system (строка или text-блоки).
+// systemText extracts the system (a string or text blocks).
 func systemText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -83,10 +83,10 @@ func systemText(raw json.RawMessage) string {
 	return strings.Join(parts, "\n")
 }
 
-// convertMessage разворачивает сообщение в chat-сообщения (user-сообщение с
-// tool_result блоками становится несколькими сообщениями).
+// convertMessage expands a message into chat messages (a user message with
+// tool_result blocks becomes several messages).
 func convertMessage(msg models.Message) []models.ChatMessage {
-	// content: строка
+	// content: a string
 	var plain string
 	if err := json.Unmarshal(msg.Content, &plain); err == nil {
 		return []models.ChatMessage{{Role: msg.Role, Content: plain}}
@@ -124,8 +124,8 @@ func convertMessage(msg models.Message) []models.ChatMessage {
 				ToolCallID: deref(b.ToolUseID),
 			})
 		default:
-			// image и неизвестные блоки пропускаем — не роняем диалог
-			// (image_url маппится на сериализации при появлении мультимодала)
+			// image and unknown blocks are skipped — don't drop the dialogue
+			// (image_url is mapped at serialization once multimodal arrives)
 		}
 	}
 	if msg.Role == roleAssistant {

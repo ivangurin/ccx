@@ -10,18 +10,21 @@ import (
 )
 
 func TestFilter_CaseInsensitive(t *testing.T) {
+	// The Cyrillic label/query stay as \u escapes on purpose: the runtime
+	// strings remain real Cyrillic (profiles may have non-Latin names) while
+	// the source stays Cyrillic-free.
 	items := []tui.Item{
-		{Label: "zai · z.ai (GLM)"},
-		{Label: "x5 · Рабочий шлюз"},
-		{Label: "copilot · GitHub Copilot"},
+		{Label: "zai \u00b7 z.ai (GLM)"},
+		{Label: "x5 \u00b7 \u0420\u0430\u0431\u043e\u0447\u0438\u0439 \u0448\u043b\u044e\u0437"},
+		{Label: "copilot \u00b7 GitHub Copilot"},
 	}
 
 	got := tui.Filter(items, "ZAI")
 	require.Len(t, got, 1)
 	require.Equal(t, items[0], got[0])
 
-	got = tui.Filter(items, "коп")
-	require.Empty(t, got) // кириллица не матчится по латинице — и не должна
+	got = tui.Filter(items, "\u043a\u043e\u043f")
+	require.Empty(t, got) // Cyrillic query must not match Latin labels
 
 	got = tui.Filter(items, "")
 	require.Len(t, got, 3)
@@ -64,15 +67,15 @@ func TestFallbackSelect_ReasksOnGarbage(t *testing.T) {
 	idx, err := tui.FallbackSelect(items, 0, in, &out)
 	require.NoError(t, err)
 	require.Equal(t, 0, idx)
-	require.Contains(t, out.String(), "2") // подсказка диапазона
+	require.Contains(t, out.String(), "2") // range hint
 }
 
 func TestSelect_FallbackWhenNotTTY(t *testing.T) {
-	// stdin — ридер, не терминал: Select проваливается в нумерованный выбор
+	// stdin is a reader, not a terminal: Select falls back to numbered selection
 	items := []tui.Item{{Label: "a"}, {Label: "b"}}
 	in := strings.NewReader("1\n")
 
-	idx, err := tui.Select("Заголовок", items, 0, in, &strings.Builder{})
+	idx, err := tui.Select("Header", items, 0, in, &strings.Builder{})
 	require.NoError(t, err)
 	require.Equal(t, 0, idx)
 }

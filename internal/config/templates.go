@@ -4,11 +4,12 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// prefillFixDefault — PrefillFix=true по умолчанию для шаблонов/миграции.
+// prefillFixDefault is PrefillFix=true by default for templates/migration.
 var prefillFixDefault = true
 
-// CopilotDefaults — маскировка под VSCode-клиент (шлюз Copilot фильтрует
-// посторонних); значения — публичные из расширения GitHub Copilot Chat.
+// CopilotDefaults is the VSCode client masquerade (the Copilot gateway
+// filters out outsiders); values are public ones from the GitHub Copilot
+// Chat extension.
 var CopilotDefaults = models.CopilotConfig{
 	DeviceClientID: "Iv1.b507a08c87ecfe98",
 	IntegrationID:  "copilot-chat",
@@ -18,7 +19,7 @@ var CopilotDefaults = models.CopilotConfig{
 	PrefillFix:     &prefillFixDefault,
 }
 
-// CodexDefaults — мимикрия под codex CLI (Responses API подписки ChatGPT).
+// CodexDefaults mimics the codex CLI (ChatGPT subscription Responses API).
 var CodexDefaults = models.CodexConfig{
 	AuthFile:   "~/.codex/auth.json",
 	Originator: "codex_cli_rs",
@@ -36,14 +37,14 @@ func builtinOpenAIProfile() *models.Profile {
 		},
 		Env: map[string]string{},
 		Models: []models.Model{
-			{ID: "gpt-6.1-sol", Label: "GPT-6.1 Sol · текущая рабочая модель", Default: true},
-			{ID: "gpt-6-astra", Label: "GPT-6 Astra · максимум интеллекта"},
-			{ID: "gpt-6.1-terra", Label: "GPT-6.1 Terra · Codex-модель"},
-			{ID: "gpt-6-sol", Label: "GPT-6 Sol · прошлое поколение"},
-			{ID: "gpt-6-luna", Label: "GPT-6 Luna · быстрая и доступная"},
-			{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol · старшее поколение"},
-			{ID: "gpt-5.6-terra", Label: "GPT-5.6 Terra · старшая сбалансированная"},
-			{ID: "gpt-5.6-luna", Label: "GPT-5.6 Luna · старшая быстрая"},
+			{ID: "gpt-6.1-sol", Label: "GPT-6.1 Sol · current workhorse model", Default: true},
+			{ID: "gpt-6-astra", Label: "GPT-6 Astra · maximum intelligence"},
+			{ID: "gpt-6.1-terra", Label: "GPT-6.1 Terra · Codex model"},
+			{ID: "gpt-6-sol", Label: "GPT-6 Sol · previous generation"},
+			{ID: "gpt-6-luna", Label: "GPT-6 Luna · fast and affordable"},
+			{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol · older generation"},
+			{ID: "gpt-5.6-terra", Label: "GPT-5.6 Terra · older balanced"},
+			{ID: "gpt-5.6-luna", Label: "GPT-5.6 Luna · older fast"},
 		},
 	}
 }
@@ -52,7 +53,7 @@ func builtinCopilotProfile() *models.Profile {
 	copilot := CopilotDefaults
 
 	return &models.Profile{
-		Name:     "GitHub Copilot (личная)",
+		Name:     "GitHub Copilot (personal)",
 		Protocol: models.ProtocolCopilot,
 		Copilot:  &copilot,
 		Env:      map[string]string{},
@@ -77,7 +78,7 @@ func builtinCodexProfile() *models.Profile {
 	codex := CodexDefaults
 
 	return &models.Profile{
-		Name:     "ChatGPT Codex (подписка)",
+		Name:     "ChatGPT Codex (subscription)",
 		Protocol: models.ProtocolCodex,
 		Codex:    &codex,
 		Env:      map[string]string{},

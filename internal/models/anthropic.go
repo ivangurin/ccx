@@ -2,7 +2,7 @@ package models
 
 import "encoding/json"
 
-// ContentBlock — блок контента Anthropic-сообщения.
+// ContentBlock is a content block of an Anthropic message.
 type ContentBlock struct {
 	Type      string          `json:"type"` // text | thinking | tool_use | tool_result | image
 	Text      *string         `json:"text,omitempty"`
@@ -15,20 +15,20 @@ type ContentBlock struct {
 	Source    json.RawMessage `json:"source,omitempty"`  // image
 }
 
-// Message — сообщение диалога.
+// Message is a conversation message.
 type Message struct {
 	Role    string          `json:"role"`    // user | assistant
 	Content json.RawMessage `json:"content"` // string | []ContentBlock
 }
 
-// Tool — определение инструмента.
+// Tool is a tool definition.
 type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
-// MessagesRequest — POST /v1/messages (поля, нужные трансляторам).
+// MessagesRequest is POST /v1/messages (the fields translators need).
 type MessagesRequest struct {
 	Model         string          `json:"model"`
 	MaxTokens     int             `json:"max_tokens"`
@@ -44,15 +44,15 @@ type MessagesRequest struct {
 	Metadata      json.RawMessage `json:"metadata,omitempty"`
 }
 
-// Usage — токены. UnmarshalJSON принимает и Anthropic-ключи
-// (input_tokens/output_tokens), и OpenAI (prompt_tokens/completion_tokens) —
-// апстримы chat/completions шлют второй формат.
+// Usage is token counts. UnmarshalJSON accepts both Anthropic keys
+// (input_tokens/output_tokens) and OpenAI ones (prompt_tokens/completion_tokens) —
+// chat/completions upstreams send the latter format.
 type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 }
 
-// UnmarshalJSON — двойной формат ключей (см. комментарий типа).
+// UnmarshalJSON handles the dual key format (see the type comment).
 func (u *Usage) UnmarshalJSON(data []byte) error {
 	var both struct {
 		InputTokens   int `json:"input_tokens"`
@@ -75,7 +75,7 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MessagesResponse — нестримовый ответ.
+// MessagesResponse is a non-streaming response.
 type MessagesResponse struct {
 	ID           string         `json:"id"`
 	Type         string         `json:"type"`

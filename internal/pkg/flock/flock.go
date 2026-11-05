@@ -1,6 +1,6 @@
-// Package flock — файловые локи на unix flock(2). Файл-мьютекс живёт вечно
-// (не удаляется при Unlock): удаление при чужом ожидании — гонка «lock старого
-// inode», постоянный файл её исключает by construction.
+// Package flock — file locks on unix flock(2). The mutex file lives forever
+// (not deleted on Unlock): deleting it while someone else waits is a "lock on
+// the old inode" race; a permanent file excludes it by construction.
 package flock
 
 import (
@@ -14,14 +14,14 @@ import (
 )
 
 var (
-	// ErrLocked — лок уже удерживается другим держателем (LOCK_NB).
+	// ErrLocked — the lock is already held by another holder (LOCK_NB).
 	ErrLocked = errors.New("flock: already locked")
-	// ErrTimeout — Lock не дождался освобождения за timeout.
+	// ErrTimeout — Lock did not get released within the timeout.
 	ErrTimeout = errors.New("flock: timeout")
 )
 
-// Lock — удерживаемый файловый лок. Смерть процесса-владельца освобождает
-// лок автоматически (ядро закрывает fd) — stale-локи невозможны.
+// Lock — a held file lock. The owning process's death releases the lock
+// automatically (the kernel closes the fd) — stale locks are impossible.
 type Lock struct {
 	file *os.File
 }
@@ -30,8 +30,8 @@ func acquire(path string, nb bool) (*Lock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("flock: mkdir %s: %w", filepath.Dir(path), err)
 	}
-	// O_CREATE: файла может не быть; права 0600 — лок может нести pid-инфу.
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // путь — параметр владельца конфига, не пользовательский ввод
+	// O_CREATE: the file may not exist yet; 0600 perms — the lock may carry pid info.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // path is a config-owner parameter, not user input
 	if err != nil {
 		return nil, fmt.Errorf("flock: open %s: %w", path, err)
 	}
@@ -53,17 +53,18 @@ func acquire(path string, nb bool) (*Lock, error) {
 	return &Lock{file: file}, nil
 }
 
-// TryLock берёт эксклюзивный лок без ожидания; занято — ErrLocked.
+// TryLock takes an exclusive lock without waiting; if held — ErrLocked.
 func TryLock(path string) (*Lock, error) {
 	return acquire(path, true)
 }
 
-// LockPoll — интервал опроса в LockWait (поллинг LOCK_NB вместо блокирующего
-// flock: блокирующий flock не прерывается по контексту/таймауту).
+// LockPoll — the polling interval in LockWait (LOCK_NB polling instead of a
+// blocking flock: a blocking flock cannot be interrupted by context/timeout).
 const LockPoll = 50 * time.Millisecond
 
-// LockWait берёт лок, ожидая освобождения до timeout; не дождался — ErrTimeout.
-// timeout <= 0 — единичная попытка (эквивалент TryLock по ошибкам).
+// LockWait takes the lock, waiting for release up to timeout; if it does not
+// get it — ErrTimeout. timeout <= 0 — a single attempt (error-wise equivalent
+// to TryLock).
 func LockWait(path string, timeout time.Duration) (*Lock, error) {
 	if timeout <= 0 {
 		return TryLock(path)
@@ -84,7 +85,7 @@ func LockWait(path string, timeout time.Duration) (*Lock, error) {
 	}
 }
 
-// Unlock освобождает лок (закрытие fd снимает flock).
+// Unlock releases the lock (closing the fd drops the flock).
 func (l *Lock) Unlock() error {
 	if l == nil || l.file == nil {
 		return nil

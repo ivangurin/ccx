@@ -29,7 +29,7 @@ func TestCommandInit_CreatesProviders(t *testing.T) {
 	code := cli.Execute([]string{cmdInit}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "Создан")
+	require.Contains(t, out.String(), "Created")
 	require.FileExists(t, sp.Config.ProvidersPath())
 }
 
@@ -41,7 +41,7 @@ func TestCommandInit_SecondRunSuggestsForce(t *testing.T) {
 	code := cli.Execute([]string{cmdInit}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "уже существует")
+	require.Contains(t, out.String(), "already exists")
 	require.Contains(t, out.String(), "--force")
 }
 
@@ -128,7 +128,7 @@ func TestCommandStatus_NoState(t *testing.T) {
 	code := cli.Execute([]string{cmdStatus}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "не активен")
+	require.Contains(t, out.String(), "No active profile")
 }
 
 func TestCommandStatus_UnknownProfileInState(t *testing.T) {
@@ -155,7 +155,7 @@ func TestCommandEdit_OpensEditor(t *testing.T) {
 }
 
 func TestCommandEdit_MissingFileFails(t *testing.T) {
-	suite_provider.NewProvider(t) // песочница без providers.json
+	suite_provider.NewProvider(t) // sandbox without providers.json
 	t.Setenv("EDITOR", "/usr/bin/true")
 
 	var out bytes.Buffer
@@ -165,7 +165,7 @@ func TestCommandEdit_MissingFileFails(t *testing.T) {
 }
 
 func TestCommand_MissingProvidersInitHint(t *testing.T) {
-	suite_provider.NewProvider(t) // песочница без providers.json
+	suite_provider.NewProvider(t) // sandbox without providers.json
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdList}, &out)

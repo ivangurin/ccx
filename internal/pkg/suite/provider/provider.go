@@ -1,8 +1,9 @@
-// Package suite_provider — тестовый аналог production-компоновки (порт
-// паттерна idp-port-forward): песочница CCX_HOME (t.TempDir), тихий логгер,
-// ленивые сервисы/моки поверх — единая точка сборки фикстур для всех тестов.
-// Живой ~/.claude недостижим by construction (инвариант после инцидентов
-// с CCR в bash-ccx: тесты никогда не трогают реальные настройки).
+// Package suite_provider — a test counterpart of the production composition
+// (a port of the idp-port-forward pattern): a sandboxed CCX_HOME (t.TempDir),
+// a silent logger, lazy services/mocks on top — a single assembly point of
+// fixtures for all tests. The live ~/.claude is unreachable by construction
+// (an invariant after the CCR incidents in bash-ccx: tests never touch real
+// settings).
 package suite_provider
 
 import (
@@ -17,8 +18,8 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/logger"
 )
 
-// Provider — тестовая среда: конфиг с безопасными дефолтами + тихий логгер +
-// ленивые зависимости (добавляются пакетами по мере роста проекта).
+// Provider — the test environment: a config with safe defaults + a silent
+// logger + lazy dependencies (added package by package as the project grows).
 type Provider struct {
 	ctx    context.Context
 	Config *config.Config
@@ -28,8 +29,8 @@ type Provider struct {
 	cleanups []func()
 }
 
-// NewProvider строит песочницу: уникальный CCX_HOME на вызов (t.Setenv —
-// тесты обязаны быть непараллельными), возврат — сам провайдер.
+// NewProvider builds the sandbox: a unique CCX_HOME per call (t.Setenv —
+// tests must not be parallel); the return value is the provider itself.
 func NewProvider(t *testing.T) *Provider {
 	t.Helper()
 
@@ -40,7 +41,7 @@ func NewProvider(t *testing.T) *Provider {
 	if err != nil {
 		t.Fatalf("suite provider: config: %v", err)
 	}
-	// безопасные дефолты тестов: короткие таймауты, тихий лог
+	// safe test defaults: short timeouts, silent log
 	cfg.LogLevel = "error"
 	cfg.LogFormat = "json"
 
@@ -59,27 +60,27 @@ func NewProvider(t *testing.T) *Provider {
 	return sp
 }
 
-// Context возвращает базовый контекст теста.
+// Context returns the base test context.
 func (p *Provider) Context() context.Context {
 	return p.ctx
 }
 
-// Logger возвращает тихий логгер (error-уровень).
+// Logger returns the silent logger (error level).
 func (p *Provider) Logger() *slog.Logger {
 	return p.log
 }
 
-// HomeDir — корень песочницы (CCX_HOME).
+// HomeDir — the sandbox root (CCX_HOME).
 func (p *Provider) HomeDir() string {
 	return p.Config.Home
 }
 
-// FilePath — путь к файлу внутри песочницы.
+// FilePath — the path to a file inside the sandbox.
 func (p *Provider) FilePath(parts ...string) string {
 	return filepath.Join(append([]string{p.Config.Home}, parts...)...)
 }
 
-// Cleaner гасит зарегистрированные cleanups в обратном порядке.
+// Cleaner runs the registered cleanups in reverse order.
 func (p *Provider) Cleaner() {
 	p.mu.Lock()
 	fns := p.cleanups

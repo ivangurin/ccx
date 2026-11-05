@@ -12,12 +12,12 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 )
 
-// HTTPDaemon — реализация Daemon поверх admin-API демона.
+// HTTPDaemon — the Daemon implementation on top of the daemon's admin API.
 type HTTPDaemon struct {
 	cfg *config.Config
 }
 
-// NewHTTPDaemon создаёт клиент демона.
+// NewHTTPDaemon creates the daemon client.
 func NewHTTPDaemon(cfg *config.Config) *HTTPDaemon {
 	return &HTTPDaemon{cfg: cfg}
 }
@@ -27,7 +27,7 @@ func (d *HTTPDaemon) baseURL() (string, error) {
 	if port == 0 {
 		providers, err := config.LoadProviders(d.cfg.ProvidersPath())
 		if err != nil {
-			return "", fmt.Errorf("демон: providers.json: %w", err)
+			return "", fmt.Errorf("daemon: providers.json: %w", err)
 		}
 		port = providers.Daemon.Port
 	}
@@ -35,7 +35,7 @@ func (d *HTTPDaemon) baseURL() (string, error) {
 	return fmt.Sprintf("http://127.0.0.1:%d", port), nil
 }
 
-// Ensure — демон жив; если нет: spawn detached + ожидание health.
+// Ensure — the daemon is alive; if not: spawn detached + wait for health.
 func (d *HTTPDaemon) Ensure(ctx context.Context) error {
 	base, err := d.baseURL()
 	if err != nil {
@@ -48,13 +48,13 @@ func (d *HTTPDaemon) Ensure(ctx context.Context) error {
 		return err
 	}
 	if !app.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
-		return fmt.Errorf("демон не ответил за %s (лог: %s)", d.cfg.DaemonStartTimeout, d.cfg.LogDir()+"/daemon.log")
+		return fmt.Errorf("daemon did not respond within %s (log: %s)", d.cfg.DaemonStartTimeout, d.cfg.LogDir()+"/daemon.log")
 	}
 
 	return nil
 }
 
-// Use — POST /admin/use с токеном демона.
+// Use — POST /admin/use with the daemon token.
 func (d *HTTPDaemon) Use(ctx context.Context, profile, model string) error {
 	base, err := d.baseURL()
 	if err != nil {
@@ -67,18 +67,18 @@ func (d *HTTPDaemon) Use(ctx context.Context, profile, model string) error {
 
 	body, err := json.Marshal(map[string]string{"profile": profile, "model": model})
 	if err != nil {
-		return fmt.Errorf("демон: use: marshal: %w", err)
+		return fmt.Errorf("daemon: use: marshal: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/admin/use", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("демон: use: %w", err)
+		return fmt.Errorf("daemon: use: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+providers.Daemon.AuthToken)
 
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req) // Ready может ходить в OAuth-рефреш
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req) // Ready may hit an OAuth refresh
 	if err != nil {
-		return fmt.Errorf("демон: use: %w", err)
+		return fmt.Errorf("daemon: use: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

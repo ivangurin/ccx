@@ -13,8 +13,8 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/logger"
 )
 
-// runServe — ccx serve [--daemon]: запуск демона (foreground для отладки;
-// --daemon — внутренний режим SpawnDetached, вывод уже в daemon.log).
+// runServe — ccx serve [--daemon]: run the daemon (foreground for debugging;
+// --daemon is SpawnDetached's internal mode, output already goes to daemon.log).
 func runServe(_ []string, _ io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -33,7 +33,7 @@ func runServe(_ []string, _ io.Writer) int {
 	defer stop()
 
 	if err := app.New(cfg, log).Run(ctx); err != nil {
-		log.Error("демон завершился с ошибкой", "err", err)
+		log.Error("daemon exited with error", "err", err)
 
 		return 1
 	}

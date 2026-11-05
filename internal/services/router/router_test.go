@@ -32,7 +32,7 @@ func newTestRouter(t *testing.T, profiles ...string) (*router.Service, *suite_pr
 	for _, key := range profiles {
 		protocol := models.Protocol(key)
 		if key == "copilot-x" {
-			protocol = models.ProtocolCopilot // тест-кейс: без ccx auth copilot
+			protocol = models.ProtocolCopilot // test case: without ccx auth copilot
 		}
 		p.Profiles.Set(key, &models.Profile{Name: key, Protocol: protocol})
 	}
@@ -45,7 +45,7 @@ func TestUse_ActivatesRoute(t *testing.T) {
 	svc, sp := newTestRouter(t)
 	up := startEchoUpstream(t)
 
-	// подменим base_url на живой фейк
+	// replace base_url with a live fake
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	p.Profiles.Get("zai").Anthropic.BaseURL = up.URL
@@ -64,13 +64,13 @@ func TestUse_UnknownProfile(t *testing.T) {
 	svc, _ := newTestRouter(t)
 
 	err := svc.Use(context.Background(), "nope", "m")
-	require.ErrorContains(t, err, "неизвестный профиль")
+	require.ErrorContains(t, err, "unknown profile")
 	_, _, ok := svc.Active()
 	require.False(t, ok)
 }
 
 func TestUse_OpenAIProfile_Activates(t *testing.T) {
-	// openai-профиль: транслятор строится без апстрим-проверки (Ready тривиален)
+	// openai profile: the translator is built without an upstream check (Ready is trivial)
 	svc2, sp := newTestRouter(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
@@ -91,10 +91,10 @@ func TestUse_OpenAIProfile_Activates(t *testing.T) {
 func TestUse_CopilotWithoutAuth_NotReady(t *testing.T) {
 	svc, _ := newTestRouter(t, "copilot-x")
 
-	// без ccx auth copilot транслятор не готов — переключение отменяется
+	// without ccx auth copilot the translator is not ready — the switch is cancelled
 	err := svc.Use(context.Background(), "copilot-x", "m")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "не готов")
+	require.Contains(t, err.Error(), "not ready")
 	_, _, ok := svc.Active()
 	require.False(t, ok)
 }
@@ -132,7 +132,7 @@ func TestUse_SwitchSwapsRoute(t *testing.T) {
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	p.Profiles.Get("zai").Anthropic.BaseURL = up.URL
-	// второй профиль с другим base_url
+	// a second profile with a different base_url
 	p.Profiles.Set("zai2", &models.Profile{
 		Name:      "z.ai 2",
 		Protocol:  models.ProtocolAnthropic,
@@ -157,7 +157,7 @@ func TestRestore_FromState(t *testing.T) {
 	p.Profiles.Get("zai").Anthropic.BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	// рестарт демона: state на диске — маршрут восстанавливается
+	// daemon restart: state on disk — the route is restored
 	require.NoError(t, jsonfile.WriteAtomicJSON(sp.Config.StatePath(), models.State{Profile: "zai", Model: "glm"}, 0o600))
 	svc.Restore(context.Background())
 
@@ -192,8 +192,8 @@ func startEchoUpstream(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// I6: рукоправленный профиль anthropic/openai без protocol-блока —
-// внятная ошибка, не паника на каждом /v1/messages.
+// I6: a hand-edited anthropic/openai profile without a protocol block —
+// a clear error, not a panic on every /v1/messages.
 func TestUse_NilProtocolBlock_FailsGracefully(t *testing.T) {
 	for _, tc := range []struct {
 		key      string
@@ -206,12 +206,12 @@ func TestUse_NilProtocolBlock_FailsGracefully(t *testing.T) {
 			svc, sp := newTestRouter(t)
 			p, err := config.LoadProviders(sp.Config.ProvidersPath())
 			require.NoError(t, err)
-			p.Profiles.Set(tc.key, &models.Profile{Name: tc.key, Protocol: tc.protocol}) // без блока!
+			p.Profiles.Set(tc.key, &models.Profile{Name: tc.key, Protocol: tc.protocol}) // no block!
 			require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 			require.NotPanics(t, func() {
 				err := svc.Use(t.Context(), tc.key, "m")
-				require.Error(t, err, "свитч без блока должен отмениться")
+				require.Error(t, err, "a switch without a block must be cancelled")
 				require.Contains(t, err.Error(), "ccx edit")
 			})
 		})

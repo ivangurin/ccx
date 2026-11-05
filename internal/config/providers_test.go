@@ -82,7 +82,7 @@ func TestSaveLoadProviders_PreservesProfileOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"zai", "x5", profOpenAI2, profCopilot}, loaded.Profiles.Keys)
 
-	// порядок и после повторного roundtrip
+	// order survives a repeated roundtrip too
 	require.NoError(t, config.SaveProviders(path, loaded))
 	reloaded, err := config.LoadProviders(path)
 	require.NoError(t, err)

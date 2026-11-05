@@ -1,4 +1,5 @@
-// Package sse — чтение SSE-стримов апстримов и запись Anthropic-SSE клиентам.
+// Package sse — reading SSE streams from upstreams and writing Anthropic SSE
+// to clients.
 package sse
 
 import (
@@ -7,27 +8,28 @@ import (
 	"strings"
 )
 
-// Event — одно SSE-событие (имя по умолчанию "message" по спецификации).
+// Event — a single SSE event (default name "message" per the spec).
 type Event struct {
 	Name string
 	Data string
-	Done bool // получен [DONE]-маркер (OpenAI-конвенция)
+	Done bool // [DONE] marker received (OpenAI convention)
 }
 
-// Reader — строчный SSE-парсер: накапливает data:-строки до пустой строки.
+// Reader — a line-by-line SSE parser: accumulates data: lines up to an empty
+// line.
 type Reader struct {
 	sc *bufio.Scanner
 }
 
-// NewReader строит парсер над потоком.
+// NewReader builds a parser over a stream.
 func NewReader(r io.Reader) *Reader {
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // большие SSE-дельты
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // large SSE deltas
 
 	return &Reader{sc: sc}
 }
 
-// Next возвращает следующее событие; io.EOF — конец потока.
+// Next returns the next event; io.EOF — end of stream.
 func (r *Reader) Next() (Event, error) {
 	var (
 		name string
@@ -53,12 +55,12 @@ func (r *Reader) Next() (Event, error) {
 	return Event{}, io.EOF
 }
 
-// parseLine обрабатывает строку SSE; emit=true — событие закончилось.
+// parseLine handles one SSE line; emit=true — the event has ended.
 func parseLine(line string, name *string, data *[]string) (Event, bool) {
 	switch {
 	case line == "":
 		if len(*data) == 0 && *name == "" {
-			return Event{}, false // пустые строки между событиями
+			return Event{}, false // empty lines between events
 		}
 		joined := strings.Join(*data, "\n")
 		eventName := *name
@@ -72,7 +74,7 @@ func parseLine(line string, name *string, data *[]string) (Event, bool) {
 
 		return Event{Name: eventName, Data: joined}, true
 	case strings.HasPrefix(line, ":"):
-		return Event{}, false // комментарий/heartbeat
+		return Event{}, false // comment/heartbeat
 	case strings.HasPrefix(line, "event:"):
 		*name = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 
@@ -82,6 +84,6 @@ func parseLine(line string, name *string, data *[]string) (Event, bool) {
 
 		return Event{}, false
 	default:
-		return Event{}, false // неизвестные поля (id, retry) игнорируем
+		return Event{}, false // unknown fields (id, retry) are ignored
 	}
 }

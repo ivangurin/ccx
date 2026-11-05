@@ -9,10 +9,10 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// ErrUnsupportedVersion — файл providers.json не v2 (нужна миграция ccx init).
+// ErrUnsupportedVersion means providers.json is not v2 (ccx init migration needed).
 var ErrUnsupportedVersion = errors.New("config: unsupported providers.json version (run ccx init)")
 
-// ProvidersPath — путь providers.json (CCX_PROVIDERS переопределяет).
+// ProvidersPath is the providers.json path (CCX_PROVIDERS overrides it).
 func (c *Config) ProvidersPath() string {
 	if c.ProvidersFile != "" {
 		return c.ProvidersFile
@@ -21,7 +21,7 @@ func (c *Config) ProvidersPath() string {
 	return filepath.Join(c.Home, "providers.json")
 }
 
-// SettingsPath — путь settings.json Claude Code (CCX_SETTINGS переопределяет).
+// SettingsPath is the Claude Code settings.json path (CCX_SETTINGS overrides it).
 func (c *Config) SettingsPath() string {
 	if c.SettingsFile != "" {
 		return c.SettingsFile
@@ -30,7 +30,7 @@ func (c *Config) SettingsPath() string {
 	return filepath.Join(c.Home, "settings.json")
 }
 
-// StatePath — путь ccx-state.json (CCX_STATE переопределяет).
+// StatePath is the ccx-state.json path (CCX_STATE overrides it).
 func (c *Config) StatePath() string {
 	if c.StateFile != "" {
 		return c.StateFile
@@ -39,7 +39,7 @@ func (c *Config) StatePath() string {
 	return filepath.Join(c.Home, "ccx-state.json")
 }
 
-// BackupDir — каталог бэкапов settings.json (CCX_BACKUP_DIR переопределяет).
+// BackupDir is the settings.json backup directory (CCX_BACKUP_DIR overrides it).
 func (c *Config) BackupDir() string {
 	if c.BackupDirPath != "" {
 		return c.BackupDirPath
@@ -48,12 +48,12 @@ func (c *Config) BackupDir() string {
 	return filepath.Join(c.Home, "backups")
 }
 
-// CCXDir — каталог данных ccx: логи, daemon.lock/pid (внутри Home).
+// CCXDir is the ccx data directory: logs, daemon.lock/pid (inside Home).
 func (c *Config) CCXDir() string {
 	return filepath.Join(c.Home, "ccx")
 }
 
-// LogDir — каталог логов демона (CCX_LOG_DIR переопределяет).
+// LogDir is the daemon log directory (CCX_LOG_DIR overrides it).
 func (c *Config) LogDir() string {
 	if c.LogDirPath != "" {
 		return c.LogDirPath
@@ -62,7 +62,7 @@ func (c *Config) LogDir() string {
 	return filepath.Join(c.Home, "ccx", "logs")
 }
 
-// LoadProviders читает и валидирует providers.json v2.
+// LoadProviders reads and validates providers.json v2.
 func LoadProviders(path string) (*models.Providers, error) {
 	var p models.Providers
 	if err := jsonfile.ReadJSON(path, &p); err != nil {
@@ -75,7 +75,7 @@ func LoadProviders(path string) (*models.Providers, error) {
 	return &p, nil
 }
 
-// SaveProviders атомарно пишет providers.json с правами 600 (там токены).
+// SaveProviders atomically writes providers.json with 600 permissions (it holds tokens).
 func SaveProviders(path string, p *models.Providers) error {
 	return jsonfile.WriteAtomicJSON(path, p, 0o600)
 }

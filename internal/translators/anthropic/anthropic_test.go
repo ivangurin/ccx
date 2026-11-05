@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeUpstream — Anthropic-совместимый апстрим: помнит запрос, отвечает телом.
+// fakeUpstream is an Anthropic-compatible upstream: remembers the request, responds with a body.
 func fakeUpstream(t *testing.T, status int, body string, chunks []string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// авторизация апстрима подставлена транслятором
+		// upstream authorization is injected by the translator
 		auth := r.Header.Get("Authorization")
 		apiKey := r.Header.Get("X-Api-Key")
 		if auth == "" && apiKey == "" {
@@ -76,7 +76,7 @@ func TestPassthrough_UpstreamAuthFromProfile(t *testing.T) {
 
 	tr := newTranslator(up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{}`))
-	req.Header.Set("Authorization", "Bearer client-token") // токен демона — не должен дойти
+	req.Header.Set("Authorization", "Bearer client-token") // the daemon token must not get through
 	rec := httptest.NewRecorder()
 
 	tr.ServeMessages(rec, req)

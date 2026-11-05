@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// I1: живой OpenAI шлёт prompt_tokens/completion_tokens.
+// I1: live OpenAI sends prompt_tokens/completion_tokens.
 func TestI1_StreamUsage_OpenAIKeyNames(t *testing.T) {
 	c := &models.ChatChunk{}
 	c.Choices = append(c.Choices, struct {
@@ -22,24 +22,24 @@ func TestI1_StreamUsage_OpenAIKeyNames(t *testing.T) {
 		Delta        models.ChatChunkDelta `json:"delta"`
 		FinishReason *string               `json:"finish_reason"`
 	}{FinishReason: strp("stop")})
-	c.Usage = &models.Usage{InputTokens: 100, OutputTokens: 50} // значения заданы напрямую…
+	c.Usage = &models.Usage{InputTokens: 100, OutputTokens: 50} // values are set directly...
 
-	// …а теперь проверим сам парсинг JSON-ключей продового формата:
+	// ...and now let's verify the parsing of the production-format JSON keys:
 	var parsed models.ChatChunk
 	require.NoError(t, parseJSON(`{"id":"c","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":50}}`, &parsed))
 	require.NotNil(t, parsed.Usage)
-	require.Equal(t, 100, parsed.Usage.InputTokens, "prompt_tokens должен маппиться в InputTokens")
+	require.Equal(t, 100, parsed.Usage.InputTokens, "prompt_tokens must map to InputTokens")
 	require.Equal(t, 50, parsed.Usage.OutputTokens, "completion_tokens → OutputTokens")
 	_ = c
 	_ = strp
 }
 
-// I2: обрыв стрима апстрима = ошибка, а не тихий end_turn.
+// I2: an upstream stream break = an error, not a silent end_turn.
 func TestI2_UpstreamStreamBreak_EmitsError(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"полу\"}}]}\n\n")
-		// [DONE] не пришёл — соединение просто закрылось
+		_, _ = io.WriteString(w, "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hal\"}}]}\n\n")
+		// [DONE] never arrived — the connection just closed
 	}))
 	t.Cleanup(up.Close)
 
@@ -53,16 +53,16 @@ func TestI2_UpstreamStreamBreak_EmitsError(t *testing.T) {
 	tr.ServeMessages(rec, req)
 
 	out := rec.Body.String()
-	require.Contains(t, out, "полу", "успевшие дельты дошли")
-	require.Contains(t, out, "event: error", "обрыв = SSE-error")
-	require.NotContains(t, out, `"stop_reason":"end_turn"`, "обрыв не маскируется под нормальное завершение")
+	require.Contains(t, out, "hal", "deltas sent before the break got through")
+	require.Contains(t, out, "event: error", "break = SSE-error")
+	require.NotContains(t, out, `"stop_reason":"end_turn"`, "a break is not masqueraded as a normal completion")
 }
 
-// I3: пустой стрим апстрима (200 + ноль событий) → 502, а не пустой SSE.
+// I3: an empty upstream stream (200 + zero events) → 502, not an empty SSE.
 func TestI3_EmptyUpstreamStream_502(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "") // сразу EOF
+		_, _ = io.WriteString(w, "") // immediate EOF
 	}))
 	t.Cleanup(up.Close)
 
@@ -79,7 +79,7 @@ func TestI3_EmptyUpstreamStream_502(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "error")
 }
 
-// I5(б): Finish закрывает блоки в порядке открытия (детерминизм).
+// I5(b): Finish closes blocks in opening order (determinism).
 func TestI5_BlockStopOrderDeterministic(t *testing.T) {
 	for range 5 {
 		conv := chatstream.NewStreamConverter("m")
@@ -95,11 +95,11 @@ func TestI5_BlockStopOrderDeterministic(t *testing.T) {
 				stops = append(stops, *e.Index)
 			}
 		}
-		require.Equal(t, []int{0, 1, 2}, stops, "порядок закрытия блоков = порядок открытия")
+		require.Equal(t, []int{0, 1, 2}, stops, "block closing order = opening order")
 	}
 }
 
-// I5(в): message_stop без payload — строго {"type":"message_stop"}.
+// I5(c): message_stop without a payload — strictly {"type":"message_stop"}.
 func TestI5_MessageStopNoPayload(t *testing.T) {
 	events := feed(t, []*models.ChatChunk{chunk(models.ChatChunkDelta{Content: "x"}, strp("stop"))})
 	last := events[len(events)-1]
