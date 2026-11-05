@@ -19,13 +19,13 @@ var (
 
 // ui \u2014 state of the interactive selection.
 type ui struct {
-	header  string
-	items   []Item
-	cursor  int
-	query   string
-	tty     *os.File
-	out     io.Writer
-	visible []Item
+	header    string
+	items     []Item
+	cursor    int
+	query     string
+	tty       *os.File
+	out       io.Writer
+	lastLines int // \u0441\u0442\u0440\u043e\u043a \u0432 \u043f\u0440\u043e\u0448\u043b\u043e\u043c \u043a\u0430\u0434\u0440\u0435 \u2014 \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0440\u0438\u0441\u043e\u0432\u043a\u0438 \u043d\u0430 \u043c\u0435\u0441\u0442\u0435
 }
 
 // runInteractive \u2014 raw-mode loop: render, arrows, filter, Enter/Esc.
@@ -121,29 +121,18 @@ func (u *ui) visibleItems() []Item {
 }
 
 func (u *ui) render() {
-	u.visible = u.visibleItems()
-	if u.cursor >= len(u.visible) {
-		u.cursor = len(u.visible) - 1
+	visible := u.visibleItems()
+	if u.cursor >= len(visible) {
+		u.cursor = len(visible) - 1
 	}
 	if u.cursor < 0 {
 		u.cursor = 0
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s\r\n", u.header)
-	if u.query != "" {
-		fmt.Fprintf(&sb, "  filter: %s\r\n", u.query)
-	}
-	for i, it := range u.visible {
-		mark := "  "
-		if i == u.cursor {
-			mark = "> "
-		}
-		detail := ""
-		if it.Detail != "" {
-			detail = " - " + it.Detail
-		}
-		fmt.Fprintf(&sb, "%s%s%s\r\n", mark, it.Label, detail)
-	}
-	fmt.Fprint(&sb, "up/down select - Enter confirm - Esc cancel\r")
+	// перерисовка на месте: подняться к первому кадру и стереть его
+	sb.WriteString(repaintPrefix(u.lastLines))
+	frame, lines := buildFrame(u.header, visible, u.query, u.cursor)
+	sb.WriteString(frame)
+	u.lastLines = lines
 	_, _ = io.WriteString(u.out, sb.String())
 }
