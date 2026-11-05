@@ -11,15 +11,19 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
+	"github.com/ivangurin/ccx/internal/clients/codex"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/ivangurin/ccx/internal/translators"
 	"github.com/ivangurin/ccx/internal/translators/anthropic"
+	codex_tr "github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/ivangurin/ccx/internal/translators/copilot"
 	"github.com/ivangurin/ccx/internal/translators/openai"
 )
@@ -99,7 +103,12 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 
 		return copilot.New(profile, copilot_client.New(store)), nil
 	case models.ProtocolCodex:
-		return nil, fmt.Errorf("router: транслятор %s появится в следующем этапе", profile.Protocol)
+		authPath := codex.DefaultAuthPath()
+		if profile.Codex != nil && profile.Codex.AuthFile != "" {
+			authPath = expandHome(profile.Codex.AuthFile)
+		}
+
+		return codex_tr.New(profile, codex.New(authPath)), nil
 	default:
 		return nil, fmt.Errorf("router: неизвестный protocol %q", profile.Protocol)
 	}
@@ -190,4 +199,15 @@ func writeAnthropicError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg)
+}
+
+// expandHome — раскрыть ~ в путях конфига (auth_file codex).
+func expandHome(path string) string {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(path, "~"), "/"))
+		}
+	}
+
+	return path
 }
