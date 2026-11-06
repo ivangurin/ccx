@@ -1,9 +1,8 @@
-// Package suite_provider — a test counterpart of the production composition
-// (a port of the idp-port-forward pattern): a sandboxed CCMS_HOME (t.TempDir),
-// a silent logger, lazy services/mocks on top — a single assembly point of
-// fixtures for all tests. The live ~/.claude is unreachable by construction
-// (an invariant after the CCR incidents in bash-ccx: tests never touch real
-// settings).
+// Package suite_provider — a test counterpart of the production composition:
+// a sandboxed CCMS_HOME (t.TempDir), a silent logger, lazy services/mocks on
+// top — a single assembly point of fixtures for all tests. The live ~/.claude
+// is unreachable by construction (an invariant after the CCR incidents in
+// bash-ccx: tests never touch real settings).
 package suite_provider
 
 import (

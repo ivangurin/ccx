@@ -53,8 +53,8 @@ func InitProviders(cfg *Config, force bool) (*InitResult, error) {
 }
 
 // buildFromEnvironment mirrors bash-init: zai from the settings.json env
-// block, x5 from env.json (carry-extras), plus the openai/copilot/codex
-// templates.
+// block, the work gateway from env.json (carry-extras), plus the
+// openai/copilot/codex templates.
 func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 	var warnings []string
 	providers := &models.Providers{}
@@ -67,8 +67,8 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccms edit")
 	}
 
-	if x5 := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); x5 != nil {
-		providers.Providers.Set("x5", x5)
+	if work := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); work != nil {
+		providers.Providers.Set("work", work)
 	}
 
 	providers.Providers.Set("openai", builtinOpenAIProfile())
@@ -131,7 +131,7 @@ func profileFromEnvJSON(path string) *models.Profile {
 	}
 
 	prof := &models.Profile{
-		Name:     "X5 Work Gateway (Copilot)",
+		Name:     "Work Gateway (Copilot)",
 		Protocol: models.ProtocolAnthropic,
 		Env:      dropAnthropicKeys(env),
 	}

@@ -24,7 +24,7 @@ func TestSettings_PatchEnvPreservesFileByteForByte(t *testing.T) {
   },
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-token",
+    "MCP_TOKEN": "user-token",
     "ANTHROPIC_STALE": "old",
     "ANTHROPIC_BASE_URL": "http://old"
   },
@@ -39,7 +39,7 @@ func TestSettings_PatchEnvPreservesFileByteForByte(t *testing.T) {
   },
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-token",
+    "MCP_TOKEN": "user-token",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
     "ANTHROPIC_AUTH_TOKEN": "tok",
     "ANTHROPIC_MODEL": "m1"
@@ -133,7 +133,7 @@ func TestSettings_PatchEnvPreservesBlankLinesAndInlineBlocks(t *testing.T) {
   },
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-secret",
+    "MCP_TOKEN": "user-secret",
     "ANTHROPIC_OLD_TOKEN": "stale"
   },
   "includeCoAuthoredBy": false,
@@ -151,7 +151,7 @@ func TestSettings_PatchEnvPreservesBlankLinesAndInlineBlocks(t *testing.T) {
   },
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-secret",
+    "MCP_TOKEN": "user-secret",
     "ANTHROPIC_AUTH_TOKEN": "daemon-token",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
     "ANTHROPIC_MODEL": "glm-5.3[1m]",

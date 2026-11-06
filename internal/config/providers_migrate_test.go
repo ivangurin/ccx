@@ -20,11 +20,11 @@ const (
   "daemon": {"port": 4567, "auth_token": "d7c9d22adeadbeef"},
   "profiles": {
     "zai": {"name": "z.ai", "protocol": "anthropic", "base_url": "https://z.example", "auth_token": "z-secret"},
-    "x5": {"name": "X5", "protocol": "openai", "base_url": "https://x5.example", "auth_token": "x-secret"}
+    "acme": {"name": "Acme", "protocol": "openai", "base_url": "https://acme.example", "auth_token": "acme-secret"}
   }
 }`
-	x5Key  = "x5"
-	zaiKey = "zai"
+	acmeKey = "acme"
+	zaiKey  = "zai"
 )
 
 func writeLegacyFile(t *testing.T, sp *suite_provider.Provider, content string) {
@@ -39,8 +39,8 @@ func TestLoadProviders_MigratesLegacyFileOnDisk(t *testing.T) {
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	require.Equal(t, 4567, loaded.DaemonPort())
-	require.Equal(t, []string{zaiKey, x5Key}, loaded.Providers.Keys)
-	require.Equal(t, "x-secret", loaded.Providers.Get(x5Key).AuthToken)
+	require.Equal(t, []string{zaiKey, acmeKey}, loaded.Providers.Keys)
+	require.Equal(t, "acme-secret", loaded.Providers.Get(acmeKey).AuthToken)
 
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestLoadProviders_MigratesLegacyFileOnDisk(t *testing.T) {
 	require.NotContains(t, clean, `"profiles"`)
 	require.NotContains(t, clean, `"auth_token": "d7c9d22adeadbeef"`) // the dead daemon secret is gone
 	// profile order survives the rewrite (menu/list order is file order)
-	require.Less(t, strings.Index(clean, `"`+zaiKey+`"`), strings.Index(clean, `"`+x5Key+`"`))
+	require.Less(t, strings.Index(clean, `"`+zaiKey+`"`), strings.Index(clean, `"`+acmeKey+`"`))
 	require.Contains(t, clean, `"port": 4567`)
 
 	info, err := os.Stat(sp.Config.ProvidersPath())
@@ -107,7 +107,7 @@ func TestLoadProviders_MigrationWriteFailureTolerated(t *testing.T) {
 
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err) // best-effort by design: a failed rewrite must not break loading
-	require.Equal(t, []string{zaiKey, x5Key}, loaded.Providers.Keys)
+	require.Equal(t, []string{zaiKey, acmeKey}, loaded.Providers.Keys)
 
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)

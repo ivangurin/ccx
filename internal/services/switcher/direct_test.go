@@ -86,7 +86,7 @@ func TestApply_DirectAPIKeyAndHeaders(t *testing.T) {
 	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
 		p.BaseURL = "https://up"
 		p.APIKey = "sk-ant"
-		p.Headers = map[string]string{"X-Trace": "1", "X-Org": "x5"}
+		p.Headers = map[string]string{"X-Trace": "1", "X-Org": "acme"}
 	})
 
 	_, err := sw.Apply(context.Background(), "p", "")
@@ -95,7 +95,7 @@ func TestApply_DirectAPIKeyAndHeaders(t *testing.T) {
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "sk-ant", env["ANTHROPIC_API_KEY"])
 	require.NotContains(t, env, "ANTHROPIC_AUTH_TOKEN") // proxy precedence: one credential wins
-	require.Equal(t, "X-Org: x5\nX-Trace: 1", env["ANTHROPIC_CUSTOM_HEADERS"])
+	require.Equal(t, "X-Org: acme\nX-Trace: 1", env["ANTHROPIC_CUSTOM_HEADERS"])
 }
 
 func TestApply_DirectNoBaseURL(t *testing.T) {

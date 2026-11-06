@@ -82,7 +82,7 @@ func writeProviders(t *testing.T, path string, keysInOrder []string) {
 
 func TestCommandList_OrdersByFile(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	writeProviders(t, sp.Config.ProvidersPath(), []string{profZai, "x5", "copilot"})
+	writeProviders(t, sp.Config.ProvidersPath(), []string{profZai, "acme", "copilot"})
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdList}, &out)
@@ -90,10 +90,10 @@ func TestCommandList_OrdersByFile(t *testing.T) {
 	require.Equal(t, 0, code)
 	lines := out.String()
 	zaiPos := strings.Index(lines, profZai)
-	x5Pos := strings.Index(lines, "x5")
+	acmePos := strings.Index(lines, "acme")
 	copilotPos := strings.Index(lines, "copilot")
-	require.Less(t, zaiPos, x5Pos)
-	require.Less(t, x5Pos, copilotPos)
+	require.Less(t, zaiPos, acmePos)
+	require.Less(t, acmePos, copilotPos)
 	require.Contains(t, lines, "zai-model")
 	require.Contains(t, lines, "default")
 }

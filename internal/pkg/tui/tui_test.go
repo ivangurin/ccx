@@ -15,7 +15,7 @@ func TestFilter_CaseInsensitive(t *testing.T) {
 	// the source stays Cyrillic-free.
 	items := []tui.Item{
 		{Label: "zai \u00b7 z.ai (GLM)"},
-		{Label: "x5 \u00b7 \u0420\u0430\u0431\u043e\u0447\u0438\u0439 \u0448\u043b\u044e\u0437"},
+		{Label: "work \u00b7 \u0420\u0430\u0431\u043e\u0447\u0438\u0439 \u0448\u043b\u044e\u0437"},
 		{Label: "copilot \u00b7 GitHub Copilot"},
 	}
 
@@ -33,7 +33,7 @@ func TestFilter_CaseInsensitive(t *testing.T) {
 func TestFilter_MatchesDetail(t *testing.T) {
 	items := []tui.Item{
 		{Label: "zai", Detail: "glm-5.3"},
-		{Label: "x5", Detail: "copilot-code-large"},
+		{Label: "work", Detail: "copilot-code-large"},
 	}
 
 	got := tui.Filter(items, "glm")

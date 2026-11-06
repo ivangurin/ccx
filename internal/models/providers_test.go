@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// x5Key/zaiKey: lint-level constants (goconst), not magic strings.
+// acmeKey/zaiKey: lint-level constants (goconst), not magic strings.
 const (
-	x5Key  = "x5"
-	zaiKey = "zai"
+	acmeKey = "acme"
+	zaiKey  = "zai"
 )
 
 func TestProviders_UnmarshalJSON_ProvidersKey(t *testing.T) {
@@ -19,16 +19,16 @@ func TestProviders_UnmarshalJSON_ProvidersKey(t *testing.T) {
 	err := json.Unmarshal([]byte(`{
 		"daemon": {"port": 4567},
 		"providers": {
-			"x5": {"name": "X5", "protocol": "openai", "base_url": "https://up.example", "auth_token": "t"},
+			"acme": {"name": "Acme", "protocol": "openai", "base_url": "https://up.example", "auth_token": "t"},
 			"zai": {"name": "z.ai", "protocol": "anthropic", "base_url": "https://z.example"}
 		}
 	}`), &p)
 
 	require.NoError(t, err)
 	require.Equal(t, 4567, p.DaemonPort())
-	require.Equal(t, []string{x5Key, zaiKey}, p.Providers.Keys)
-	require.Equal(t, models.ProtocolOpenAI, p.Providers.Get(x5Key).Protocol)
-	require.Equal(t, "t", p.Providers.Get(x5Key).AuthToken)
+	require.Equal(t, []string{acmeKey, zaiKey}, p.Providers.Keys)
+	require.Equal(t, models.ProtocolOpenAI, p.Providers.Get(acmeKey).Protocol)
+	require.Equal(t, "t", p.Providers.Get(acmeKey).AuthToken)
 }
 
 func TestProviders_UnmarshalJSON_LegacyProfilesKey(t *testing.T) {
@@ -40,13 +40,13 @@ func TestProviders_UnmarshalJSON_LegacyProfilesKey(t *testing.T) {
 		"daemon": {"port": 4567, "auth_token": "dead"},
 		"profiles": {
 			"zai": {"name": "z.ai", "protocol": "anthropic"},
-			"x5": {"name": "X5", "protocol": "openai"}
+			"acme": {"name": "Acme", "protocol": "openai"}
 		}
 	}`), &p)
 
 	require.NoError(t, err)
 	require.Equal(t, 4567, p.DaemonPort())
-	require.Equal(t, []string{zaiKey, x5Key}, p.Providers.Keys)
+	require.Equal(t, []string{zaiKey, acmeKey}, p.Providers.Keys)
 	require.Equal(t, models.ProtocolAnthropic, p.Providers.Get(zaiKey).Protocol)
 }
 
@@ -56,7 +56,7 @@ func TestProviders_UnmarshalJSON_ProvidersKeyWins(t *testing.T) {
 	var p models.Providers
 	err := json.Unmarshal([]byte(`{
 		"providers": {},
-		"profiles": {"x5": {"name": "X5", "protocol": "openai"}}
+		"profiles": {"acme": {"name": "Acme", "protocol": "openai"}}
 	}`), &p)
 
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestProviders_UnmarshalJSON_DaemonBlockNormalized(t *testing.T) {
 
 func TestProviders_MarshalJSON_NoEmptyDaemonBlock(t *testing.T) {
 	p := models.Providers{}
-	p.Providers.Set(x5Key, &models.Profile{Name: "X5", Protocol: models.ProtocolOpenAI})
+	p.Providers.Set(acmeKey, &models.Profile{Name: "Acme", Protocol: models.ProtocolOpenAI})
 
 	raw, err := json.Marshal(&p)
 	require.NoError(t, err)

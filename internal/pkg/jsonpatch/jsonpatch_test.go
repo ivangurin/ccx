@@ -17,7 +17,7 @@ func TestSet_ReplacesValueInPlace(t *testing.T) {
   "permissions": {"allow": ["Bash"]},
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-token"
+    "MCP_TOKEN": "user-token"
   },
   "model": "old-model"
 }
@@ -26,7 +26,7 @@ func TestSet_ReplacesValueInPlace(t *testing.T) {
   "permissions": {"allow": ["Bash"]},
   "env": {
     "API_TIMEOUT_MS": "777",
-    "IDP_TOKEN": "user-token"
+    "MCP_TOKEN": "user-token"
   },
   "model": "old-model"
 }
@@ -260,7 +260,7 @@ func TestDelete_ThenSetKeepsStyle(t *testing.T) {
 	in := `{
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-token",
+    "MCP_TOKEN": "user-token",
     "ANTHROPIC_STALE": "old"
   }
 }
@@ -268,7 +268,7 @@ func TestDelete_ThenSetKeepsStyle(t *testing.T) {
 	want := `{
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "IDP_TOKEN": "user-token",
+    "MCP_TOKEN": "user-token",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
     "ANTHROPIC_MODEL": "m1"
   }

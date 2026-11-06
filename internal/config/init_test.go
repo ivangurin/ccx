@@ -57,14 +57,14 @@ func TestInit_NoVersionNoTokenWritten(t *testing.T) {
 
 func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	// settings.json with an env block (z.ai) + truncated env.json (x5)
+	// settings.json with an env block (z.ai) + truncated env.json (work)
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
 		"env": {"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-z",
 			"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-haiku",
 			"API_TIMEOUT_MS": "3000"}
 	}`), 0o600))
 	require.NoError(t, os.WriteFile(sp.FilePath("env.json"), []byte(
-		`"ANTHROPIC_BASE_URL": "https://api-copilot.x5.ru/aigw", "ANTHROPIC_AUTH_TOKEN": "gw", "CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true",`,
+		`"ANTHROPIC_BASE_URL": "https://api-copilot.work.example/aigw", "ANTHROPIC_AUTH_TOKEN": "gw", "CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true",`,
 	), 0o600))
 
 	res, err := config.InitProviders(sp.Config, false)
@@ -84,11 +84,11 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	// user keys from settings.json are NOT carried into the profile
 	require.NotContains(t, zai.Env, "API_TIMEOUT_MS")
 
-	x5 := p.Providers.Get("x5")
-	require.NotNil(t, x5)
-	require.Equal(t, "https://api-copilot.x5.ru/aigw", x5.BaseURL)
+	work := p.Providers.Get("work")
+	require.NotNil(t, work)
+	require.Equal(t, "https://api-copilot.work.example/aigw", work.BaseURL)
 	// carry-extras: non-ANTHROPIC keys of env.json move over
-	require.Equal(t, map[string]string{keyDisableThinking: "true"}, x5.Env)
+	require.Equal(t, map[string]string{keyDisableThinking: "true"}, work.Env)
 
 	for _, key := range []string{profOpenAI, profCopilot, "codex"} {
 		require.NotNil(t, p.Providers.Get(key), "template profile %s", key)

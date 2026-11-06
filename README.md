@@ -89,6 +89,5 @@ make lint-full   # on all files
 make generate    # mocks + formatting
 ```
 
-Structure and conventions — see CLAUDE.md (modeled after idp-port-forward:
-one file per method/handler, foo_test.go, suite provider in
-internal/pkg/suite/provider).
+Structure and conventions — see CLAUDE.md: one file per method/handler,
+foo_test.go, suite provider in internal/pkg/suite/provider.

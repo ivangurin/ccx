@@ -60,14 +60,14 @@ func TestSaveLoadProviders_PreservesProfileOrder(t *testing.T) {
 	path := filepath.Join(sp.HomeDir(), "providers.json")
 
 	in := &models.Providers{}
-	for _, key := range []string{"zai", "x5", profOpenAI2, profCopilot} {
+	for _, key := range []string{"zai", "acme", profOpenAI2, profCopilot} {
 		in.Providers.Set(key, &models.Profile{Name: key, Protocol: models.ProtocolAnthropic})
 	}
 	require.NoError(t, config.SaveProviders(path, in))
 
 	loaded, err := config.LoadProviders(path)
 	require.NoError(t, err)
-	require.Equal(t, []string{"zai", "x5", profOpenAI2, profCopilot}, loaded.Providers.Keys)
+	require.Equal(t, []string{"zai", "acme", profOpenAI2, profCopilot}, loaded.Providers.Keys)
 
 	// order survives a repeated roundtrip too
 	require.NoError(t, config.SaveProviders(path, loaded))

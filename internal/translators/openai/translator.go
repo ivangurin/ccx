@@ -70,9 +70,9 @@ func (t *Translator) do(src *http.Request, body []byte) (*http.Response, error) 
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	// Without an explicit UA Go leaks "Go-http-client/1.1", which corporate
-	// gateways block as automation (the x5 gateway answers it with "Forbidden
-	// to use automatization") — masquerade as opencode's CLI; verbatim UA of
-	// opencode 2.2.5.
+	// gateways block as automation (one such gateway answers it with
+	// "Forbidden to use automatization") — masquerade as opencode's CLI;
+	// verbatim UA of opencode 2.2.5.
 	req.Header.Set("User-Agent", DefaultUserAgent)
 	for k, v := range t.profile.Headers {
 		req.Header.Set(k, v)

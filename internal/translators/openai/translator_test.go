@@ -143,8 +143,8 @@ func TestServeMessages_ForwardsBearerToken(t *testing.T) {
 	require.Equal(t, "Bearer sk-upstream", *gotAuth)
 }
 
-// A profile without user_agent must not leak Go's default UA: the x5 gateway
-// answers exactly "Go-http-client/1.1" with "Forbidden to use
+// A profile without user_agent must not leak Go's default UA: a corporate
+// gateway answers exactly "Go-http-client/1.1" with "Forbidden to use
 // automatization" — the masquerade default is opencode's CLI UA; a profile's
 // user_agent still wins (TestServeMessages_NonStream).
 func TestServeMessages_DefaultUserAgentWhenProfileEmpty(t *testing.T) {
