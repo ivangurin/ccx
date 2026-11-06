@@ -30,20 +30,25 @@ ccms status                       # profile/model/daemon
 
 How `ANTHROPIC_BASE_URL` ends up in `~/.claude/settings.json` depends on the
 profile's protocol: translated ones (openai/copilot/codex) point at the local
-daemon (`http://127.0.0.1:4567`) and switching re-routes the daemon on the
-fly; an anthropic passthrough goes **direct** — the upstream `base_url` and
-credential are written straight into the config (bash-ccx semantics) and the
-unused daemon is stopped.
+daemon (`http://127.0.0.1:4567` by default) and switching restarts the daemon
+with the new provider as a launch parameter (`ccms serve --daemon --provider
+<key> --port <port>`); an anthropic passthrough goes **direct** — the upstream
+`base_url` and credential are written straight into the config (bash-ccx
+semantics) and the unused daemon is stopped. For openai the credential is
+pass-through: settings.json gets the provider's own token, Claude Code sends
+it with every request, and the daemon forwards it upstream unchanged — it
+holds no secret of its own.
 
-## Config (`~/.claude/providers.json`, v3, 0600 permissions)
+## Config (`~/.claude/providers.json`, 0600 permissions)
 
 Connection fields live directly in the profile — no protocol-named block;
-`protocol` determines which of them are meaningful.
+`protocol` determines which of them are meaningful. The optional
+`daemon.port` defaults to 4567 (precedence: `--port` flag > `CCMS_PORT` >
+`daemon.port` > 4567).
 
 ```jsonc
 {
-  "version": 3,
-  "daemon": {"port": 4567, "auth_token": "<hex>"},
+  "daemon": {"port": 4567},
   "profiles": {
     "zai": {
       "name": "z.ai (GLM)",
@@ -56,7 +61,7 @@ Connection fields live directly in the profile — no protocol-named block;
       "name": "Work gateway",
       "protocol": "openai",
       "base_url": "https://…/v1",
-      "api_key": "<token>",
+      "auth_token": "<token>",
       "user_agent": "claude-cli/2.0.1",
       "models": […]
     }
@@ -67,8 +72,9 @@ Connection fields live directly in the profile — no protocol-named block;
 ## Commands
 
 `ccms` (menu) · `ccms use <profile> [model]` (alias `ccms <profile>`) · `list` ·
-`status` · `init [--force]` · `edit` · `serve` (daemon in foreground) ·
-`stop` · `auth copilot` · `auth codex` · `version` · `help`
+`status` · `init [--force]` · `edit` · `serve --provider <key> [--port N]`
+(daemon in foreground) · `stop` · `auth copilot` · `auth codex` · `version` ·
+`help`
 
 ## Development
 

@@ -5,11 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Module: `github.com/ivangurin/ccms`, Go 1.27.
 
 ccms (Claude Code Model Switcher) is a single binary for switching Claude Code
-LLM providers: the CLI switches profiles, the embedded daemon (`ccms serve`,
-127.0.0.1:4567) owns `ANTHROPIC_BASE_URL` and translates the Anthropic
-Messages API into the active provider's protocol (anthropic-passthrough /
-openai / copilot / codex). A rewrite of the bash tool `~/projects/ccx`
-(the behavior reference; its 78 tests are being ported).
+LLM providers: the CLI switches profiles, the embedded daemon (`ccms serve
+--provider <key> [--port N]`, 127.0.0.1:4567 by default) owns
+`ANTHROPIC_BASE_URL` and translates the Anthropic Messages API into the
+launched provider's protocol (anthropic-passthrough / openai / copilot /
+codex); for openai the upstream credential is pass-through (the token Claude
+Code sends travels upstream — the daemon holds no secret of its own). A
+rewrite of the bash tool `~/projects/ccx` (the behavior reference; its 78
+tests are being ported).
 
 ## Commands
 
@@ -36,11 +39,12 @@ go test ./internal/services/switcher/... -run TestName -count=1
 ## Architecture
 
 CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
-the Anthropic API to the active profile's translator). Data ownership: the
-CLI owns `settings.json`, the daemon owns `ccms-state.json`; upstream
-credentials live in `~/.claude/providers.json` (v3: flat — connection fields
+the Anthropic API to the launched provider's translator; switching = daemon
+restart with new launch params). Data ownership: the CLI owns
+`settings.json` and `ccms-state.json`; upstream credentials live in
+`~/.claude/providers.json` (unversioned, flat — connection fields
 `base_url`/`api_key`/… sit directly in the profile, `protocol` decides which
-of them are meaningful).
+of them are meaningful; `daemon.port` is optional).
 
 ### Layer structure
 
@@ -48,26 +52,29 @@ of them are meaningful).
 cmd/ccms/main.go                        entry point: run() → cli.Execute
 internal/
   cli/                                  stdlib command dispatcher (use/list/status/init/serve/...)
-  app/                                  app.Run(): serve mode: config→logger→closer→provider→router→http
-                                         spawn.go: detached daemon launch (Setsid, pidfile)
-  config/                               env config + CCMS_* paths + providers.json v3 (load/save, 0600)
+  app/                                  app.Run(): serve mode: config→logger→lock→route(Build)→http
+                                         spawn.go: detached daemon launch (Setsid, pidfile,
+                                         --provider/--port args)
+  config/                               env config + CCMS_* paths + providers.json (load/save, 0600)
+                                         providers.go: ResolveDaemonPort (flag > CCMS_PORT >
+                                         daemon.port > 4567)
                                          init.go: ccms init — import from settings/env.json + templates
-                                         (no migrations: an old-format file is only regenerated via
-                                         ccms init --force)
   models/                               DTOs: anthropic(+sse), openai, codex, profile, providers,
                                          settings, state, admin
   service_provider/                     DI: lazy singleton getters
   api/
     handlers/                           chi router: /v1/* (messages, count_tokens, models),
-                                         /admin/* (use, health, ready, status, stop), /health
-    middleware/                         auth (daemon token), logging
+                                         /admin/* (health, stop), /health — localhost-only, no auth
+                                         middleware (daemon token removed: openai is pass-through)
   services/
-    router/                             active route (atomic.Pointer), factory by protocol,
-                                         activate: build → Ready() → swap → state
+    router/                             build-once at startup: --provider key → profile →
+                                         translator → Ready() before listening (no in-daemon
+                                         switching: a switch is a daemon restart)
     switcher/                           port of bash-ccx apply_profile: flock, backup 0600, atomic,
-                                         managed keys, model pinning, EnsureDaemon; anthropic →
-                                         direct env (upstream base_url + credential, daemon stop)
-    meta/                               health/version
+                                         managed keys, model pinning, daemon Restart (stop with
+                                         SIGTERM/SIGKILL escalation → spawn --provider/--port →
+                                         health wait); anthropic → direct env (upstream base_url +
+                                         credential, daemon stop)
   translators/
     translator.go                       Translator + ResponseSink interfaces
     prefill/                            prefill fix (port of copilot-bridge.py)
@@ -94,9 +101,13 @@ internal/
 ### Key invariants (from bash-ccx, mandatory)
 
 - **Readiness before settings.json**: switching a translated profile
-  (openai/copilot/codex) first brings up the daemon and prepares the
-  translator (`Ready()`); on failure, `~/.claude/settings.json` is left
-  untouched and the user stays on the previous profile.
+  (openai/copilot/codex) restarts the daemon with `--provider`/`--port` and
+  waits for `/health` — which answering means the translator's `Ready()`
+  passed (the daemon builds the route before listening); on failure,
+  `~/.claude/settings.json` is left untouched and the user stays on the
+  previous profile. Restart kills in-flight SSE requests — accepted
+  trade-off of the restart semantics. Port precedence everywhere:
+  `--port` flag > `CCMS_PORT` > `daemon.port` > 4567.
 - **Anthropic passthrough goes direct**: a `protocol: anthropic` profile
   needs no translation — the upstream `base_url` + credential are written
   straight into settings.json (bash-ccx semantics), and the unused daemon is
@@ -113,7 +124,10 @@ internal/
   all `ANTHROPIC_DEFAULT_*_MODEL` = the selected model.
 - **`ANTHROPIC_BASE_URL`**: always the daemon for translated protocols (it
   never changes when switching between them); the upstream URL itself for
-  direct anthropic profiles.
+  direct anthropic profiles. The credential written alongside is the
+  provider's own (`auth_token` > `api_key` > placeholder `ccms`): for openai
+  it is pass-through — Claude Code sends it, the daemon forwards it upstream
+  unchanged.
 - **`ccms-state.json`** `{profile, model, updated}` — format is 1:1 with
   bash-ccx's ccx-state.json (statusline.sh reads it — after the ccms rename
   its path must point to ccms-state.json; the JSON schema is unchanged).
