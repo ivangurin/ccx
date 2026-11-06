@@ -44,6 +44,10 @@ func (t *Translator) chatURL() string {
 	return t.profile.BaseURL + "/chat/completions"
 }
 
+// DefaultUserAgent is the upstream UA when the profile sets none — see the
+// fallback in do() for why it must not be Go's default.
+const DefaultUserAgent = "opencode/latest/2.2.5/cli"
+
 // requestToken extracts the client credential the way Claude Code sends it:
 // Authorization: Bearer (ANTHROPIC_AUTH_TOKEN) or x-api-key (ANTHROPIC_API_KEY).
 func requestToken(src *http.Request) string {
@@ -67,6 +71,12 @@ func (t *Translator) do(src *http.Request, body []byte) (*http.Response, error) 
 	}
 	if t.profile.UserAgent != "" {
 		req.Header.Set("User-Agent", t.profile.UserAgent) // UA filters of corporate gateways
+	} else {
+		// Without an explicit UA Go leaks "Go-http-client/1.1", which
+		// corporate gateways block as automation (the x5 gateway answers
+		// it with "Forbidden to use automatization") — masquerade as
+		// opencode's CLI instead; verbatim UA of opencode 2.2.5.
+		req.Header.Set("User-Agent", DefaultUserAgent)
 	}
 	for k, v := range t.profile.Headers {
 		req.Header.Set(k, v)

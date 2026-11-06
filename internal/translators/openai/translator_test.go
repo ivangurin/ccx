@@ -144,6 +144,30 @@ func TestServeMessages_ForwardsBearerToken(t *testing.T) {
 	require.Equal(t, "Bearer sk-upstream", *gotAuth)
 }
 
+// A profile without user_agent must not leak Go's default UA: the x5 gateway
+// answers exactly "Go-http-client/1.1" with "Forbidden to use
+// automatization" — the masquerade default is opencode's CLI UA; a profile's
+// user_agent still wins (TestServeMessages_NonStream).
+func TestServeMessages_DefaultUserAgentWhenProfileEmpty(t *testing.T) {
+	gotUA := new(string)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotUA = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c1","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(up.Close)
+
+	tr := openai.New(&models.Profile{Protocol: models.ProtocolOpenAI, BaseURL: up.URL})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt","max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, openai.DefaultUserAgent, *gotUA)
+}
+
 // x-api-key (Claude Code sends it when settings.json has ANTHROPIC_API_KEY)
 // falls back to Bearer upstream.
 func TestServeMessages_ForwardsXAPIKeyAsBearer(t *testing.T) {
