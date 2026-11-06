@@ -42,6 +42,8 @@ func TestInit_NoVersionNoTokenWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), `"version":`)
 	require.NotContains(t, string(raw), "auth_token")
+	require.NotContains(t, string(raw), `"profiles"`)
+	require.Contains(t, string(raw), `"providers"`)
 	// no port baked in: resolution owns the default
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)

@@ -56,9 +56,12 @@ func TestCommandInit_ForceRegenerates(t *testing.T) {
 	require.Equal(t, 0, code)
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	// the regenerated file is the new schema: no version, no daemon token
+	// the regenerated file is the current schema: no version, no daemon
+	// token, the map under "providers" (never the legacy "profiles" key)
 	require.NotContains(t, string(raw), `"version":`)
 	require.NotContains(t, string(raw), "auth_token")
+	require.NotContains(t, string(raw), `"profiles"`)
+	require.Contains(t, string(raw), `"providers"`)
 }
 
 func writeProviders(t *testing.T, path string, keysInOrder []string) {

@@ -30,9 +30,11 @@ type InitResult struct {
 	Warnings []string // things to fill in by hand
 }
 
-// InitProviders creates providers.json v3: import from settings.json/env.json
-// + templates. It never touches settings.json; an existing file is replaced
-// only with --force.
+// InitProviders creates providers.json in the current schema (the map under
+// "providers", unversioned, no daemon block — the port resolves via
+// ResolveDaemonPort): import from settings.json/env.json + templates. It
+// never touches settings.json; an existing file is replaced only with
+// --force.
 func InitProviders(cfg *Config, force bool) (*InitResult, error) {
 	path := cfg.ProvidersPath()
 	if _, err := os.Stat(path); err == nil && !force {
