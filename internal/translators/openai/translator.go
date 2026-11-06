@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/ivangurin/ccms/internal/models"
 	"github.com/ivangurin/ccms/internal/translators/chatstream"
@@ -43,14 +44,26 @@ func (t *Translator) chatURL() string {
 	return t.profile.BaseURL + "/chat/completions"
 }
 
-func (t *Translator) do(body []byte) (*http.Response, error) {
+// requestToken extracts the client credential the way Claude Code sends it:
+// Authorization: Bearer (ANTHROPIC_AUTH_TOKEN) or x-api-key (ANTHROPIC_API_KEY).
+func requestToken(src *http.Request) string {
+	if auth := src.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	}
+
+	return strings.TrimSpace(src.Header.Get("X-Api-Key"))
+}
+
+func (t *Translator) do(src *http.Request, body []byte) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPost, t.chatURL(), bytes.NewReader(body)) //nolint:gosec // base_url from the owner config
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if t.profile.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+t.profile.APIKey)
+	// pass-through: the daemon holds no secret of its own — the token the
+	// client sent travels upstream as the provider credential.
+	if token := requestToken(src); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if t.profile.UserAgent != "" {
 		req.Header.Set("User-Agent", t.profile.UserAgent) // UA filters of corporate gateways
@@ -103,7 +116,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	resp, err := t.do(body)
+	resp, err := t.do(r, body)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 

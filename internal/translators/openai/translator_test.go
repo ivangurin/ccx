@@ -16,7 +16,6 @@ func newTranslator(baseURL string) *openai.Translator {
 	return openai.New(&models.Profile{
 		Protocol:  models.ProtocolOpenAI,
 		BaseURL:   baseURL,
-		APIKey:    "sk-test",
 		UserAgent: "ccms-test/1",
 	})
 }
@@ -32,6 +31,7 @@ func TestServeMessages_NonStream(t *testing.T) {
 
 	tr := newTranslator(up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt","max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer sk-test")
 	rec := httptest.NewRecorder()
 
 	tr.ServeMessages(rec, req)
@@ -110,4 +110,69 @@ func TestSerialize_MaxTokensField(t *testing.T) {
 	out2, err := openai.SerializeForTest(chat, "max_tokens")
 	require.NoError(t, err)
 	require.Contains(t, string(out2), `"max_tokens":42`)
+}
+
+// passThroughServer is an upstream that records the Authorization header and
+// answers a minimal chat completion.
+func passThroughServer(t *testing.T) (*httptest.Server, *string) {
+	t.Helper()
+	gotAuth := new(string)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c1","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(up.Close)
+
+	return up, gotAuth
+}
+
+// The incoming Authorization: Bearer is forwarded verbatim (the profile holds
+// no api_key — the daemon has no secret of its own).
+func TestServeMessages_ForwardsBearerToken(t *testing.T) {
+	up, gotAuth := passThroughServer(t)
+
+	tr := openai.New(&models.Profile{Protocol: models.ProtocolOpenAI, BaseURL: up.URL})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt","max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer sk-upstream")
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "Bearer sk-upstream", *gotAuth)
+}
+
+// x-api-key (Claude Code sends it when settings.json has ANTHROPIC_API_KEY)
+// falls back to Bearer upstream.
+func TestServeMessages_ForwardsXAPIKeyAsBearer(t *testing.T) {
+	up, gotAuth := passThroughServer(t)
+
+	tr := openai.New(&models.Profile{Protocol: models.ProtocolOpenAI, BaseURL: up.URL})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt","max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("X-Api-Key", "sk-via-key")
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "Bearer sk-via-key", *gotAuth)
+}
+
+// No credential in the request → no Authorization header upstream at all
+// (not "Bearer " with an empty token).
+func TestServeMessages_NoTokenNoAuthorizationHeader(t *testing.T) {
+	up, gotAuth := passThroughServer(t)
+
+	tr := openai.New(&models.Profile{Protocol: models.ProtocolOpenAI, BaseURL: up.URL})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt","max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, *gotAuth)
 }
