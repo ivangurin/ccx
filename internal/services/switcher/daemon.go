@@ -2,9 +2,11 @@ package switcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,12 +18,13 @@ import (
 )
 
 // Wait/escalation timings (vars: tests shorten them; the defaults bound the
-// restart to ~14s worst case — graceful drain of long SSE, then signals).
+// restart to ~45s worst case — graceful drain of long SSE, then signals).
 var (
-	portWait = 10 * time.Second // /admin/stop → port closed
-	termWait = 2 * time.Second  // SIGTERM → port closed
-	killWait = 2 * time.Second  // SIGKILL → port closed
-	pollInt  = 200 * time.Millisecond
+	portWait  = 10 * time.Second // /admin/stop → port closed
+	termWait  = 2 * time.Second  // SIGTERM → port closed
+	killWait  = 2 * time.Second  // SIGKILL → port closed
+	drainWait = 35 * time.Second // port closed → process exit (Shutdown drains ≤30s + slack)
+	pollInt   = 200 * time.Millisecond
 )
 
 // spawn is the detached-launch function (seam for tests).
@@ -29,8 +32,8 @@ var spawn = app.SpawnDetached
 
 // SetWaitTimingsForTest overrides the wait timings (restored by the test's
 // cleanup; tests are not parallel).
-func SetWaitTimingsForTest(port, term, kill, poll time.Duration) {
-	portWait, termWait, killWait, pollInt = port, term, kill, poll
+func SetWaitTimingsForTest(port, term, kill, drain, poll time.Duration) {
+	portWait, termWait, killWait, drainWait, pollInt = port, term, kill, drain, poll
 }
 
 // SetSpawnForTest replaces the spawn function; ResetSpawnForTest restores it.
@@ -55,11 +58,15 @@ func baseURL(port int) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
-// Restart stops any running daemon, spawns a fresh one with the launch
-// parameters and waits for /health — which answering means the translator
-// passed Ready() (the daemon builds the route before listening).
+// Restart stops any running daemon, waits out its drain, spawns a fresh one
+// with the launch parameters and waits for /health — which answering means
+// the translator passed Ready() (the daemon builds the route before
+// listening).
 func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int) error {
 	if err := d.Stop(ctx); err != nil {
+		return err
+	}
+	if err := d.waitDrained(ctx); err != nil {
 		return err
 	}
 	if err := spawn(d.cfg, "--provider", providerKey, "--port", strconv.Itoa(port)); err != nil {
@@ -68,6 +75,35 @@ func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int) 
 	base := baseURL(port)
 	if !app.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
 		return fmt.Errorf("daemon did not respond within %s (log: %s)", d.cfg.DaemonStartTimeout, d.cfg.LogDir()+"/daemon.log")
+	}
+
+	return nil
+}
+
+// waitDrained waits for the old daemon's process to be gone after its port
+// closed. http.Server.Shutdown closes the listener at once but drains
+// in-flight requests for up to 30s while holding daemon.lock — spawning
+// before the exit would lose the lock race (the new daemon exits quietly)
+// and fail the switch with the daemon down. At the deadline a still-living
+// ccms process is hard-killed (it overran its own drain budget).
+func (d *HTTPDaemon) waitDrained(ctx context.Context) error {
+	pid, ok := d.readPid()
+	if !ok {
+		return nil // nothing identifiable to wait for (clean exit already, or a foreign server)
+	}
+	deadline := time.Now().Add(drainWait)
+	for pidAlive(pid) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if time.Now().After(deadline) {
+			if ownsCCMS(pid) {
+				_ = syscall.Kill(pid, syscall.SIGKILL) //nolint:gosec // our own overran daemon
+			}
+
+			return nil // best-effort: the spawn-side lock retry is the last line
+		}
+		time.Sleep(pollInt)
 	}
 
 	return nil
@@ -90,9 +126,11 @@ func (d *HTTPDaemon) Stop(ctx context.Context) error {
 		return nil
 	}
 	// escalation: signals by the pidfile (a missing/garbage pidfile is
-	// best-effort — nothing to signal, fall through to the final wait)
+	// best-effort — nothing to signal, fall through to the final wait). The
+	// pid's identity is verified first: a stale pidfile whose pid was reused
+	// must not get an innocent process killed.
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
-		if pid, ok := d.readPid(); ok {
+		if pid, ok := d.readPid(); ok && ownsCCMS(pid) {
 			_ = syscall.Kill(pid, sig) //nolint:gosec // our own daemon process
 		}
 		wait := termWait
@@ -114,6 +152,7 @@ func (d *HTTPDaemon) postStop(ctx context.Context, base string) {
 	if err != nil {
 		return
 	}
+	req.Header.Set("X-Ccms", "1")                                 // the admin marker (browser drive-by defense)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req) //nolint:gosec // local address
 	if err != nil {
 		return
@@ -150,4 +189,25 @@ func (d *HTTPDaemon) readPid() (int, bool) {
 	}
 
 	return pid, true
+}
+
+// pidAlive — signal 0 probe: nil or EPERM means the pid exists (EPERM:
+// another user's process), ESRCH means it is gone.
+func pidAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+// ownsCCMS — the pid still runs a binary with our own name (ps comm). The
+// signal ladder must never fire on a reused pid from a stale pidfile.
+func ownsCCMS(pid int) bool {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output() //nolint:gosec // read-only query
+	if err != nil {
+		return false
+	}
+	comm := strings.TrimSpace(string(out))
+	base := filepath.Base(os.Args[0])
+
+	return comm == base || strings.HasSuffix(comm, string(filepath.Separator)+base)
 }

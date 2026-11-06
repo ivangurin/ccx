@@ -13,7 +13,7 @@ import (
 
 func sampleProviders() *models.Providers {
 	out := &models.Providers{
-		Daemon:  models.Daemon{Port: 4567},
+		Daemon: models.Daemon{Port: 4567},
 	}
 	out.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai",

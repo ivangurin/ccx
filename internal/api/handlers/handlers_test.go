@@ -29,7 +29,7 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	t.Cleanup(up.Close)
 
 	p := &models.Providers{
-		Daemon:  models.Daemon{Port: 0},
+		Daemon: models.Daemon{Port: 0},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:     "z.ai",
@@ -95,7 +95,9 @@ func TestAdminReady_Returns404(t *testing.T) {
 func TestAdminHealth_ReportsLaunchState(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	resp, err := http.Get(srv.URL + "/admin/health") //nolint:gosec // test
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/health", nil) //nolint:gosec // test
+	req.Header.Set("X-Ccms", "1")
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -126,9 +128,11 @@ func TestAdminStop_TriggersCallback(t *testing.T) {
 	local := httptest.NewServer(h)
 	t.Cleanup(local.Close)
 
-	resp, err := http.Post(local.URL+"/admin/stop", "", nil) //nolint:gosec // test
+	req, _ := http.NewRequest(http.MethodPost, local.URL+"/admin/stop", nil) //nolint:gosec // test
+	req.Header.Set("X-Ccms", "1")
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
+	_ = resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	select {
@@ -151,4 +155,36 @@ func TestModels_ListsActive(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
 	require.Len(t, payload.Data, 1)
 	require.Equal(t, "glm", payload.Data[0]["id"])
+}
+
+// A request whose Host is not the loopback origin is rejected (DNS
+// rebinding: a public name resolving to 127.0.0.1 must not read responses).
+func TestGuard_ForeignHostRejected(t *testing.T) {
+	srv, _ := newTestApp(t)
+
+	for _, path := range []string{"/health", "/v1/messages", "/admin/health"} {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+path, nil) //nolint:gosec // test
+		req.Host = "evil.example"
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode, path)
+	}
+}
+
+// /admin/* requires the non-simple X-CCMS header: a custom header forces a
+// CORS preflight, which a drive-by web page cannot pass silently (the old
+// Bearer token used to gate this; pass-through auth removed it).
+func TestGuard_AdminWithoutMarkerRejected(t *testing.T) {
+	srv, _ := newTestApp(t)
+
+	resp, err := http.Post(srv.URL+"/admin/stop", "", nil) //nolint:gosec // test
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+
+	resp2, err := http.Get(srv.URL + "/admin/health") //nolint:gosec // test
+	require.NoError(t, err)
+	_ = resp2.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp2.StatusCode)
 }

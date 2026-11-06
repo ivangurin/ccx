@@ -26,7 +26,7 @@ func newFixture(t *testing.T) *suite_provider.Provider {
 	sp := suite_provider.NewProvider(t)
 
 	p := &models.Providers{
-		Daemon:  models.Daemon{Port: 4567},
+		Daemon: models.Daemon{Port: 4567},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai",

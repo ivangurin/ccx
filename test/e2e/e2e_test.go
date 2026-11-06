@@ -46,7 +46,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 
 	providers := &models.Providers{
-		Daemon:  models.Daemon{Port: port},
+		Daemon: models.Daemon{Port: port},
 	}
 	providers.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (fake)",
@@ -82,6 +82,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 
 	t.Run("admin health reports the launch state", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, base+"/admin/health", nil) //nolint:gosec // test
+		req.Header.Set("X-Ccms", "1")
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer func() { _ = resp.Body.Close() }()

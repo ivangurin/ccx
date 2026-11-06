@@ -64,8 +64,9 @@ internal/
   service_provider/                     DI: lazy singleton getters
   api/
     handlers/                           chi router: /v1/* (messages, count_tokens, models),
-                                         /admin/* (health, stop), /health — localhost-only, no auth
-                                         middleware (daemon token removed: openai is pass-through)
+                                         /admin/* (health, stop), /health — localhost-only, no token;
+                                         guard.go: loopback-Host check (DNS rebinding) + X-Ccms
+                                         marker on /admin/* (browser drive-by); openai is pass-through
   services/
     router/                             build-once at startup: --provider key → profile →
                                          translator → Ready() before listening (no in-daemon

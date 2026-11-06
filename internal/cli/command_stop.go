@@ -27,6 +27,7 @@ func runStop(_ []string, stdout io.Writer) int {
 	}
 
 	req, _ := http.NewRequest(http.MethodPost, base+"/admin/stop", nil) //nolint:gosec // local address
+	req.Header.Set("X-Ccms", "1")                                       // the admin marker (browser drive-by defense)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
 		fmt.Fprintf(stdout, "ccms: failed to stop the daemon: %v\n", err)

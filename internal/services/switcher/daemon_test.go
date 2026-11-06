@@ -89,7 +89,7 @@ func (f *fakeAdminDaemon) snapshot() []string {
 }
 
 func shortenWaits() {
-	switcher.SetWaitTimingsForTest(200*time.Millisecond, 200*time.Millisecond, 200*time.Millisecond, 50*time.Millisecond)
+	switcher.SetWaitTimingsForTest(200*time.Millisecond, 200*time.Millisecond, 200*time.Millisecond, 400*time.Millisecond, 50*time.Millisecond)
 }
 
 func TestHTTPDaemon_StopNotRunning(t *testing.T) {
@@ -132,11 +132,11 @@ func TestHTTPDaemon_StopEscalatesToSignalWhenPortStaysOpen(t *testing.T) {
 	f := newFakeAdminDaemon(t, false) // port stays open after /admin/stop
 
 	cfg := f.config(t)
-	// a real child in place of the daemon process; its death closes the port
+	// a real child in place of the daemon process (running OUR binary —
+	// the identity check must let the signal ladder through); its death
+	// closes the port
 	procDone := make(chan struct{})
-	sleep := exec.Command("sleep", "30") //nolint:gosec // test child
-	require.NoError(t, sleep.Start())
-	t.Cleanup(func() { _ = sleep.Process.Kill() })
+	sleep := selfChild(t)
 	go func() {
 		_ = sleep.Wait()
 		close(procDone)
@@ -144,7 +144,8 @@ func TestHTTPDaemon_StopEscalatesToSignalWhenPortStaysOpen(t *testing.T) {
 	require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
 	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
 		filepath.Join(cfg.CCMSDir(), "daemon.pid"),
-		[]byte(strconv.Itoa(sleep.Process.Pid)), 0o600))
+		[]byte(strconv.Itoa(sleep.Process.Pid)), 0o600,
+	))
 	// the fake daemon's handler watches the child: once it is dead, the port closes
 	f.srv.Config.Handler = watchingHandler(f, procDone)
 
@@ -268,4 +269,115 @@ func serverPort(t *testing.T, srv *httptest.Server) int {
 	require.True(t, ok)
 
 	return addr.Port
+}
+
+// Real drain scenario: /admin/stop closes the listener at once but the old
+// daemon lives on (Shutdown drains in-flight SSE up to 30s holding
+// daemon.lock). Restart must wait out the drain — or hard-kill at the
+// deadline — instead of spawning into the lock race.
+func TestHTTPDaemon_RestartWaitsForDrainingOldDaemon(t *testing.T) {
+	shortenWaits()
+	f := newFakeAdminDaemon(t, true) // port closes on /admin/stop, "process" lives on
+
+	cfg := f.config(t)
+	oldPort := serverPort(t, f.srv)
+	cfg.DaemonStartTimeout = 2 * time.Second
+	// the child runs our own binary: the identity check must let the
+	// hard-kill through at the drain deadline
+	child := selfChild(t)
+	require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
+	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
+		filepath.Join(cfg.CCMSDir(), "daemon.pid"), []byte(strconv.Itoa(child.Process.Pid)), 0o600,
+	))
+
+	// the spawn seam brings up the NEW fake daemon on the freed port
+	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) error {
+		lis, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(oldPort))
+		if err != nil {
+			return err
+		}
+		newFake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		newFake.Listener = lis
+		newFake.Start()
+		t.Cleanup(newFake.Close)
+
+		return nil
+	})
+	t.Cleanup(switcher.ResetSpawnForTest)
+
+	d := switcher.NewHTTPDaemon(cfg)
+	require.NoError(t, d.Restart(context.Background(), "work", oldPort))
+	select {
+	case <-childDone(t, child):
+	case <-time.After(3 * time.Second):
+		t.Fatal("the draining daemon was not killed at the drain deadline")
+	}
+}
+
+// A pid that no longer belongs to ccms must never be signaled, even when the
+// port stays open: the ladder only escalates against our own process.
+func TestHTTPDaemon_StopSkipsSignalForForeignPid(t *testing.T) {
+	shortenWaits()
+	f := newFakeAdminDaemon(t, false) // port stays open
+
+	cfg := f.config(t)
+	foreign := exec.Command("/bin/sleep", "30") //nolint:gosec // system binary, foreign name
+	require.NoError(t, foreign.Start())
+	t.Cleanup(func() { _ = foreign.Process.Kill() })
+	require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
+	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
+		filepath.Join(cfg.CCMSDir(), "daemon.pid"), []byte(strconv.Itoa(foreign.Process.Pid)), 0o600,
+	))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	d := switcher.NewHTTPDaemon(cfg)
+	require.ErrorContains(t, d.Stop(ctx), "still responding")
+
+	// alive = no death event within a grace window (a zombie would also
+	// answer kill(pid,0), so the assertion must observe the process, not the pid)
+	foreignDone := childDone(t, foreign)
+	select {
+	case <-foreignDone:
+		t.Fatal("a foreign pid must survive the escalation")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+func childDone(t *testing.T, cmd *exec.Cmd) <-chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+
+	return done
+}
+
+// selfChild — a live process whose ps comm IS our own binary's name (the
+// identity check compares against it; copying /bin/sleep is not an option:
+// macOS kills signature-broken copies on exec). The child re-runs this test
+// binary's helper case and just sleeps.
+func selfChild(t *testing.T) *exec.Cmd {
+	t.Helper()
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.Command(self, "-test.run=^TestHelperSleepProcess$", "--", "30") //nolint:gosec // our own test binary
+	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+
+	return cmd
+}
+
+// TestHelperSleepProcess is the selfChild payload (never runs as a real test:
+// the guard returns unless the child env is set).
+func TestHelperSleepProcess(_ *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	time.Sleep(30 * time.Second)
 }

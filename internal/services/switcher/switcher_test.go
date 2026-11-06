@@ -19,11 +19,11 @@ import (
 
 // fakeDaemon — a daemon mock: remembers Restart calls, can fail on demand.
 type fakeDaemon struct {
-	mu         sync.Mutex
-	restartOK  bool
-	restarts   []string // "profile:port" per call
-	stopN      int
-	stopErr    error
+	mu        sync.Mutex
+	restartOK bool
+	restarts  []string // "profile:port" per call
+	stopN     int
+	stopErr   error
 }
 
 func (f *fakeDaemon) Restart(_ context.Context, providerKey string, port int) error {
@@ -64,7 +64,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 
 	// providers.json: zai (anthropic, no extras), x5 (openai + an extra key)
 	p := &models.Providers{
-		Daemon:  models.Daemon{Port: 4567},
+		Daemon: models.Daemon{Port: 4567},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (GLM)",

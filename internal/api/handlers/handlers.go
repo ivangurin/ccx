@@ -25,16 +25,19 @@ type Routerer interface {
 type Deps struct {
 	Router  Routerer
 	Version string
-	Port    int // the resolved listen port (reported by /admin/health)
+	Port    int    // the resolved listen port (reported by /admin/health)
 	Stop    func() // graceful shutdown (called from /admin/stop)
 }
 
-// New assembles a chi router with middleware and routes.
-// statusField — the shared status field name in JSON responses.
+// New assembles a chi router: a loopback-Host guard on everything (DNS
+// rebinding) and the X-Ccms marker on /admin/* (browser drive-by); no token
+// — pass-through auth owns /v1/*, the surface is localhost-only.
 const statusField = "status"
 
 func New(d Deps) http.Handler {
 	r := chi.NewRouter()
+
+	r.Use(requireLocalHost)
 
 	r.Get("/health", handleHealth(d))
 
@@ -42,15 +45,18 @@ func New(d Deps) http.Handler {
 	r.Post("/v1/messages/count_tokens", d.Router.ServeCountTokens)
 	r.Get("/v1/models", handleModels(d.Router))
 
-	r.Get("/admin/health", handleAdminHealth(d))
-	r.Post("/admin/stop", handleAdminStop(d))
+	r.Group(func(pr chi.Router) {
+		pr.Use(requireAdminMarker)
+		pr.Get("/admin/health", handleAdminHealth(d))
+		pr.Post("/admin/stop", handleAdminStop(d))
+	})
 
 	return r
 }
 
 func handleHealth(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{statusField: "ok", "version": d.Version})
+		writeJSON(w, map[string]string{statusField: "ok", "version": d.Version})
 	}
 }
 
@@ -61,7 +67,7 @@ func handleModels(rt Routerer) http.HandlerFunc {
 		for _, m := range profileModels {
 			data = append(data, map[string]string{"id": m.ID, "display_name": m.Label})
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": data})
+		writeJSON(w, map[string]any{"data": data})
 	}
 }
 
@@ -79,22 +85,22 @@ func handleAdminHealth(d Deps) http.HandlerFunc {
 		if active {
 			resp["active"] = map[string]string{"provider": provider, "protocol": string(protocol)}
 		}
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, resp)
 	}
 }
 
 func handleAdminStop(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{statusField: "stopping"})
+		writeJSON(w, map[string]string{statusField: "stopping"})
 		if d.Stop != nil {
 			go d.Stop()
 		}
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	data, err := json.Marshal(v)
 	if err != nil {
 		data = []byte(`{"error":"marshal"}`)

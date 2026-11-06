@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ func parseServeArgs(args []string) (app.ServeOptions, error) {
 		return app.ServeOptions{}, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	if *provider == "" {
-		return app.ServeOptions{}, fmt.Errorf("serve requires --provider <key>")
+		return app.ServeOptions{}, errors.New("serve requires --provider <key>")
 	}
 	_ = daemon // spawn semantics only; behavior does not change in-process
 
