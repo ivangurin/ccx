@@ -46,7 +46,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 
 	providers := &models.Providers{
-		Daemon: models.Daemon{Port: port},
+		Daemon: &models.Daemon{Port: port},
 	}
 	providers.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (fake)",

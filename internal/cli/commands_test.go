@@ -63,7 +63,7 @@ func TestCommandInit_ForceRegenerates(t *testing.T) {
 
 func writeProviders(t *testing.T, path string, keysInOrder []string) {
 	t.Helper()
-	p := &models.Providers{Daemon: models.Daemon{Port: 4567}}
+	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
 	for _, k := range keysInOrder {
 		p.Profiles.Set(k, &models.Profile{
 			Name:     "name-" + k,

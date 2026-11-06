@@ -13,7 +13,7 @@ import (
 
 func sampleProviders() *models.Providers {
 	out := &models.Providers{
-		Daemon: models.Daemon{Port: 4567},
+		Daemon: &models.Daemon{Port: 4567},
 	}
 	out.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai",
@@ -106,7 +106,7 @@ func writePortFixture(t *testing.T, sp *suite_provider.Provider, port *int) {
 	t.Helper()
 	p := &models.Providers{}
 	if port != nil {
-		p.Daemon = models.Daemon{Port: *port}
+		p.Daemon = &models.Daemon{Port: *port}
 	}
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 }
@@ -178,16 +178,16 @@ func TestLoadProviders_MissingDaemonBlock(t *testing.T) {
 
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	require.Equal(t, 0, loaded.Daemon.Port)
+	require.Nil(t, loaded.Daemon)
 	require.Equal(t, []string{"zai"}, loaded.Profiles.Keys)
 }
 
 func TestSaveLoad_RoundTripKeepsPort(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	in := &models.Providers{Daemon: models.Daemon{Port: 4600}}
+	in := &models.Providers{Daemon: &models.Daemon{Port: 4600}}
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), in))
 
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	require.Equal(t, 4600, loaded.Daemon.Port)
+	require.Equal(t, 4600, loaded.DaemonPort())
 }

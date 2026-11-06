@@ -45,7 +45,7 @@ func TestInit_NoVersionNoTokenWritten(t *testing.T) {
 	// no port baked in: resolution owns the default
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	require.Equal(t, 0, p.Daemon.Port)
+	require.Nil(t, p.Daemon)
 }
 
 func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {

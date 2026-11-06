@@ -79,8 +79,8 @@ func ResolveDaemonPort(c *Config, flagPort int) int {
 	if c.DaemonPort > 0 {
 		return c.DaemonPort
 	}
-	if providers, err := LoadProviders(c.ProvidersPath()); err == nil && providers.Daemon.Port > 0 {
-		return providers.Daemon.Port
+	if providers, err := LoadProviders(c.ProvidersPath()); err == nil && providers.DaemonPort() > 0 {
+		return providers.DaemonPort()
 	}
 
 	return DefaultDaemonPort

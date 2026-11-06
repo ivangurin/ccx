@@ -145,8 +145,8 @@ func (a *App) fallbackPort() int {
 	if a.cfg.DaemonPort != 0 {
 		return a.cfg.DaemonPort
 	}
-	if providers, err := config.LoadProviders(a.cfg.ProvidersPath()); err == nil && providers.Daemon.Port != 0 {
-		return providers.Daemon.Port
+	if providers, err := config.LoadProviders(a.cfg.ProvidersPath()); err == nil && providers.DaemonPort() != 0 {
+		return providers.DaemonPort()
 	}
 
 	return config.DefaultDaemonPort

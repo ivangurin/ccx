@@ -55,7 +55,7 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 // state are written inside the sandbox home.
 func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Daemon: models.Daemon{Port: 4567}}
+	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:     "z.ai",
 		Protocol: models.ProtocolAnthropic,
@@ -105,7 +105,7 @@ func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	port := freePort(t)
 	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{
-		Daemon: models.Daemon{Port: port},
+		Daemon: &models.Daemon{Port: port},
 	}))
 	var out bytes.Buffer
 

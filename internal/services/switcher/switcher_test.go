@@ -64,7 +64,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 
 	// providers.json: zai (anthropic, no extras), x5 (openai + an extra key)
 	p := &models.Providers{
-		Daemon: models.Daemon{Port: 4567},
+		Daemon: &models.Daemon{Port: 4567},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (GLM)",
