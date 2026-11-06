@@ -77,6 +77,25 @@ func NewWithBase(codeURL, tokenURL, exchangeURL, store string) *Client {
 	}
 }
 
+// Masquerade constants (public values of the GitHub Copilot Chat extension,
+// same as config.CopilotDefaults): GitHub answers the default Go UA on the
+// Copilot endpoints with "Please only use approved clients"
+// (notification_id go_http_client, verified live on the token exchange) and
+// is suspected of stalling the device-flow poll for it — every client
+// request masquerades as the extension.
+const (
+	masqueradeUA    = "GitHubCopilotChat/0.28.0"
+	editorVersion   = "vscode/1.99.0"
+	editorPluginVer = "copilot-chat/0.28.0"
+)
+
+// masquerade dresses a request as the Copilot Chat extension client.
+func masquerade(req *http.Request) {
+	req.Header.Set("User-Agent", masqueradeUA)
+	req.Header.Set("Editor-Version", editorVersion)
+	req.Header.Set("Editor-Plugin-Version", editorPluginVer)
+}
+
 // StartDeviceFlow requests a device code.
 func (c *Client) StartDeviceFlow(ctx context.Context) (*DeviceFlowResult, error) {
 	form := url.Values{"client_id": {DefaultClientID}, "scope": {DefaultScope}}
@@ -86,6 +105,7 @@ func (c *Client) StartDeviceFlow(ctx context.Context) (*DeviceFlowResult, error)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	masquerade(req)
 
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
@@ -126,6 +146,7 @@ func (c *Client) PollDeviceFlow(ctx context.Context, deviceCode string) (string,
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept", "application/json")
+		masquerade(req)
 
 		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 		if err != nil {
@@ -218,6 +239,7 @@ func (c *Client) exchange(ctx context.Context, userToken string) (string, time.T
 	}
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Accept", "application/json")
+	masquerade(req)
 
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
@@ -228,22 +250,60 @@ func (c *Client) exchange(ctx context.Context, userToken string) (string, time.T
 		return "", time.Time{}, errors.New("copilot: user token invalid (401) — ccms auth copilot")
 	}
 	if resp.StatusCode != http.StatusOK {
+		// The body names the real reason (verified live: trade_restricted_country,
+		// go_http_client) — "status 403" alone hid it behind a second manual probe.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		var e struct {
+			Message string `json:"message"`
+			Details *struct {
+				Message string `json:"message"`
+			} `json:"error_details"`
+		}
+		_ = json.Unmarshal(body, &e)
+		if msg := e.Details.Message; msg != "" {
+			return "", time.Time{}, fmt.Errorf("copilot: token exchange: status %d: %s", resp.StatusCode, msg)
+		}
+		if e.Message != "" {
+			return "", time.Time{}, fmt.Errorf("copilot: token exchange: status %d: %s", resp.StatusCode, e.Message)
+		}
+
 		return "", time.Time{}, fmt.Errorf("copilot: token exchange: status %d", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var payload struct {
-		Token     string `json:"token"`
-		ExpiresAt string `json:"expires_at"`
+		Token     string          `json:"token"`
+		ExpiresAt json.RawMessage `json:"expires_at"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.Token == "" {
 		return "", time.Time{}, errors.New("copilot: token exchange: unexpected response")
 	}
-	exp := time.Now().Add(30 * time.Minute)
-	if payload.ExpiresAt != "" {
-		if parsed, perr := time.Parse(time.RFC3339, payload.ExpiresAt); perr == nil {
-			exp = parsed
+
+	return payload.Token, parseExpiry(payload.ExpiresAt), nil
+}
+
+// parseExpiry accepts both shapes seen in the wild: github.com returns unix
+// seconds (number, verified live); keep the RFC3339 string shape too (the
+// original assumption). Unparseable/absent → the conservative 30-minute
+// fallback, same as before.
+func parseExpiry(raw json.RawMessage) time.Time {
+	fallback := time.Now().Add(30 * time.Minute)
+	if len(raw) == 0 {
+		return fallback
+	}
+	var secs int64
+	if err := json.Unmarshal(raw, &secs); err == nil {
+		if secs > 0 {
+			return time.Unix(secs, 0)
+		}
+
+		return fallback
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if parsed, perr := time.Parse(time.RFC3339, s); perr == nil {
+			return parsed
 		}
 	}
 
-	return payload.Token, exp, nil
+	return fallback
 }

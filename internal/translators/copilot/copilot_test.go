@@ -58,7 +58,9 @@ func TestCopilot_MasqueradeHeaders(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "Bearer gho_secret", hdrs.Get("Authorization"))
-	require.Equal(t, "2022-11-28", hdrs.Get("X-Github-Api-Version"))
+	// No X-Github-Api-Version: it is a github.com REST header — the Copilot
+	// chat gateway answers it with "bad request: invalid apiVersion" (live).
+	require.Empty(t, hdrs.Get("X-Github-Api-Version"))
 	require.Equal(t, "copilot-chat", hdrs.Get("Copilot-Integration-Id"))
 	require.Equal(t, "vscode/1.99.0", hdrs.Get("Editor-Version"))
 	require.Equal(t, "GitHubCopilotChat/0.28.0", hdrs.Get("User-Agent"))

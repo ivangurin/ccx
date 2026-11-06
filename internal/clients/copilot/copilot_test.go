@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,10 +35,16 @@ func (f *fakeGitHub) handler(_ *testing.T) http.Handler {
 	mux.HandleFunc("GET /copilot_internal/v2/token", func(w http.ResponseWriter, _ *http.Request) {
 		f.exchangeCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"token":"tid_copilot_secret","expires_at":` + futureISO() + `,"refresh_in":1800}`))
+		// expires_at is unix seconds — the shape github.com really returns
+		// (verified live); the RFC3339-string shape was an assumption.
+		_, _ = w.Write([]byte(`{"token":"tid_copilot_secret","expires_at":` + futureUnix() + `,"refresh_in":1800}`))
 	})
 
 	return mux
+}
+
+func futureUnix() string {
+	return strconv.FormatInt(time.Now().Add(1*time.Hour).Unix(), 10)
 }
 
 func futureISO() string {
@@ -131,4 +138,64 @@ func TestStore_Permissions600(t *testing.T) {
 	info, err := os.Stat(store)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+// GitHub answers the default Go UA on the Copilot endpoints with
+// "Please only use approved clients" (notification_id go_http_client, seen
+// live on the token exchange) — every client request must masquerade as the
+// Copilot Chat extension.
+func TestClient_MasqueradeHeadersOnAllRequests(t *testing.T) {
+	got := map[string]string{}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got[r.Method+" "+r.URL.Path] = r.Header.Get("User-Agent") + "|" +
+			r.Header.Get("Editor-Version") + "|" + r.Header.Get("Editor-Plugin-Version")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /login/device/code":
+			_, _ = w.Write([]byte(`{"device_code":"D","user_code":"U","verification_uri":"https://github.com/login/device","interval":1,"expires_in":900}`))
+		case "POST /login/oauth/access_token":
+			_, _ = w.Write([]byte(`{"access_token":"gho_user","token_type":"bearer"}`))
+		default:
+			_, _ = w.Write([]byte(`{"token":"tid","expires_at":` + futureISO() + `}`))
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	client := copilot.NewWithBase(up.URL, up.URL, up.URL, filepath.Join(t.TempDir(), "copilot-auth.json"))
+	res, err := client.StartDeviceFlow(context.Background())
+	require.NoError(t, err)
+	_, err = client.PollDeviceFlow(context.Background(), res.DeviceCode)
+	require.NoError(t, err)
+	_, err = client.Token(context.Background())
+	require.NoError(t, err)
+
+	want := "GitHubCopilotChat/0.28.0|vscode/1.99.0|copilot-chat/0.28.0"
+	for _, path := range []string{
+		"POST /login/device/code",
+		"POST /login/oauth/access_token",
+		"GET /copilot_internal/v2/token",
+	} {
+		require.Equal(t, want, got[path], path)
+	}
+}
+
+// The exchange error must carry the upstream reason: the live 403 body names
+// the cause ("Copilot is not available in your location",
+// notification_id trade_restricted_country) — "status 403" alone hid it.
+func TestExchange_ErrorIncludesBodyMessage(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error_details":{"message":"At this time, Copilot is not available in your location.","notification_id":"trade_restricted_country"}}`))
+	}))
+	t.Cleanup(up.Close)
+
+	store := filepath.Join(t.TempDir(), "copilot-auth.json")
+	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]string{"user_access_token": "gho_u"}, 0o600))
+	client := copilot.NewWithBase(up.URL, up.URL, up.URL, store)
+
+	_, err := client.Token(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Copilot is not available")
+	require.Contains(t, err.Error(), "403")
 }

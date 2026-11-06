@@ -75,7 +75,9 @@ func (t *Translator) headers(token string) http.Header {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+token)
 	h.Set("Content-Type", "application/json")
-	h.Set("X-Github-Api-Version", "2022-11-28")
+	// No X-Github-Api-Version here: that is a github.com REST header — the
+	// Copilot chat gateway answers it with "bad request: invalid apiVersion"
+	// (verified live).
 	if t.profile.IntegrationID != "" {
 		h.Set("Copilot-Integration-Id", t.profile.IntegrationID)
 	}
