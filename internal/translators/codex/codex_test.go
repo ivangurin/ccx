@@ -71,6 +71,9 @@ func TestServeMessages_Stream(t *testing.T) {
 	require.Contains(t, out, "Hel")
 	require.Contains(t, out, "lo")
 	require.Contains(t, out, "event: message_stop")
+	// The Responses stream ends with the connection close (no [DONE], unlike
+	// chat/completions) — a clean EOF must not surface as an error event.
+	require.NotContains(t, out, "event: error")
 }
 
 func TestServeMessages_FunctionCallStream(t *testing.T) {
@@ -141,4 +144,16 @@ func TestServeMessages_UpstreamErrorRelayed(t *testing.T) {
 	tr.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil))
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Contains(t, rec2.Body.String(), "input_tokens")
+}
+
+// The ChatGPT backend rejects the request without an explicit "store":
+// false ("Store must be set to false" — verified live); Codex CLI always
+// sends it. The field must serialize at its zero value — no omitempty.
+func TestResponsesRequest_StoreAlwaysFalse(t *testing.T) {
+	var req models.MessagesRequest
+	require.NoError(t, jsonUnmarshal(`{"model":"gpt-6.1-sol","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, &req))
+
+	raw, err := json.Marshal(codex.BuildResponsesRequest(&req))
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"store":false`)
 }

@@ -57,6 +57,10 @@ type ResponsesRequest struct {
 	Tools           []ResponsesTool `json:"tools,omitempty"`
 	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
+	// Store stays false and serializes explicitly (no omitempty): the
+	// ChatGPT backend answers anything else with "Store must be set to
+	// false" — Codex CLI always sends store:false.
+	Store bool `json:"store"`
 }
 
 // AuthSource is the token source (implementation — clients/codex.Client).
@@ -346,6 +350,12 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 	for {
 		ev, err := reader.Next()
 		if err != nil {
+			// The Responses stream ends with the connection close — there is
+			// no [DONE] marker (unlike chat/completions), so a clean io.EOF
+			// ends the loop like Done; only a real error is an interruption.
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			// break/empty stream before a single event — a plain 502 JSON response
 			if writer == nil {
 				writeErr(w, http.StatusBadGateway, "codex: empty upstream stream")
