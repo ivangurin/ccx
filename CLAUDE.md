@@ -19,7 +19,8 @@ tests are being ported).
 ```bash
 make run           # run daemon in foreground (dev)
 make build         # build binary to ./bin/ccms
-make install       # install to $(PREFIX)/bin/ccms (default /opt/homebrew)
+make install       # build + install to $(PREFIX)/bin/ccms (default /usr/local, sudo)
+make uninstall     # remove the installed binary (sudo)
 make test          # run all tests with coverage
 make lint          # golangci-lint --fix on changed files (new-from-rev=main)
 make lint-full     # golangci-lint on all files

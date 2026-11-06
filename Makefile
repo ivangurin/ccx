@@ -1,5 +1,5 @@
 BIN_DIR=./bin
-PREFIX ?= /opt/homebrew
+PREFIX ?= /usr/local
 
 GREEN := \033[32m
 RED := \033[31m
@@ -14,9 +14,16 @@ run: .hooks ## Run the daemon in foreground (dev)
 build: ## Build the binary
 	go build -o $(BIN_DIR)/ccms ./cmd/ccms
 
+# sudo lives in the recipes only: `install: build` builds as the invoking
+# user, so nothing compiles or caches under root
 .PHONY: install
-install: build ## Install the binary to $(PREFIX)/bin/ccms
-	install -m 0755 $(BIN_DIR)/ccms $(PREFIX)/bin/ccms
+install: build ## Build and install the binary to $(PREFIX)/bin/ccms (sudo)
+	sudo mkdir -p $(PREFIX)/bin
+	sudo install -m 0755 $(BIN_DIR)/ccms $(PREFIX)/bin/ccms
+
+.PHONY: uninstall
+uninstall: ## Remove the installed binary from $(PREFIX)/bin (sudo)
+	sudo rm -f $(PREFIX)/bin/ccms
 
 .PHONY: lint
 lint: .hooks ## Run linters on changed files
