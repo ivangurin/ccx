@@ -41,15 +41,17 @@ holds no secret of its own.
 
 ## Config (`~/.claude/providers.json`, 0600 permissions)
 
-Connection fields live directly in the profile — no protocol-named block;
-`protocol` determines which of them are meaningful. The optional
-`daemon.port` defaults to 4567 (precedence: `--port` flag > `CCMS_PORT` >
-`daemon.port` > 4567).
+Connection fields live directly in the provider entry — no protocol-named
+block; `protocol` determines which of them are meaningful. The map lives
+under the `providers` key; files from older releases (top-level `profiles`
+key, `version`, `daemon.auth_token`) keep loading and are rewritten in the
+current schema on the next load. The optional `daemon.port` defaults to 4567
+(precedence: `--port` flag > `CCMS_PORT` > `daemon.port` > 4567).
 
 ```jsonc
 {
   "daemon": {"port": 4567},
-  "profiles": {
+  "providers": {
     "zai": {
       "name": "z.ai (GLM)",
       "protocol": "anthropic",
