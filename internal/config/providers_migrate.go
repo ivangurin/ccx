@@ -27,6 +27,7 @@ func hasLegacyProvidersResidue(data []byte) bool {
 		var d map[string]json.RawMessage
 		if json.Unmarshal(raw, &d) == nil {
 			_, ok := d["auth_token"]
+
 			return ok
 		}
 	}
@@ -45,8 +46,10 @@ func hasLegacyProvidersResidue(data []byte) bool {
 // always see a complete file and both migrators derive identical content
 // from the same legacy bytes (last rename wins; after the first success the
 // file is clean and nothing migrates again). The one residual window — a
-// ccms edit/init --force landing between our read and rename — is the
-// file's pre-existing last-writer-wins rule, not a new corruption class.
+// ccms edit/init --force landing between our read and rename — is a NEW
+// pairing (read paths never wrote this file before) at pre-existing
+// severity: last-writer-wins between two atomic writes, and the loser is
+// a re-runnable init or the editor's own save.
 func migrateProvidersFile(path string, p *models.Providers) {
 	_ = SaveProviders(path, p)
 }

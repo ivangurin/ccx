@@ -14,7 +14,8 @@ import (
 
 // legacyUserFile is the pre-rename layout as it sits on a real machine:
 // version + daemon.auth_token residue + the map under "profiles".
-const legacyUserFile = `{
+const (
+	legacyUserFile = `{
   "version": 3,
   "daemon": {"port": 4567, "auth_token": "d7c9d22adeadbeef"},
   "profiles": {
@@ -22,6 +23,9 @@ const legacyUserFile = `{
     "x5": {"name": "X5", "protocol": "openai", "base_url": "https://x5.example", "auth_token": "x-secret"}
   }
 }`
+	x5Key  = "x5"
+	zaiKey = "zai"
+)
 
 func writeLegacyFile(t *testing.T, sp *suite_provider.Provider, content string) {
 	t.Helper()
@@ -35,8 +39,8 @@ func TestLoadProviders_MigratesLegacyFileOnDisk(t *testing.T) {
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	require.Equal(t, 4567, loaded.DaemonPort())
-	require.Equal(t, []string{"zai", "x5"}, loaded.Profiles.Keys)
-	require.Equal(t, "x-secret", loaded.Profiles.Get("x5").AuthToken)
+	require.Equal(t, []string{zaiKey, x5Key}, loaded.Profiles.Keys)
+	require.Equal(t, "x-secret", loaded.Profiles.Get(x5Key).AuthToken)
 
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
@@ -46,7 +50,7 @@ func TestLoadProviders_MigratesLegacyFileOnDisk(t *testing.T) {
 	require.NotContains(t, clean, `"profiles"`)
 	require.NotContains(t, clean, `"auth_token": "d7c9d22adeadbeef"`) // the dead daemon secret is gone
 	// profile order survives the rewrite (menu/list order is file order)
-	require.Less(t, strings.Index(clean, `"zai"`), strings.Index(clean, `"x5"`))
+	require.Less(t, strings.Index(clean, `"`+zaiKey+`"`), strings.Index(clean, `"`+x5Key+`"`))
 	require.Contains(t, clean, `"port": 4567`)
 
 	info, err := os.Stat(sp.Config.ProvidersPath())
@@ -71,11 +75,11 @@ func TestLoadProviders_MigratesOnProfilesKeyAlone(t *testing.T) {
 func TestLoadProviders_CleanFileNotRewritten(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Profiles.Set("zai", &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
+	p.Profiles.Set(zaiKey, &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	path := sp.Config.ProvidersPath()
-	before, err := os.ReadFile(path)
+	before, err := os.ReadFile(path) //nolint:gosec // sandbox path owned by the test
 	require.NoError(t, err)
 	past := time.Now().Add(-time.Hour)
 	require.NoError(t, os.Chtimes(path, past, past))
@@ -83,7 +87,7 @@ func TestLoadProviders_CleanFileNotRewritten(t *testing.T) {
 	_, err = config.LoadProviders(path)
 	require.NoError(t, err)
 
-	after, err := os.ReadFile(path)
+	after, err := os.ReadFile(path) //nolint:gosec // sandbox path owned by the test
 	require.NoError(t, err)
 	require.Equal(t, string(before), string(after)) // byte-identical: no churn
 	info, err := os.Stat(path)
@@ -96,12 +100,14 @@ func TestLoadProviders_MigrationWriteFailureTolerated(t *testing.T) {
 	writeLegacyFile(t, sp, legacyUserFile)
 
 	dir := sp.HomeDir()
-	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // before t.TempDir removal (LIFO)
+	require.NoError(t, os.Chmod(dir, 0o500)) //nolint:gosec // deliberate perms for the failure-tolerance test
+	// register the restore BEFORE anything can fail, so it runs before
+	// t.TempDir removal (LIFO)
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) //nolint:gosec // restoring test dir perms
 
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err) // best-effort by design: a failed rewrite must not break loading
-	require.Equal(t, []string{"zai", "x5"}, loaded.Profiles.Keys)
+	require.Equal(t, []string{zaiKey, x5Key}, loaded.Profiles.Keys)
 
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
