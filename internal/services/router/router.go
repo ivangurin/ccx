@@ -5,9 +5,11 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +20,7 @@ import (
 	copilot_client "github.com/ivangurin/ccms/internal/clients/copilot"
 	"github.com/ivangurin/ccms/internal/config"
 	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/reqdump"
 	"github.com/ivangurin/ccms/internal/translators"
 	"github.com/ivangurin/ccms/internal/translators/anthropic"
 	codex_tr "github.com/ivangurin/ccms/internal/translators/codex"
@@ -108,14 +111,46 @@ func (s *Service) Active() (provider string, protocol models.Protocol, ok bool) 
 	return s.profile, s.protocol, true
 }
 
-// ServeMessages delegates /v1/messages to the route's translator.
+// ServeMessages delegates /v1/messages to the route's translator. The raw
+// client body is peeked for an opt-in CCMS_DUMP_DIR dump before delegation:
+// the exact payload a real client sends is the only reproduction for some
+// upstream bugs (see internal/pkg/reqdump).
 func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
+	if reqdump.Enabled() {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeReadErr(w)
+
+			return
+		}
+		reqdump.Write("anthropic-req", body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	s.translator.ServeMessages(w, r)
 }
 
-// ServeCountTokens delegates /v1/messages/count_tokens.
+// ServeCountTokens delegates /v1/messages/count_tokens (same dump treatment:
+// its payload mirrors /v1/messages).
 func (s *Service) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
+	if reqdump.Enabled() {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeReadErr(w)
+
+			return
+		}
+		reqdump.Write("anthropic-count-tokens", body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	s.translator.ServeCountTokens(w, r)
+}
+
+// writeReadErr — a half-read body cannot be re-delivered; fail loudly rather
+// than hand the translator a truncated stream.
+func writeReadErr(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"read request body"}}`))
 }
 
 // Models — /v1/models from the launched profile's models.

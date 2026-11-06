@@ -133,6 +133,44 @@ func TestServeMessages_DelegatesToActive(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec2.Code)
 }
 
+// CCMS_DUMP_DIR captures the raw client body verbatim (unknown fields
+// included) and the request still reaches the translator untouched.
+func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
+	sp := newFixture(t)
+	up := startEchoUpstream(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Providers.Get("zai").BaseURL = up.URL
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	require.NoError(t, err)
+
+	dir := filepath.Join(t.TempDir(), "dumps")
+	t.Setenv("CCMS_DUMP_DIR", dir)
+
+	rec := httptest.NewRecorder()
+	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"m":1,"unknown_field":"kept"}`)))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Contains(t, entries[0].Name(), "anthropic-req")
+	dumped, err := os.ReadFile(filepath.Join(dir, entries[0].Name())) //nolint:gosec // test sandbox dir
+	require.NoError(t, err)
+	require.JSONEq(t, `{"m":1,"unknown_field":"kept"}`, string(dumped))
+
+	// count_tokens gets the same treatment
+	rec2 := httptest.NewRecorder()
+	svc.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens",
+		strings.NewReader(`{"m":2}`)))
+	entries, err = os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	require.Contains(t, entries[1].Name(), "anthropic-count-tokens")
+}
+
 // I6: a hand-edited anthropic/openai profile without base_url — a clear
 // error, not a panic on every /v1/messages.
 func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
