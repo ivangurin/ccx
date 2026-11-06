@@ -15,6 +15,7 @@ import (
 
 	"github.com/ivangurin/ccms/internal/clients/codex"
 	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccms/internal/pkg/reqdump"
 	"github.com/ivangurin/ccms/internal/pkg/sse"
 )
 
@@ -25,6 +26,7 @@ const (
 	typeText       = "text"
 	typeMessage    = "message"
 	roleAssistantS = "assistant"
+	roleSystem     = "system"
 )
 
 // codex CLI mimicry (was config: CodexDefaults) — the subscription backend
@@ -43,7 +45,9 @@ type ResponsesItem struct {
 	Arguments string          `json:"arguments,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
 	Output    string          `json:"output,omitempty"` // function_call_output
-	ItemID    string          `json:"item_id,omitempty"`
+	// no item_id here: the backend validates input params strictly
+	// ("Unknown parameter: 'input[N].item_id'", verified live); item_id is an
+	// SSE-event concept, call_id alone ties a call to its output.
 }
 
 // ResponsesTool is a function definition.
@@ -113,9 +117,15 @@ func (t *Translator) Close(_ context.Context) error {
 
 // BuildResponsesRequest maps Messages → Responses.
 func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
+	// Claude Code ships SessionStart-hook output as messages with role
+	// "system" inside messages[]; the ChatGPT backend rejects input items
+	// with that role ("System messages are not allowed", verified live), so
+	// they merge into instructions — the channel Codex CLI uses for all
+	// system-level text — after the top-level system prompt.
+	instructions := systemText(req.System)
+	var systemMsgs []string
 	out := &ResponsesRequest{
 		Model:           req.Model,
-		Instructions:    systemText(req.System),
 		MaxOutputTokens: req.MaxTokens,
 		Stream:          req.Stream,
 	}
@@ -126,8 +136,19 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 		})
 	}
 	for _, msg := range req.Messages {
+		if msg.Role == roleSystem {
+			// same wire shape as the top-level system field (string | blocks)
+			systemMsgs = append(systemMsgs, systemText(msg.Content))
+
+			continue
+		}
 		out.Input = append(out.Input, convertMessage(msg)...)
 	}
+	if len(systemMsgs) > 0 {
+		parts := append([]string{instructions}, systemMsgs...)
+		instructions = strings.Join(parts, "\n\n")
+	}
+	out.Instructions = instructions
 
 	return out
 }
@@ -191,7 +212,7 @@ func convertMessage(msg models.Message) []ResponsesItem {
 		case "tool_use":
 			out = append(out, ResponsesItem{
 				Type: "function_call", Name: deref(b.Name),
-				Arguments: string(b.Input), CallID: deref(b.ID), ItemID: deref(b.ID),
+				Arguments: string(b.Input), CallID: deref(b.ID),
 			})
 		case "tool_result":
 			out = append(out, ResponsesItem{
@@ -266,6 +287,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	reqdump.Write("codex-req", body)
 	auth, err := t.auths.Token(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -479,6 +501,9 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 
 func relayError(w http.ResponseWriter, resp *http.Response) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	// the rejected upstream payload is the primary debugging artifact (the
+	// paired codex-req dump shows what triggered it) — keep it under CCMS_DUMP_DIR
+	reqdump.Write(fmt.Sprintf("codex-resp-%d", resp.StatusCode), body)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	if json.Valid(body) {

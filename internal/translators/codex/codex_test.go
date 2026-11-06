@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -145,6 +147,100 @@ func TestServeMessages_UpstreamErrorRelayed(t *testing.T) {
 	tr.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil))
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Contains(t, rec2.Body.String(), "input_tokens")
+}
+
+// A function_call item must not carry item_id: the ChatGPT backend validates
+// input params strictly ("Unknown parameter: 'input[5].item_id'", verified
+// live). item_id exists only in SSE events; on the request side call_id alone
+// ties a call to its output.
+func TestBuildResponsesRequest_FunctionCallHasNoItemID(t *testing.T) {
+	var req models.MessagesRequest
+	require.NoError(t, jsonUnmarshal(`{
+		"model":"gpt-6.1-sol","max_tokens":10,
+		"messages":[
+			{"role":"user","content":"do it"},
+			{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{"cmd":"ls"}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}
+		],
+		"tools":[{"name":"bash","description":"run","input_schema":{"type":"object"}}]
+	}`, &req))
+
+	raw, err := json.Marshal(codex.BuildResponsesRequest(&req))
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "item_id")
+	// the call↔output tie survives via call_id
+	require.Contains(t, string(raw), `"call_id":"t1"`)
+}
+
+// Claude Code sends SessionStart-hook output as a message with role "system"
+// inside messages[] (not the top-level system field); the ChatGPT backend
+// rejects input items with that role ("System messages are not allowed",
+// verified live). Such messages merge into instructions instead — the same
+// channel Codex CLI uses for system-level text — and never reach input.
+func TestBuildResponsesRequest_SystemRoleMergesIntoInstructions(t *testing.T) {
+	var req models.MessagesRequest
+	require.NoError(t, jsonUnmarshal(`{
+		"model":"gpt-6.1-sol","max_tokens":10,"system":"base prompt",
+		"messages":[
+			{"role":"user","content":"hi"},
+			{"role":"system","content":"hook additional context"},
+			{"role":"user","content":"go on"}
+		]
+	}`, &req))
+
+	out := codex.BuildResponsesRequest(&req)
+
+	require.Equal(t, "base prompt\n\nhook additional context", out.Instructions)
+	require.Len(t, out.Input, 2)
+	for _, item := range out.Input {
+		require.NotEqual(t, "system", item.Role)
+	}
+	require.Equal(t, "user", out.Input[0].Role)
+	require.Equal(t, "user", out.Input[1].Role)
+}
+
+// The outgoing Responses payload and the rejected upstream body are dumped
+// under CCMS_DUMP_DIR — the pair (what we sent / why it was rejected) is the
+// artifact live debugging needs.
+func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"detail":"System messages are not allowed"}`)
+	}))
+	t.Cleanup(up.Close)
+
+	dir := filepath.Join(t.TempDir(), "dumps")
+	t.Setenv("CCMS_DUMP_DIR", dir)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","system":"s","stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	tr.ServeMessages(httptest.NewRecorder(), req)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	dumped := map[string]string{}
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // test sandbox dir
+		require.NoError(t, err)
+		dumped[e.Name()] = string(data)
+	}
+	var reqDump, respDump string
+	for name, body := range dumped {
+		switch {
+		case strings.Contains(name, "codex-req"):
+			reqDump = body
+		case strings.Contains(name, "codex-resp-400"):
+			respDump = body
+		default:
+			t.Fatalf("unexpected dump file: %s", name)
+		}
+	}
+	require.Contains(t, reqDump, `"instructions":"s"`)
+	require.Contains(t, reqDump, `"store":false`)
+	require.JSONEq(t, `{"detail":"System messages are not allowed"}`, respDump)
 }
 
 // The ChatGPT backend rejects the request without an explicit "store":
