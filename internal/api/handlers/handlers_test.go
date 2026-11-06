@@ -29,8 +29,7 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	t.Cleanup(up.Close)
 
 	p := &models.Providers{
-		Version: 3,
-		Daemon:  models.Daemon{Port: 0, AuthToken: "test-token"},
+		Daemon:  models.Daemon{Port: 0},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:     "z.ai",

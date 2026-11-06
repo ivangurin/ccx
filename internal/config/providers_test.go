@@ -13,8 +13,7 @@ import (
 
 func sampleProviders() *models.Providers {
 	out := &models.Providers{
-		Version: 3,
-		Daemon:  models.Daemon{Port: 4567, AuthToken: "tok"},
+		Daemon:  models.Daemon{Port: 4567},
 	}
 	out.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai",
@@ -49,16 +48,6 @@ func TestSaveProviders_SetsPermissions600(t *testing.T) {
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
-func TestLoadProviders_RejectsV1(t *testing.T) {
-	sp := suite_provider.NewProvider(t)
-	path := filepath.Join(sp.HomeDir(), "providers.json")
-	v1 := `{"profiles": {"zai": {"name": "z", "env": {}, "proxy": {"start": "ccr start"}}}}`
-	require.NoError(t, os.WriteFile(path, []byte(v1), 0o600))
-
-	_, err := config.LoadProviders(path)
-	require.ErrorIs(t, err, config.ErrUnsupportedVersion)
-}
-
 func TestLoadProviders_MissingFile(t *testing.T) {
 	_, err := config.LoadProviders(filepath.Join(t.TempDir(), "nope.json"))
 	require.Error(t, err)
@@ -70,7 +59,7 @@ func TestSaveLoadProviders_PreservesProfileOrder(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	path := filepath.Join(sp.HomeDir(), "providers.json")
 
-	in := &models.Providers{Version: 3}
+	in := &models.Providers{}
 	for _, key := range []string{"zai", "x5", profOpenAI2, profCopilot} {
 		in.Profiles.Set(key, &models.Profile{Name: key, Protocol: models.ProtocolAnthropic})
 	}
@@ -115,7 +104,7 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 // (nil block = no daemon key at all).
 func writePortFixture(t *testing.T, sp *suite_provider.Provider, port *int) {
 	t.Helper()
-	p := &models.Providers{Version: 3}
+	p := &models.Providers{}
 	if port != nil {
 		p.Daemon = models.Daemon{Port: *port}
 	}
@@ -124,7 +113,7 @@ func writePortFixture(t *testing.T, sp *suite_provider.Provider, port *int) {
 
 func TestResolveDaemonPort_FlagWins(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	writePortFixture(t, sp, intPtr(4600))
+	writePortFixture(t, sp, newInt(4600))
 	sp.Config.DaemonPort = 4699 // CCMS_PORT
 
 	require.Equal(t, 4700, config.ResolveDaemonPort(sp.Config, 4700))
@@ -132,7 +121,7 @@ func TestResolveDaemonPort_FlagWins(t *testing.T) {
 
 func TestResolveDaemonPort_EnvOverProviders(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	writePortFixture(t, sp, intPtr(4600))
+	writePortFixture(t, sp, newInt(4600))
 	sp.Config.DaemonPort = 4699 // CCMS_PORT
 
 	require.Equal(t, 4699, config.ResolveDaemonPort(sp.Config, 0))
@@ -140,7 +129,7 @@ func TestResolveDaemonPort_EnvOverProviders(t *testing.T) {
 
 func TestResolveDaemonPort_ProvidersOverDefault(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	writePortFixture(t, sp, intPtr(4600))
+	writePortFixture(t, sp, newInt(4600))
 
 	require.Equal(t, 4600, config.ResolveDaemonPort(sp.Config, 0))
 }
@@ -162,4 +151,43 @@ func TestResolveDaemonPort_BrokenProvidersFallsBack(t *testing.T) {
 	require.Equal(t, config.DefaultDaemonPort, config.ResolveDaemonPort(sp.Config, 0))
 }
 
-func intPtr(v int) *int { return &v }
+func newInt(v int) *int { return &v }
+
+// The schema is unversioned: a file without "version" loads; a legacy file
+// with "version": 3 still loads (the unknown field is ignored by the decoder).
+func TestLoadProviders_NoVersionRequired(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"profiles":{}}`), 0o600)) //nolint:gosec // test sandbox
+	_, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version":3,"profiles":{}}`), 0o600)) //nolint:gosec // test sandbox
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.Empty(t, p.Profiles.Keys)
+}
+
+// The daemon block is optional: absent → zero port (the default applies at
+// resolution time), profiles intact.
+func TestLoadProviders_MissingDaemonBlock(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{}
+	p.Profiles.Set("zai", &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.Equal(t, 0, loaded.Daemon.Port)
+	require.Equal(t, []string{"zai"}, loaded.Profiles.Keys)
+}
+
+func TestSaveLoad_RoundTripKeepsPort(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	in := &models.Providers{Daemon: models.Daemon{Port: 4600}}
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), in))
+
+	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.Equal(t, 4600, loaded.Daemon.Port)
+}

@@ -30,18 +30,22 @@ func TestInitProviders_ExistingWithoutForceFails(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestInitProviders_GeneratesDaemon(t *testing.T) {
+// Init writes neither a version nor a daemon block: no daemon token exists
+// (pass-through auth), and the port resolves via ResolveDaemonPort.
+func TestInit_NoVersionNoTokenWritten(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 
 	_, err := config.InitProviders(sp.Config, false)
 	require.NoError(t, err)
 
+	raw, err := os.ReadFile(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), `"version":`)
+	require.NotContains(t, string(raw), "auth_token")
+	// no port baked in: resolution owns the default
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	require.Equal(t, 3, p.Version)
-	require.Equal(t, config.DefaultDaemonPort, p.Daemon.Port)
-	require.NotEmpty(t, p.Daemon.AuthToken)
-	require.Len(t, p.Daemon.AuthToken, 64) // 32 bytes hex
+	require.Equal(t, 0, p.Daemon.Port)
 }
 
 func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {

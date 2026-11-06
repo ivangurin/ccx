@@ -54,6 +54,7 @@ func runServe(args []string, stdout io.Writer) int {
 // parseServeArgs parses the flags after "serve".
 func parseServeArgs(args []string) (app.ServeOptions, error) {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // runServe prints the error itself; no double usage dump
 	provider := fs.String("provider", "", "providers.json key to proxy (required)")
 	port := fs.Int("port", 0, "listen port (default: CCMS_PORT > daemon.port > 4567)")
 	daemon := fs.Bool("daemon", false, "spawned mode (output to daemon.log)")

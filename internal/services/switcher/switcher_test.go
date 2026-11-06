@@ -64,8 +64,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 
 	// providers.json: zai (anthropic, no extras), x5 (openai + an extra key)
 	p := &models.Providers{
-		Version: 3,
-		Daemon:  models.Daemon{Port: 4567, AuthToken: "daemon-token"},
+		Daemon:  models.Daemon{Port: 4567},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (GLM)",
@@ -343,7 +342,7 @@ func TestApply_LockSerializes(t *testing.T) {
 
 func TestApply_MissingSettingsFails(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 3}
+	p := &models.Providers{}
 	p.Profiles.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 

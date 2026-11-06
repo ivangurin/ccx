@@ -19,7 +19,7 @@ const cmdUse = "use"
 
 func TestCommandUse_UnknownProfileFails(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{Version: 3}))
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{}))
 	var out bytes.Buffer
 
 	code := cli.Execute([]string{cmdUse, "ghost"}, &out)
@@ -40,7 +40,7 @@ func TestCommandUse_MissingProfileArg(t *testing.T) {
 
 func TestCommandUse_NoDefaultModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 3}
+	p := &models.Providers{}
 	p.Profiles.Set("bare", &models.Profile{Name: "Bare", Protocol: models.ProtocolAnthropic, Models: nil})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	var out bytes.Buffer
@@ -55,7 +55,7 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 // state are written inside the sandbox home.
 func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	p := &models.Providers{Daemon: models.Daemon{Port: 4567}}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:     "z.ai",
 		Protocol: models.ProtocolAnthropic,
@@ -105,7 +105,7 @@ func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	port := freePort(t)
 	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{
-		Version: 3, Daemon: models.Daemon{Port: port, AuthToken: "x"},
+		Daemon: models.Daemon{Port: port},
 	}))
 	var out bytes.Buffer
 
@@ -138,7 +138,7 @@ func TestCommandAuth_CodexHint(t *testing.T) {
 func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {
 	// non-tty stdin: menu → number choice → use fails on the missing daemon
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 3}
+	p := &models.Providers{}
 	p.Profiles.Set("zai", &models.Profile{
 		Name: "z.ai", Protocol: models.ProtocolAnthropic,
 		BaseURL: "https://x",

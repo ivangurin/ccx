@@ -1,16 +1,17 @@
 package models
 
-// Daemon holds the local ccms daemon's parameters (the single HTTP endpoint
-// ANTHROPIC_BASE_URL points to; auth_token is the static client token:
-// used both for Claude Code → daemon and for the admin API).
+// Daemon holds the local ccms daemon's only parameter: the listen port
+// (optional — absent/0 means the default 4567 at resolution time). There is
+// no daemon-owned secret anymore: openai credentials are pass-through (the
+// token Claude Code sends travels upstream), copilot/codex own theirs in
+// the translators; the surface is localhost-only.
 type Daemon struct {
-	Port      int    `json:"port"`
-	AuthToken string `json:"auth_token"`
+	Port int `json:"port,omitempty"`
 }
 
-// Providers is the root of providers.json v2.
+// Providers is the root of providers.json (unversioned: the layout is flat
+// profiles; a legacy "version" field in the file is ignored by the decoder).
 type Providers struct {
-	Version  int        `json:"version"`
 	Daemon   Daemon     `json:"daemon"`
 	Profiles ProfileMap `json:"profiles"`
 }

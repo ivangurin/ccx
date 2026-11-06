@@ -9,7 +9,8 @@ import (
 	"github.com/ivangurin/ccms/internal/config"
 )
 
-// runStop — ccms stop: POST /admin/stop (graceful shutdown of the daemon).
+// runStop — ccms stop: POST /admin/stop (graceful shutdown of the daemon;
+// the surface is localhost-only, no token).
 func runStop(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -17,17 +18,7 @@ func runStop(_ []string, stdout io.Writer) int {
 
 		return 1
 	}
-	port := cfg.DaemonPort
-	if port == 0 {
-		providers, perr := config.LoadProviders(cfg.ProvidersPath())
-		if perr != nil {
-			fmt.Fprintln(stdout, "ccms: providers.json unavailable — run ccms init first")
-
-			return 1
-		}
-		port = providers.Daemon.Port
-	}
-	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	base := fmt.Sprintf("http://127.0.0.1:%d", config.ResolveDaemonPort(cfg, 0))
 
 	if !alive(base) {
 		fmt.Fprintln(stdout, "Daemon is not running.")
@@ -35,12 +26,7 @@ func runStop(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
-	var token string
-	if providers, err := config.LoadProviders(cfg.ProvidersPath()); err == nil {
-		token = providers.Daemon.AuthToken
-	}
 	req, _ := http.NewRequest(http.MethodPost, base+"/admin/stop", nil) //nolint:gosec // local address
-	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
 		fmt.Fprintf(stdout, "ccms: failed to stop the daemon: %v\n", err)
@@ -65,7 +51,7 @@ func runStop(_ []string, stdout io.Writer) int {
 
 func alive(base string) bool {
 	client := &http.Client{Timeout: time.Second}
-	resp, err := client.Get(base + "/health") //nolint:gosec // local address
+	resp, err := client.Get(base + "/health") //nolint:gosec // local daemon address
 	if err != nil {
 		return false
 	}

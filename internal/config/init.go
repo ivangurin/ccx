@@ -1,11 +1,8 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -45,32 +42,12 @@ func InitProviders(cfg *Config, force bool) (*InitResult, error) {
 	providers, warnings := buildFromEnvironment(cfg)
 	res := &InitResult{Path: path, Warnings: warnings}
 
-	providers.Version = 3
-	providers.Daemon.Port = DefaultDaemonPort
-	if cfg.DaemonPort != 0 {
-		providers.Daemon.Port = cfg.DaemonPort
-	}
-	token, err := generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("config: generate token: %w", err)
-	}
-	providers.Daemon.AuthToken = token
-
 	if err := SaveProviders(path, providers); err != nil {
 		return nil, err
 	}
 	res.Profiles = append(res.Profiles, providers.Profiles.Keys...)
 
 	return res, nil
-}
-
-func generateToken() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(buf), nil
 }
 
 // buildFromEnvironment mirrors bash-init: zai from the settings.json env

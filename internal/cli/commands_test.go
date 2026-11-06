@@ -54,15 +54,16 @@ func TestCommandInit_ForceRegenerates(t *testing.T) {
 	code := cli.Execute([]string{cmdInit, "--force"}, &out)
 
 	require.Equal(t, 0, code)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	require.Equal(t, 4567, p.Daemon.Port)
-	require.NotEqual(t, "old", p.Daemon.AuthToken)
+	// the regenerated file is the new schema: no version, no daemon token
+	require.NotContains(t, string(raw), `"version":`)
+	require.NotContains(t, string(raw), "auth_token")
 }
 
 func writeProviders(t *testing.T, path string, keysInOrder []string) {
 	t.Helper()
-	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	p := &models.Providers{Daemon: models.Daemon{Port: 4567}}
 	for _, k := range keysInOrder {
 		p.Profiles.Set(k, &models.Profile{
 			Name:     "name-" + k,

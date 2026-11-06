@@ -45,7 +45,7 @@ func TestExecute_NoArgs_MenuWithoutProviders(t *testing.T) {
 func TestExecute_UnknownCommand(t *testing.T) {
 	// own sandbox: without it the test would read the owner's LIVE ~/.claude
 	sp := suite_provider.NewProvider(t)
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{Version: 3}))
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{}))
 	var out bytes.Buffer
 
 	code := cli.Execute([]string{"definitely-not-a-command"}, &out)
@@ -64,14 +64,15 @@ func TestExecute_HelpFlag(t *testing.T) {
 	require.Contains(t, out.String(), "use")
 }
 
-// A providers.json of an unsupported version produces a hint, not a crash.
-func TestExecute_UnsupportedProvidersVersion_HintsForce(t *testing.T) {
+// A legacy file with a "version" field loads: the decoder ignores the unknown
+// field (the schema is unversioned now).
+func TestExecute_LegacyVersionFieldIgnored(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version": 2, "profiles": {}}`), 0o600)) //nolint:gosec // test sandbox
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version": 3, "profiles": {}}`), 0o600)) //nolint:gosec // test sandbox
 	var out bytes.Buffer
 
 	code := cli.Execute([]string{"list"}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "ccms init --force")
+	require.Contains(t, out.String(), "ccms init") // no profiles → template hint
 }

@@ -69,7 +69,7 @@ func (f *fakeAdminDaemon) config(t *testing.T) *config.Config {
 	port, err := strconv.Atoi(u.Port())
 	require.NoError(t, err)
 
-	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: port, AuthToken: "tok"}}
+	p := &models.Providers{Daemon: models.Daemon{Port: port}}
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	return sp.Config

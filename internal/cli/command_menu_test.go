@@ -10,7 +10,7 @@ import (
 // menuTestProviders — two profiles: the first with two models, the second
 // without any (Keys order = insertion order: "withmodels", "bare").
 func menuTestProviders() *models.Providers {
-	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	p := &models.Providers{Daemon: models.Daemon{Port: 4567}}
 	p.Profiles.Set("withmodels", &models.Profile{
 		Name:     "Has models",
 		Protocol: models.ProtocolAnthropic,
