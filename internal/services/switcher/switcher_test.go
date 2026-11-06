@@ -170,6 +170,55 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, 0, d.stopN)
 }
 
+// A switch must be invisible outside the env block and the model pin: blocks
+// keep their order and formatting, the env block keeps its lines (a fresh key
+// is appended at its end) — the file is the user's, not ccms's.
+func TestApply_PreservesSettingsFormatting(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+
+	in := `{
+  "permissions": {
+    "allow": ["Bash(npm run test)"]
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_STALE_KEY": "old"
+  },
+  "model": "old-model"
+}
+`
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(in), 0o600))
+
+	_, err := sw.Apply(context.Background(), "x5", "")
+	require.NoError(t, err)
+
+	want := `{
+  "permissions": {
+    "allow": ["Bash(npm run test)"]
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_AUTH_TOKEN": "daemon-token",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "copilot-code-large",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "copilot-code-large",
+    "ANTHROPIC_DEFAULT_MODEL": "copilot-code-large",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "copilot-code-large",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "copilot-code-large",
+    "ANTHROPIC_MODEL": "copilot-code-large",
+    "ANTHROPIC_SMALL_FAST_MODEL": "copilot-code-large",
+    "CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true"
+  },
+  "model": "copilot-code-large",
+  "availableModels": ["copilot-code-large"],
+  "enforceAvailableModels": true
+}
+`
+	got, err := os.ReadFile(sp.Config.SettingsPath())
+	require.NoError(t, err)
+	require.Equal(t, want, string(got))
+}
+
 func TestApply_ModelByNameAlias(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 

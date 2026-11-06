@@ -54,10 +54,20 @@ func runMenu(_ []string, stdout io.Writer) int {
 }
 
 // menuStages — the menu levels: providers, then the chosen provider's models.
-// A provider without models ends the chain (ok=false) — runMenu reports it.
+// The builder must return ok=false once every level has a choice — a staged
+// session finishes only on ok=false, otherwise each Enter pushes one more
+// level (the model menu would reopen instead of applying the selection).
+// A provider without models ends the chain early — runMenu reports it.
 func menuStages(providers *models.Providers, defProfile int) tui.NextStage {
 	return func(chosen []int) (tui.Stage, bool) {
-		if len(chosen) > 0 {
+		switch len(chosen) {
+		case 0:
+			return tui.Stage{
+				Header:     "Choose a provider",
+				Items:      profileMenuItems(providers),
+				DefaultIdx: defProfile,
+			}, true
+		case 1:
 			profileKey := providers.Profiles.Keys[chosen[0]]
 			profile := providers.Profiles.Get(profileKey)
 			if len(profile.Models) == 0 {
@@ -69,13 +79,9 @@ func menuStages(providers *models.Providers, defProfile int) tui.NextStage {
 				Items:      modelMenuItems(profile),
 				DefaultIdx: defaultModelIndex(profile),
 			}, true
+		default:
+			return tui.Stage{}, false
 		}
-
-		return tui.Stage{
-			Header:     "Choose a provider",
-			Items:      profileMenuItems(providers),
-			DefaultIdx: defProfile,
-		}, true
 	}
 }
 

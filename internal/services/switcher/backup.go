@@ -13,12 +13,10 @@ import (
 
 // backupSettings — back up settings.json before editing: a umask-077
 // equivalent (perms 600), the name carries a timestamp and pid (parity with
-// bash-ccx).
+// bash-ccx). The backup is the file's exact text — the pristine pre-switch
+// copy, byte-for-byte.
 func backupSettings(cfg *config.Config, settings *models.Settings) error {
-	data, err := settings.Marshal()
-	if err != nil {
-		return fmt.Errorf("ccms: backup: %w", err)
-	}
+	data := settings.Bytes()
 	if err := os.MkdirAll(cfg.BackupDir(), 0o750); err != nil {
 		return fmt.Errorf("ccms: backup dir: %w", err)
 	}

@@ -99,6 +99,12 @@ internal/
   stopped best-effort.
 - **Managed keys**: only `ANTHROPIC_*` keys and profile env keys are edited;
   user variables (API_TIMEOUT_MS, MCP tokens) are preserved.
+- **Byte-precise settings.json edits**: only the env block and the model pin
+  change; everything else — key order, indentation, user blocks, the trailing
+  newline — survives a switch byte-for-byte (`internal/pkg/jsonpatch`; a fresh
+  env key appends at the end of the block, a replaced one keeps its line).
+  Deliberately stricter than bash-ccx, whose jq round-trip reformatted the
+  whole file.
 - **Model pinning**: `model`, `availableModels=[m]`, `enforceAvailableModels`,
   all `ANTHROPIC_DEFAULT_*_MODEL` = the selected model.
 - **`ANTHROPIC_BASE_URL`**: always the daemon for translated protocols (it

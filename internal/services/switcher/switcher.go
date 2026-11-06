@@ -200,8 +200,11 @@ var pinnedKeys = []string{
 	"ANTHROPIC_SMALL_FAST_MODEL",
 }
 
-// writeSettings: backup → atomic env edit (managed keys) → model pinning.
-// env is the fresh block to write (daemonEnv or directEnv).
+// writeSettings: backup → surgical env patch (managed keys) → model pinning.
+// env is the fresh block content (daemonEnv or directEnv). The patcher edits
+// the file's own text, so everything outside env/the pin — order, indent,
+// user blocks — survives byte-for-byte; fresh keys land at the end of the
+// env block.
 func (s *Switcher) writeSettings(providers *models.Providers, env map[string]string, model string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
@@ -219,28 +222,28 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 			managed[k] = true
 		}
 	}
-	cur := settings.Env()
-	fresh := map[string]string{}
-	for k, v := range cur {
-		// all ANTHROPIC_* are wiped (not only managed ones): past profile keys
-		// and manual values must not survive a switch (parity with bash
-		// with_entries)
-		if managed[k] || strings.HasPrefix(k, "ANTHROPIC_") {
+	// stale = managed/ANTHROPIC_* keys that are present now but absent from
+	// the fresh block; all ANTHROPIC_* are wiped, not only managed ones (past
+	// profile keys and manual values must not survive a switch — parity with
+	// bash with_entries). User keys are not touched at all.
+	var stale []string
+	for k := range settings.Env() {
+		if _, keep := env[k]; keep {
 			continue
 		}
-		fresh[k] = v
+		if managed[k] || strings.HasPrefix(k, "ANTHROPIC_") {
+			stale = append(stale, k)
+		}
 	}
-	for k, v := range env {
-		fresh[k] = v
-	}
-	settings.SetEnv(fresh)
-	settings.SetModelPin(model)
+	slices.Sort(stale)
 
-	data, err := settings.Marshal()
-	if err != nil {
-		return fmt.Errorf("ccms: failed to render settings.json: %w", err)
+	if err := settings.PatchEnv(stale, env); err != nil {
+		return fmt.Errorf("ccms: %w", err)
 	}
-	if err := writeFileAtomic(s.cfg.SettingsPath(), data); err != nil {
+	if err := settings.SetModelPin(model); err != nil {
+		return fmt.Errorf("ccms: %w", err)
+	}
+	if err := writeFileAtomic(s.cfg.SettingsPath(), settings.Bytes()); err != nil {
 		return fmt.Errorf("ccms: writing settings.json: %w", err)
 	}
 
