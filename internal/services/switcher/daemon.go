@@ -1,18 +1,47 @@
 package switcher
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ivangurin/ccms/internal/app"
 	"github.com/ivangurin/ccms/internal/config"
 )
 
-// HTTPDaemon — the Daemon implementation on top of the daemon's admin API.
+// Wait/escalation timings (vars: tests shorten them; the defaults bound the
+// restart to ~14s worst case — graceful drain of long SSE, then signals).
+var (
+	portWait = 10 * time.Second // /admin/stop → port closed
+	termWait = 2 * time.Second  // SIGTERM → port closed
+	killWait = 2 * time.Second  // SIGKILL → port closed
+	pollInt  = 200 * time.Millisecond
+)
+
+// spawn is the detached-launch function (seam for tests).
+var spawn = app.SpawnDetached
+
+// SetWaitTimingsForTest overrides the wait timings (restored by the test's
+// cleanup; tests are not parallel).
+func SetWaitTimingsForTest(port, term, kill, poll time.Duration) {
+	portWait, termWait, killWait, pollInt = port, term, kill, poll
+}
+
+// SetSpawnForTest replaces the spawn function; ResetSpawnForTest restores it.
+func SetSpawnForTest(fn func(*config.Config, ...string) error) { spawn = fn }
+
+// ResetSpawnForTest restores the real spawn.
+func ResetSpawnForTest() { spawn = app.SpawnDetached }
+
+// HTTPDaemon — the Daemon implementation: restart = stop + detached spawn
+// with launch params + health wait; stop = graceful /admin/stop with a
+// signal escalation (a hung SSE stream can hold the graceful drain forever).
 type HTTPDaemon struct {
 	cfg *config.Config
 }
@@ -22,31 +51,21 @@ func NewHTTPDaemon(cfg *config.Config) *HTTPDaemon {
 	return &HTTPDaemon{cfg: cfg}
 }
 
-func (d *HTTPDaemon) baseURL() (string, error) {
-	port := d.cfg.DaemonPort
-	if port == 0 {
-		providers, err := config.LoadProviders(d.cfg.ProvidersPath())
-		if err != nil {
-			return "", fmt.Errorf("daemon: providers.json: %w", err)
-		}
-		port = providers.Daemon.Port
-	}
-
-	return fmt.Sprintf("http://127.0.0.1:%d", port), nil
+func baseURL(port int) string {
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
-// Ensure — the daemon is alive; if not: spawn detached + wait for health.
-func (d *HTTPDaemon) Ensure(ctx context.Context) error {
-	base, err := d.baseURL()
-	if err != nil {
+// Restart stops any running daemon, spawns a fresh one with the launch
+// parameters and waits for /health — which answering means the translator
+// passed Ready() (the daemon builds the route before listening).
+func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int) error {
+	if err := d.Stop(ctx); err != nil {
 		return err
 	}
-	if app.HealthCheck(base, time.Second) {
-		return nil
+	if err := spawn(d.cfg, "--provider", providerKey, "--port", strconv.Itoa(port)); err != nil {
+		return fmt.Errorf("daemon: spawn: %w", err)
 	}
-	if err := app.SpawnDetached(d.cfg); err != nil {
-		return err
-	}
+	base := baseURL(port)
 	if !app.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
 		return fmt.Errorf("daemon did not respond within %s (log: %s)", d.cfg.DaemonStartTimeout, d.cfg.LogDir()+"/daemon.log")
 	}
@@ -55,90 +74,80 @@ func (d *HTTPDaemon) Ensure(ctx context.Context) error {
 }
 
 // Stop — best-effort shutdown of a running daemon: a no-op success if it is
-// not running; otherwise POST /admin/stop and wait for the port to close (a
-// lingering listener would break the next Ensure's spawn — port conflict).
-// Mirrors the ccms stop CLI.
+// not running; otherwise POST /admin/stop, then escalate — a lingering
+// listener would break the next spawn (port conflict), and a long SSE stream
+// can hold the graceful drain indefinitely.
 func (d *HTTPDaemon) Stop(ctx context.Context) error {
-	base, err := d.baseURL()
-	if err != nil {
-		return err
-	}
+	port := config.ResolveDaemonPort(d.cfg, 0)
+	base := baseURL(port)
 	if !app.HealthCheck(base, time.Second) {
 		return nil
 	}
-	token := ""
-	if providers, perr := config.LoadProviders(d.cfg.ProvidersPath()); perr == nil {
-		token = providers.Daemon.AuthToken
+	d.postStop(ctx, base)
+
+	// graceful: the port closes after the drain
+	if d.waitPortClosed(ctx, base, portWait) {
+		return nil
+	}
+	// escalation: signals by the pidfile (a missing/garbage pidfile is
+	// best-effort — nothing to signal, fall through to the final wait)
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
+		if pid, ok := d.readPid(); ok {
+			_ = syscall.Kill(pid, sig) //nolint:gosec // our own daemon process
+		}
+		wait := termWait
+		if sig == syscall.SIGKILL {
+			wait = killWait
+		}
+		if d.waitPortClosed(ctx, base, wait) {
+			return nil
+		}
 	}
 
+	return fmt.Errorf("the daemon is still responding (log: %s)", d.cfg.LogDir()+"/daemon.log")
+}
+
+// postStop fires the graceful-shutdown request; the status is ignored — the
+// port wait and the signal escalation are the real enforcement.
+func (d *HTTPDaemon) postStop(ctx context.Context, base string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/admin/stop", nil)
 	if err != nil {
-		return fmt.Errorf("daemon: stop: %w", err)
+		return
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req) //nolint:gosec // local address
 	if err != nil {
-		return fmt.Errorf("daemon: stop: %w", err)
+		return
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		var payload struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&payload)
+	_ = resp.Body.Close()
+}
 
-		return fmt.Errorf("daemon: stop: %s", payload.Error)
-	}
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+func (d *HTTPDaemon) waitPortClosed(ctx context.Context, base string, budget time.Duration) bool {
+	deadline := time.Now().Add(budget)
 	for {
-		if !app.HealthCheck(base, 250*time.Millisecond) {
-			return nil
+		if !app.HealthCheck(base, time.Second) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("the daemon is still responding (log: %s)", d.cfg.LogDir()+"/daemon.log")
-		case <-ticker.C:
+			return false
+		case <-time.After(pollInt):
 		}
 	}
 }
 
-// Use — POST /admin/use with the daemon token.
-func (d *HTTPDaemon) Use(ctx context.Context, profile, model string) error {
-	base, err := d.baseURL()
+// readPid parses daemon.pid; any failure means "nothing to signal".
+func (d *HTTPDaemon) readPid() (int, bool) {
+	raw, err := os.ReadFile(filepath.Join(d.cfg.CCMSDir(), "daemon.pid")) //nolint:gosec // fixed path
 	if err != nil {
-		return err
+		return 0, false
 	}
-	providers, err := config.LoadProviders(d.cfg.ProvidersPath())
-	if err != nil {
-		return err
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 0 {
+		return 0, false
 	}
 
-	body, err := json.Marshal(map[string]string{"profile": profile, "model": model})
-	if err != nil {
-		return fmt.Errorf("daemon: use: marshal: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/admin/use", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("daemon: use: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+providers.Daemon.AuthToken)
-
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req) // Ready may hit an OAuth refresh
-	if err != nil {
-		return fmt.Errorf("daemon: use: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		var payload struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&payload)
-
-		return fmt.Errorf("%s", payload.Error)
-	}
-
-	return nil
+	return pid, true
 }

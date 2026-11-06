@@ -110,3 +110,56 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, "/tmp/custom-backups", cfg.BackupDir())
 	require.Equal(t, "/tmp/custom-logs", cfg.LogDir())
 }
+
+// writePortFixture writes providers.json with the given daemon.port
+// (nil block = no daemon key at all).
+func writePortFixture(t *testing.T, sp *suite_provider.Provider, port *int) {
+	t.Helper()
+	p := &models.Providers{Version: 3}
+	if port != nil {
+		p.Daemon = models.Daemon{Port: *port}
+	}
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+}
+
+func TestResolveDaemonPort_FlagWins(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	writePortFixture(t, sp, intPtr(4600))
+	sp.Config.DaemonPort = 4699 // CCMS_PORT
+
+	require.Equal(t, 4700, config.ResolveDaemonPort(sp.Config, 4700))
+}
+
+func TestResolveDaemonPort_EnvOverProviders(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	writePortFixture(t, sp, intPtr(4600))
+	sp.Config.DaemonPort = 4699 // CCMS_PORT
+
+	require.Equal(t, 4699, config.ResolveDaemonPort(sp.Config, 0))
+}
+
+func TestResolveDaemonPort_ProvidersOverDefault(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	writePortFixture(t, sp, intPtr(4600))
+
+	require.Equal(t, 4600, config.ResolveDaemonPort(sp.Config, 0))
+}
+
+func TestResolveDaemonPort_DefaultWhenNoDaemonBlock(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	writePortFixture(t, sp, nil) // no daemon key
+	sp.Config.DaemonPort = 0
+
+	require.Equal(t, config.DefaultDaemonPort, config.ResolveDaemonPort(sp.Config, 0))
+}
+
+// a broken providers.json falls through to the default, not an error.
+func TestResolveDaemonPort_BrokenProvidersFallsBack(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{bad`), 0o600)) //nolint:gosec // test sandbox
+	sp.Config.DaemonPort = 0
+
+	require.Equal(t, config.DefaultDaemonPort, config.ResolveDaemonPort(sp.Config, 0))
+}
+
+func intPtr(v int) *int { return &v }

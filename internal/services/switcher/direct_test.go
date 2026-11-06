@@ -35,7 +35,7 @@ func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"ANTHROPIC_STALE_KEY": "old"}}`), 0o600))
 
-	d := &fakeDaemon{ensureOK: true, useOK: true}
+	d := &fakeDaemon{restartOK: true}
 	sw := switcher.New(sp.Config, d)
 
 	return sw, d, sp
@@ -63,8 +63,7 @@ func TestApply_DirectAnthropic(t *testing.T) {
 	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
 
 	// no daemon round-trip; the unused daemon is stopped
-	require.Equal(t, 0, d.ensureN)
-	require.Empty(t, d.useCalls)
+	require.Empty(t, d.restarts)
 	require.Equal(t, 1, d.stopN)
 
 	st := readState(t, sp.Config.StatePath())

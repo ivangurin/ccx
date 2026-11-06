@@ -17,37 +17,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeDaemon — a daemon mock: remembers calls, can fail on demand.
+// fakeDaemon — a daemon mock: remembers Restart calls, can fail on demand.
 type fakeDaemon struct {
-	mu       sync.Mutex
-	ensureOK bool
-	useOK    bool
-	ensureN  int
-	useCalls []string
-	stopN    int
-	stopErr  error
+	mu         sync.Mutex
+	restartOK  bool
+	restarts   []string // "profile:port" per call
+	stopN      int
+	stopErr    error
 }
 
-func (f *fakeDaemon) Ensure(_ context.Context) error {
+func (f *fakeDaemon) Restart(_ context.Context, providerKey string, port int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.ensureN++
-	if f.ensureOK {
+	f.restarts = append(f.restarts, providerKey+":"+itoa(port))
+	if f.restartOK {
 		return nil
 	}
 
-	return errors.New("daemon down")
-}
-
-func (f *fakeDaemon) Use(_ context.Context, profile, model string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.useCalls = append(f.useCalls, profile+"/"+model)
-	if f.useOK {
-		return nil
-	}
-
-	return errors.New("translator not ready")
+	return errors.New("daemon did not come up")
 }
 
 func (f *fakeDaemon) Stop(_ context.Context) error {
@@ -56,6 +43,19 @@ func (f *fakeDaemon) Stop(_ context.Context) error {
 	f.stopN++
 
 	return f.stopErr
+}
+
+func itoa(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var b []byte
+	for v > 0 {
+		b = append([]byte{byte('0' + v%10)}, b...)
+		v /= 10
+	}
+
+	return string(b)
 }
 
 func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
@@ -99,7 +99,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 		"permissions": {"allow": ["Bash"]}
 	}`), 0o600))
 
-	d := &fakeDaemon{ensureOK: true, useOK: true}
+	d := &fakeDaemon{restartOK: true}
 	sw := switcher.New(sp.Config, d)
 
 	return sw, d, sp
@@ -126,16 +126,21 @@ func readState(t *testing.T, path string) models.State {
 func TestApply_HappyPath(t *testing.T) {
 	sw, d, sp := newTestSwitcher(t)
 
-	// x5 (openai) — the daemon path: BASE_URL is the daemon
+	// x5 (openai) — the daemon path: BASE_URL is the daemon, Restart got the
+	// provider key and the resolved port (daemon.port 4567)
 	out, err := sw.Apply(context.Background(), "x5", "")
 	require.NoError(t, err)
 	require.Contains(t, out, "Switched")
 	require.Contains(t, out, "X5")
 	require.Contains(t, out, "http://127.0.0.1:4567")
 
+	require.Equal(t, []string{"x5:4567"}, d.restarts)
+
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "http://127.0.0.1:4567", env["ANTHROPIC_BASE_URL"])
-	require.Equal(t, "daemon-token", env["ANTHROPIC_AUTH_TOKEN"])
+	// x5 has only api_key → ANTHROPIC_API_KEY (direct-path precedence)
+	require.Equal(t, "k", env["ANTHROPIC_API_KEY"])
+	require.NotContains(t, env, "ANTHROPIC_AUTH_TOKEN")
 	// pinning: all mappings point to the selected model
 	for _, key := range pinnedKeysList {
 		require.Equal(t, "copilot-code-large", env[key], key)
@@ -167,8 +172,7 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, "copilot-code-large", st.Model)
 	require.NotEmpty(t, st.Updated)
 
-	// the daemon received use; the daemon stays up on the daemon path
-	require.Equal(t, []string{"x5/copilot-code-large"}, d.useCalls)
+	// the daemon stays up on the daemon path (no stop)
 	require.Equal(t, 0, d.stopN)
 }
 
@@ -200,7 +204,7 @@ func TestApply_PreservesSettingsFormatting(t *testing.T) {
   },
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "ANTHROPIC_AUTH_TOKEN": "daemon-token",
+    "ANTHROPIC_API_KEY": "k",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "copilot-code-large",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "copilot-code-large",
@@ -219,6 +223,50 @@ func TestApply_PreservesSettingsFormatting(t *testing.T) {
 	got, err := os.ReadFile(sp.Config.SettingsPath())
 	require.NoError(t, err)
 	require.Equal(t, want, string(got))
+}
+
+// auth_token wins over api_key (direct-path precedence) for the daemon path too.
+func TestApply_OpenAI_AuthTokenWinsOverAPIKey(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Get("x5").AuthToken = "sk-x5"
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = sw.Apply(context.Background(), "x5", "")
+	require.NoError(t, err)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "sk-x5", env["ANTHROPIC_AUTH_TOKEN"])
+	require.NotContains(t, env, "ANTHROPIC_API_KEY")
+}
+
+// no credential in the profile → placeholder token (Claude Code expects one;
+// the daemon ignores it for non-pass-through protocols).
+func TestApply_NoCredentials_PlaceholderToken(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Get("x5").APIKey = ""
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = sw.Apply(context.Background(), "x5", "")
+	require.NoError(t, err)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "ccms", env["ANTHROPIC_AUTH_TOKEN"])
+}
+
+// A failed restart leaves settings.json byte-identical — the invariant.
+func TestApply_RestartFailureLeavesSettingsUntouched(t *testing.T) {
+	sw, d, sp := newTestSwitcher(t)
+	d.restartOK = false
+	before := readSettings(t, sp.Config.SettingsPath())
+
+	_, err := sw.Apply(context.Background(), "x5", "") // daemon path
+	require.ErrorContains(t, err, "untouched")
+	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
+	require.NoFileExists(t, sp.Config.StatePath())
 }
 
 func TestApply_ModelByNameAlias(t *testing.T) {
@@ -246,25 +294,6 @@ func TestApply_UnknownModel(t *testing.T) {
 
 	_, err := sw.Apply(context.Background(), "zai", "no-model")
 	require.ErrorContains(t, err, "not found")
-	require.NoFileExists(t, sp.Config.StatePath())
-}
-
-func TestApply_EnsureFails_Untouched(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
-	d.ensureOK = false
-
-	_, err := sw.Apply(context.Background(), "x5", "") // daemon path
-	require.ErrorContains(t, err, "untouched")
-	require.NoFileExists(t, sp.Config.StatePath())
-	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "ANTHROPIC_BASE_URL")
-}
-
-func TestApply_UseFails_Untouched(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
-	d.useOK = false
-
-	_, err := sw.Apply(context.Background(), "x5", "") // daemon path
-	require.ErrorContains(t, err, "untouched")
 	require.NoFileExists(t, sp.Config.StatePath())
 }
 
@@ -318,7 +347,7 @@ func TestApply_MissingSettingsFails(t *testing.T) {
 	p.Profiles.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	sw := switcher.New(sp.Config, &fakeDaemon{ensureOK: true, useOK: true})
+	sw := switcher.New(sp.Config, &fakeDaemon{restartOK: true})
 	_, err := sw.Apply(context.Background(), "zai", "")
 	require.ErrorContains(t, err, "settings.json")
 }

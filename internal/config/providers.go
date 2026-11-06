@@ -76,6 +76,24 @@ func LoadProviders(path string) (*models.Providers, error) {
 	return &p, nil
 }
 
+// ResolveDaemonPort is the single port-resolution chain for CLI and daemon:
+// the --port flag > CCMS_PORT (c.DaemonPort) > providers.json daemon.port >
+// DefaultDaemonPort. An unreadable providers.json falls through to the
+// default (best-effort: switching still works, on the default port).
+func ResolveDaemonPort(c *Config, flagPort int) int {
+	if flagPort > 0 {
+		return flagPort
+	}
+	if c.DaemonPort > 0 {
+		return c.DaemonPort
+	}
+	if providers, err := LoadProviders(c.ProvidersPath()); err == nil && providers.Daemon.Port > 0 {
+		return providers.Daemon.Port
+	}
+
+	return DefaultDaemonPort
+}
+
 // SaveProviders atomically writes providers.json with 600 permissions (it holds tokens).
 func SaveProviders(path string, p *models.Providers) error {
 	return jsonfile.WriteAtomicJSON(path, p, 0o600)

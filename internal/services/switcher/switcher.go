@@ -2,9 +2,11 @@
 // Invariant: first readiness of everything the profile needs, only then the
 // settings.json edit; on failure ⇒ files are untouched, the user stays on
 // the previous profile. For translated protocols (openai/copilot/codex) that
-// means daemon readiness (Ensure + Use); an anthropic passthrough goes
-// direct — the upstream URL and credential land in settings.json (bash-ccx
-// semantics), the unused daemon is stopped best-effort.
+// means a daemon restart with launch params (stop → spawn --provider/--port
+// → health wait — /health answering means Ready() passed); an anthropic
+// passthrough goes direct — the upstream URL and credential land in
+// settings.json (bash-ccx semantics), the unused daemon is stopped
+// best-effort.
 package switcher
 
 import (
@@ -21,13 +23,11 @@ import (
 )
 
 // Daemon — the daemon contract for switching (the implementation is an
-// HTTP client to /admin/*; tests substitute a mock).
+// HTTP client + detached spawn; tests substitute a mock).
 type Daemon interface {
-	// Ensure — the daemon is alive (spawn if needed, wait for health).
-	Ensure(ctx context.Context) error
-	// Use — switch the daemon's translator to the profile (including the
-	// Ready check).
-	Use(ctx context.Context, profile, model string) error
+	// Restart — stop any running daemon, spawn a fresh one with the launch
+	// params and wait for readiness (health == translator Ready()).
+	Restart(ctx context.Context, providerKey string, port int) error
 	// Stop — best-effort shutdown of a running daemon (a direct anthropic
 	// profile doesn't need it); a no-op success if it is not running.
 	Stop(ctx context.Context) error
@@ -86,25 +86,20 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 		return s.applyDirect(ctx, providers, profile, profileKey, model)
 	}
 
-	// Invariant: the daemon is ready and the route is switched BEFORE the
-	// settings.json edit.
-	if err := s.daemon.Ensure(ctx); err != nil {
+	// Invariant: the restarted daemon is ready BEFORE the settings.json edit.
+	port := config.ResolveDaemonPort(s.cfg, 0)
+	if err := s.daemon.Restart(ctx, profileKey, port); err != nil {
 		return "", fmt.Errorf("ccms: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous profile", err)
 	}
-	if err := s.daemon.Use(ctx, profileKey, model); err != nil {
-		return "", fmt.Errorf("ccms: cancelled: translator %s not ready (%v) — settings.json untouched, you stay on the previous profile", profileKey, err)
-	}
 
-	if err := s.writeSettings(providers, daemonEnv(providers, profile, model), model); err != nil {
+	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model); err != nil {
 		return "", err
 	}
 	if err := s.writeState(profileKey, model); err != nil {
 		return "", err
 	}
 
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", providers.Daemon.Port)
-
-	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model, baseURL), nil
+	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model, baseURL(port)), nil
 }
 
 // applyDirect — a direct anthropic profile: upstream URL + credential into
@@ -169,17 +164,27 @@ func directEnv(profile *models.Profile, model string) (map[string]string, error)
 	return env, nil
 }
 
-// daemonEnv — the env block for settings.json: the daemon URL/token + the
-// profile's extras + model pinning across all mappings (the haiku class
-// points to the same model — Claude Code background tasks stay on the
-// selected one).
-func daemonEnv(providers *models.Providers, profile *models.Profile, model string) map[string]string {
+// daemonEnv — the env block for settings.json: the daemon URL, the
+// provider's own credential (Claude Code sends it; the daemon passes it
+// through — direct-path precedence: auth_token > api_key, else a
+// placeholder: Claude Code expects a credential, the daemon ignores it for
+// non-pass-through protocols), the profile's extras and model pinning across
+// all mappings (the haiku class points to the same model — Claude Code
+// background tasks stay on the selected one).
+func daemonEnv(profile *models.Profile, model string, port int) map[string]string {
 	env := map[string]string{}
 	for k, v := range profile.Env {
 		env[k] = v
 	}
-	env["ANTHROPIC_BASE_URL"] = fmt.Sprintf("http://127.0.0.1:%d", providers.Daemon.Port)
-	env["ANTHROPIC_AUTH_TOKEN"] = providers.Daemon.AuthToken
+	env["ANTHROPIC_BASE_URL"] = baseURL(port)
+	switch {
+	case profile.AuthToken != "":
+		env["ANTHROPIC_AUTH_TOKEN"] = profile.AuthToken
+	case profile.APIKey != "":
+		env["ANTHROPIC_API_KEY"] = profile.APIKey
+	default:
+		env["ANTHROPIC_AUTH_TOKEN"] = "ccms"
+	}
 	for _, key := range pinnedKeys {
 		env[key] = model
 	}
