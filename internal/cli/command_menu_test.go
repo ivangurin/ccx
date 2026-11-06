@@ -11,7 +11,7 @@ import (
 // without any (Keys order = insertion order: "withmodels", "bare").
 func menuTestProviders() *models.Providers {
 	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
-	p.Profiles.Set("withmodels", &models.Profile{
+	p.Providers.Set("withmodels", &models.Profile{
 		Name:     "Has models",
 		Protocol: models.ProtocolAnthropic,
 		Models: []models.Model{
@@ -19,7 +19,7 @@ func menuTestProviders() *models.Providers {
 			{ID: "m-two"},
 		},
 	})
-	p.Profiles.Set("bare", &models.Profile{Name: "No models", Protocol: models.ProtocolAnthropic})
+	p.Providers.Set("bare", &models.Profile{Name: "No models", Protocol: models.ProtocolAnthropic})
 
 	return p
 }

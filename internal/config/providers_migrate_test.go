@@ -39,8 +39,8 @@ func TestLoadProviders_MigratesLegacyFileOnDisk(t *testing.T) {
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	require.Equal(t, 4567, loaded.DaemonPort())
-	require.Equal(t, []string{zaiKey, x5Key}, loaded.Profiles.Keys)
-	require.Equal(t, "x-secret", loaded.Profiles.Get(x5Key).AuthToken)
+	require.Equal(t, []string{zaiKey, x5Key}, loaded.Providers.Keys)
+	require.Equal(t, "x-secret", loaded.Providers.Get(x5Key).AuthToken)
 
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestLoadProviders_MigratesOnProfilesKeyAlone(t *testing.T) {
 func TestLoadProviders_CleanFileNotRewritten(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Profiles.Set(zaiKey, &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
+	p.Providers.Set(zaiKey, &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	path := sp.Config.ProvidersPath()
@@ -107,7 +107,7 @@ func TestLoadProviders_MigrationWriteFailureTolerated(t *testing.T) {
 
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err) // best-effort by design: a failed rewrite must not break loading
-	require.Equal(t, []string{zaiKey, x5Key}, loaded.Profiles.Keys)
+	require.Equal(t, []string{zaiKey, x5Key}, loaded.Providers.Keys)
 
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)

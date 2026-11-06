@@ -43,7 +43,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKe
 		return nil, fmt.Errorf("router: providers.json: %w", err)
 	}
 
-	profile := providers.Profiles.Get(providerKey)
+	profile := providers.Providers.Get(providerKey)
 	if profile == nil {
 		return nil, fmt.Errorf("router: unknown provider: %s", providerKey)
 	}
@@ -124,7 +124,7 @@ func (s *Service) Models() []models.Model {
 	if err != nil {
 		return nil
 	}
-	if p := providers.Profiles.Get(s.profile); p != nil {
+	if p := providers.Providers.Get(s.profile); p != nil {
 		return p.Models
 	}
 

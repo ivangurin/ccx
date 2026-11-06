@@ -31,7 +31,7 @@ func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.
 		mutate(prof)
 	}
 	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
-	p.Profiles.Set("p", prof)
+	p.Providers.Set("p", prof)
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"ANTHROPIC_STALE_KEY": "old"}}`), 0o600))
 

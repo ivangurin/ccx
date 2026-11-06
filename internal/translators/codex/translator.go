@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/ivangurin/ccms/internal/clients/codex"
-	"github.com/ivangurin/ccms/internal/config"
 	"github.com/ivangurin/ccms/internal/models"
 	"github.com/ivangurin/ccms/internal/pkg/sse"
 )
@@ -26,6 +25,13 @@ const (
 	typeText       = "text"
 	typeMessage    = "message"
 	roleAssistantS = "assistant"
+)
+
+// codex CLI mimicry (was config: CodexDefaults) — the subscription backend
+// expects the codex CLI client, no reason to keep it per-profile.
+const (
+	codexOriginator = "codex_cli_rs"
+	codexUserAgent  = "codex_cli_rs/1.0.0"
 )
 
 // ResponsesItem is an element of the Responses API input[].
@@ -76,15 +82,16 @@ type Translator struct {
 	http    *http.Client
 }
 
-// New builds a translator. Empty mimicry fields are resolved from
-// config.CodexDefaults; the auth file location is resolved by the router.
+// New builds a translator. The codex CLI mimicry (Originator, UA) is not
+// config: it is the codexOriginator/codexUserAgent constants; the auth file
+// location is resolved by the router.
 func New(profile *models.Profile, auths AuthSource) *Translator {
-	return &Translator{profile: config.ResolveCodex(profile), auths: auths, base: codex.APIBase, http: &http.Client{}}
+	return &Translator{profile: profile, auths: auths, base: codex.APIBase, http: &http.Client{}}
 }
 
 // NewForTest is one with an overridden base.
 func NewForTest(profile *models.Profile, auths AuthSource, baseURL string) *Translator {
-	return &Translator{profile: config.ResolveCodex(profile), auths: auths, base: baseURL, http: &http.Client{}}
+	return &Translator{profile: profile, auths: auths, base: baseURL, http: &http.Client{}}
 }
 
 // Protocol is codex.
@@ -276,12 +283,9 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	if auth.AccountID != "" {
 		upReq.Header.Set("Chatgpt-Account-Id", auth.AccountID)
 	}
-	if t.profile.Originator != "" {
-		upReq.Header.Set("Originator", t.profile.Originator)
-	}
-	if t.profile.UserAgent != "" {
-		upReq.Header.Set("User-Agent", t.profile.UserAgent)
-	}
+	// CLI mimicry is a constant: the backend expects the codex CLI client.
+	upReq.Header.Set("Originator", codexOriginator)
+	upReq.Header.Set("User-Agent", codexUserAgent)
 
 	resp, err := t.http.Do(upReq)
 	if err != nil {

@@ -47,7 +47,7 @@ func InitProviders(cfg *Config, force bool) (*InitResult, error) {
 	if err := SaveProviders(path, providers); err != nil {
 		return nil, err
 	}
-	res.Profiles = append(res.Profiles, providers.Profiles.Keys...)
+	res.Profiles = append(res.Profiles, providers.Providers.Keys...)
 
 	return res, nil
 }
@@ -61,19 +61,19 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 
 	zai := profileFromSettings(cfg.SettingsPath())
 	if zai != nil {
-		providers.Profiles.Set("zai", zai)
+		providers.Providers.Set("zai", zai)
 	} else {
-		providers.Profiles.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Env: map[string]string{}})
+		providers.Providers.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Env: map[string]string{}})
 		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccms edit")
 	}
 
 	if x5 := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); x5 != nil {
-		providers.Profiles.Set("x5", x5)
+		providers.Providers.Set("x5", x5)
 	}
 
-	providers.Profiles.Set("openai", builtinOpenAIProfile())
-	providers.Profiles.Set("copilot", builtinCopilotProfile())
-	providers.Profiles.Set("codex", builtinCodexProfile())
+	providers.Providers.Set("openai", builtinOpenAIProfile())
+	providers.Providers.Set("copilot", builtinCopilotProfile())
+	providers.Providers.Set("codex", builtinCodexProfile())
 
 	return providers, warnings
 }

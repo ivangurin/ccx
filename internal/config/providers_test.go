@@ -15,7 +15,7 @@ func sampleProviders() *models.Providers {
 	out := &models.Providers{
 		Daemon: &models.Daemon{Port: 4567},
 	}
-	out.Profiles.Set("zai", &models.Profile{
+	out.Providers.Set("zai", &models.Profile{
 		Name:      "z.ai",
 		Protocol:  models.ProtocolAnthropic,
 		BaseURL:   "https://api.z.ai/api/anthropic",
@@ -61,19 +61,19 @@ func TestSaveLoadProviders_PreservesProfileOrder(t *testing.T) {
 
 	in := &models.Providers{}
 	for _, key := range []string{"zai", "x5", profOpenAI2, profCopilot} {
-		in.Profiles.Set(key, &models.Profile{Name: key, Protocol: models.ProtocolAnthropic})
+		in.Providers.Set(key, &models.Profile{Name: key, Protocol: models.ProtocolAnthropic})
 	}
 	require.NoError(t, config.SaveProviders(path, in))
 
 	loaded, err := config.LoadProviders(path)
 	require.NoError(t, err)
-	require.Equal(t, []string{"zai", "x5", profOpenAI2, profCopilot}, loaded.Profiles.Keys)
+	require.Equal(t, []string{"zai", "x5", profOpenAI2, profCopilot}, loaded.Providers.Keys)
 
 	// order survives a repeated roundtrip too
 	require.NoError(t, config.SaveProviders(path, loaded))
 	reloaded, err := config.LoadProviders(path)
 	require.NoError(t, err)
-	require.Equal(t, loaded.Profiles.Keys, reloaded.Profiles.Keys)
+	require.Equal(t, loaded.Providers.Keys, reloaded.Providers.Keys)
 }
 
 func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
@@ -165,7 +165,7 @@ func TestLoadProviders_NoVersionRequired(t *testing.T) {
 	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version":3,"profiles":{}}`), 0o600)) //nolint:gosec // test sandbox
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	require.Empty(t, p.Profiles.Keys)
+	require.Empty(t, p.Providers.Keys)
 }
 
 // The daemon block is optional: absent → zero port (the default applies at
@@ -173,13 +173,13 @@ func TestLoadProviders_NoVersionRequired(t *testing.T) {
 func TestLoadProviders_MissingDaemonBlock(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Profiles.Set("zai", &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
+	p.Providers.Set("zai", &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	require.Nil(t, loaded.Daemon)
-	require.Equal(t, []string{"zai"}, loaded.Profiles.Keys)
+	require.Equal(t, []string{"zai"}, loaded.Providers.Keys)
 }
 
 func TestSaveLoad_RoundTripKeepsPort(t *testing.T) {

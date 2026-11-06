@@ -44,6 +44,11 @@ func TestInit_NoVersionNoTokenWritten(t *testing.T) {
 	require.NotContains(t, string(raw), "auth_token")
 	require.NotContains(t, string(raw), `"profiles"`)
 	require.Contains(t, string(raw), `"providers"`)
+	// the masquerade is code constants now — init never writes it
+	require.NotContains(t, string(raw), "user_agent")
+	require.NotContains(t, string(raw), "integration_id")
+	require.NotContains(t, string(raw), "editor_version")
+	require.NotContains(t, string(raw), "originator")
 	// no port baked in: resolution owns the default
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
@@ -68,7 +73,7 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 
-	zai := p.Profiles.Get("zai")
+	zai := p.Providers.Get("zai")
 	require.NotNil(t, zai)
 	require.Equal(t, models.ProtocolAnthropic, zai.Protocol)
 	require.Equal(t, "sk-z", zai.AuthToken)
@@ -79,23 +84,22 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	// user keys from settings.json are NOT carried into the profile
 	require.NotContains(t, zai.Env, "API_TIMEOUT_MS")
 
-	x5 := p.Profiles.Get("x5")
+	x5 := p.Providers.Get("x5")
 	require.NotNil(t, x5)
 	require.Equal(t, "https://api-copilot.x5.ru/aigw", x5.BaseURL)
 	// carry-extras: non-ANTHROPIC keys of env.json move over
 	require.Equal(t, map[string]string{keyDisableThinking: "true"}, x5.Env)
 
 	for _, key := range []string{profOpenAI, profCopilot, "codex"} {
-		require.NotNil(t, p.Profiles.Get(key), "template profile %s", key)
+		require.NotNil(t, p.Providers.Get(key), "template profile %s", key)
 	}
-	require.Equal(t, models.ProtocolOpenAI, p.Profiles.Get(profOpenAI).Protocol)
-	require.Equal(t, models.ProtocolCopilot, p.Profiles.Get(profCopilot).Protocol)
-	require.Equal(t, models.ProtocolCodex, p.Profiles.Get("codex").Protocol)
+	require.Equal(t, models.ProtocolOpenAI, p.Providers.Get(profOpenAI).Protocol)
+	require.Equal(t, models.ProtocolCopilot, p.Providers.Get(profCopilot).Protocol)
+	require.Equal(t, models.ProtocolCodex, p.Providers.Get("codex").Protocol)
 
 	// the flat layout: connection fields sit directly in the profile
-	require.Equal(t, "https://api.openai.com/v1", p.Profiles.Get(profOpenAI).BaseURL)
-	require.Equal(t, "copilot-chat", p.Profiles.Get(profCopilot).IntegrationID)
-	require.Equal(t, "~/.codex/auth.json", p.Profiles.Get("codex").AuthFile)
+	require.Equal(t, "https://api.openai.com/v1", p.Providers.Get(profOpenAI).BaseURL)
+	require.Equal(t, "~/.codex/auth.json", p.Providers.Get("codex").AuthFile)
 	require.Empty(t, res.Warnings)
 }
 

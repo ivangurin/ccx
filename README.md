@@ -45,8 +45,11 @@ Connection fields live directly in the provider entry — no protocol-named
 block; `protocol` determines which of them are meaningful. The map lives
 under the `providers` key; files from older releases (top-level `profiles`
 key, `version`, `daemon.auth_token`) keep loading and are rewritten in the
-current schema on the next load. The optional `daemon.port` defaults to 4567
-(precedence: `--port` flag > `CCMS_PORT` > `daemon.port` > 4567).
+current schema on the next load. The client masquerade (UA, editor
+versions, integration id, originator, prefill fix) is not config: it lives
+in code constants next to the translators. The optional `daemon.port`
+defaults to 4567 (precedence: `--port` flag > `CCMS_PORT` > `daemon.port` >
+4567).
 
 ```jsonc
 {
@@ -64,7 +67,6 @@ current schema on the next load. The optional `daemon.port` defaults to 4567
       "protocol": "openai",
       "base_url": "https://…/v1",
       "auth_token": "<token>",
-      "user_agent": "claude-cli/2.0.1",
       "models": […]
     }
   }

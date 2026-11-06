@@ -68,7 +68,7 @@ func writeProviders(t *testing.T, path string, keysInOrder []string) {
 	t.Helper()
 	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
 	for _, k := range keysInOrder {
-		p.Profiles.Set(k, &models.Profile{
+		p.Providers.Set(k, &models.Profile{
 			Name:     "name-" + k,
 			Protocol: models.ProtocolAnthropic,
 			Models: []models.Model{

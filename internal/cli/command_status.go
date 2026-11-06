@@ -30,7 +30,7 @@ func runStatus(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
-	if prof := providers.Profiles.Get(state.Profile); prof == nil {
+	if prof := providers.Providers.Get(state.Profile); prof == nil {
 		fmt.Fprintf(stdout, "Active profile: %s (missing from providers.json — deleted?)\n", state.Profile)
 	} else {
 		fmt.Fprintf(stdout, "Active profile: %s (%s) · %s\n", state.Profile, prof.Name, prof.Protocol)

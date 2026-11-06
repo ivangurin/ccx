@@ -11,7 +11,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/ivangurin/ccms/internal/config"
+	copilot_client "github.com/ivangurin/ccms/internal/clients/copilot"
 	"github.com/ivangurin/ccms/internal/models"
 	"github.com/ivangurin/ccms/internal/translators/chatstream"
 	"github.com/ivangurin/ccms/internal/translators/openai"
@@ -35,23 +35,17 @@ type Translator struct {
 	http    *http.Client
 }
 
-// New builds a translator (base is overridden by tests). Empty masquerade
-// fields are resolved from config.CopilotDefaults — a profile without them
-// still impersonates VSCode.
+// New builds a translator (base is overridden by tests). The VSCode
+// masquerade is not config: it comes from the clients/copilot constants.
 func New(profile *models.Profile, tokens TokenSource) *Translator {
 	base := CopilotAPIBase
 
-	return &Translator{profile: config.ResolveCopilot(profile), tokens: tokens, base: base, http: &http.Client{}}
+	return &Translator{profile: profile, tokens: tokens, base: base, http: &http.Client{}}
 }
 
 // NewForTest is a translator with an overridden base URL.
 func NewForTest(profile *models.Profile, tokens TokenSource, baseURL string) *Translator {
-	return &Translator{profile: config.ResolveCopilot(profile), tokens: tokens, base: baseURL, http: &http.Client{}}
-}
-
-// prefillEnabled: nil = true (default) — the gateway rejects prefill without the fix.
-func prefillEnabled(profile *models.Profile) bool {
-	return profile.PrefillFix == nil || *profile.PrefillFix
+	return &Translator{profile: profile, tokens: tokens, base: baseURL, http: &http.Client{}}
 }
 
 // Protocol is copilot.
@@ -78,18 +72,10 @@ func (t *Translator) headers(token string) http.Header {
 	// No X-Github-Api-Version here: that is a github.com REST header — the
 	// Copilot chat gateway answers it with "bad request: invalid apiVersion"
 	// (verified live).
-	if t.profile.IntegrationID != "" {
-		h.Set("Copilot-Integration-Id", t.profile.IntegrationID)
-	}
-	if t.profile.EditorVersion != "" {
-		h.Set("Editor-Version", t.profile.EditorVersion)
-	}
-	if t.profile.EditorPluginVersion != "" {
-		h.Set("Editor-Plugin-Version", t.profile.EditorPluginVersion)
-	}
-	if t.profile.UserAgent != "" {
-		h.Set("User-Agent", t.profile.UserAgent)
-	}
+	h.Set("Copilot-Integration-Id", copilot_client.IntegrationID)
+	h.Set("Editor-Version", copilot_client.EditorVersion)
+	h.Set("Editor-Plugin-Version", copilot_client.EditorPluginVer)
+	h.Set("User-Agent", copilot_client.MasqueradeUA)
 
 	return h
 }
@@ -108,9 +94,9 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if prefillEnabled(t.profile) {
-		body, _ = prefill.Rewrite(body)
-	}
+	// The prefill fix is unconditionally on: the Copilot gateway rejects a
+	// final assistant message without it (copilot-bridge.py precedent).
+	body, _ = prefill.Rewrite(body)
 	var req models.MessagesRequest
 	if rawMsgs, ok := body["messages"]; ok {
 		body["messages"] = rawMsgs // retyping after prefill

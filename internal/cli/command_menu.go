@@ -25,7 +25,7 @@ func runMenu(_ []string, stdout io.Writer) int {
 	if providers == nil {
 		return 0
 	}
-	if providers.Profiles.Len() == 0 {
+	if providers.Providers.Len() == 0 {
 		fmt.Fprintln(stdout, "No profiles — ccms init or ccms edit")
 
 		return 0
@@ -38,8 +38,8 @@ func runMenu(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
-	profileKey := providers.Profiles.Keys[chosen[0]]
-	profile := providers.Profiles.Get(profileKey)
+	profileKey := providers.Providers.Keys[chosen[0]]
+	profile := providers.Providers.Get(profileKey)
 	if len(profile.Models) == 0 {
 		// the chain stopped at the provider: its model level was never built
 		fmt.Fprintf(stdout, "ccms: profile %s has no models — ccms edit\n", profileKey)
@@ -68,8 +68,8 @@ func menuStages(providers *models.Providers, defProfile int) tui.NextStage {
 				DefaultIdx: defProfile,
 			}, true
 		case 1:
-			profileKey := providers.Profiles.Keys[chosen[0]]
-			profile := providers.Profiles.Get(profileKey)
+			profileKey := providers.Providers.Keys[chosen[0]]
+			profile := providers.Providers.Get(profileKey)
 			if len(profile.Models) == 0 {
 				return tui.Stage{}, false
 			}
@@ -87,9 +87,9 @@ func menuStages(providers *models.Providers, defProfile int) tui.NextStage {
 
 // profileMenuItems — profile menu entries in file order.
 func profileMenuItems(providers *models.Providers) []tui.Item {
-	items := make([]tui.Item, 0, providers.Profiles.Len())
-	for _, key := range providers.Profiles.Keys {
-		items = append(items, tui.Item{Label: key, Detail: providers.Profiles.Get(key).Name})
+	items := make([]tui.Item, 0, providers.Providers.Len())
+	for _, key := range providers.Providers.Keys {
+		items = append(items, tui.Item{Label: key, Detail: providers.Providers.Get(key).Name})
 	}
 
 	return items
@@ -116,7 +116,7 @@ func activeProfileIndex(cfg *config.Config, providers *models.Providers) int {
 	if err := jsonfile.ReadJSON(cfg.StatePath(), &state); err != nil {
 		return 0
 	}
-	for i, key := range providers.Profiles.Keys {
+	for i, key := range providers.Providers.Keys {
 		if key == state.Profile {
 			return i
 		}

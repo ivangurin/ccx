@@ -29,7 +29,7 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	t.Cleanup(up.Close)
 
 	p := &models.Providers{}
-	p.Profiles.Set("zai", &models.Profile{
+	p.Providers.Set("zai", &models.Profile{
 		Name:     "z.ai",
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  up.URL,

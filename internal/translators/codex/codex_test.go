@@ -105,7 +105,7 @@ func TestServeMessages_Headers(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := codex.NewForTest(&models.Profile{Originator: "codex_cli_rs", UserAgent: "codex_cli_rs/1.0"}, fakeAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()
 
@@ -113,8 +113,9 @@ func TestServeMessages_Headers(t *testing.T) {
 
 	require.Equal(t, "Bearer acc", hdrs.Get("Authorization"))
 	require.Equal(t, "acct-1", hdrs.Get("Chatgpt-Account-Id"))
+	// the CLI mimicry is a constant, not profile config
 	require.Equal(t, "codex_cli_rs", hdrs.Get("Originator"))
-	require.Equal(t, "codex_cli_rs/1.0", hdrs.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs/1.0.0", hdrs.Get("User-Agent"))
 }
 
 func jsonUnmarshal(raw string, v any) error {

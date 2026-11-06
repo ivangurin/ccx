@@ -48,7 +48,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	providers := &models.Providers{
 		Daemon: &models.Daemon{Port: port},
 	}
-	providers.Profiles.Set("zai", &models.Profile{
+	providers.Providers.Set("zai", &models.Profile{
 		Name:      "z.ai (fake)",
 		Protocol:  models.ProtocolAnthropic,
 		BaseURL:   upstream.URL,

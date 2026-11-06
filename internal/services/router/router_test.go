@@ -28,7 +28,7 @@ func newFixture(t *testing.T) *suite_provider.Provider {
 	p := &models.Providers{
 		Daemon: &models.Daemon{Port: 4567},
 	}
-	p.Profiles.Set("zai", &models.Profile{
+	p.Providers.Set("zai", &models.Profile{
 		Name:      "z.ai",
 		Protocol:  models.ProtocolAnthropic,
 		BaseURL:   "http://upstream.invalid",
@@ -57,7 +57,7 @@ func TestBuild_ActivatesRoute(t *testing.T) {
 	up := startEchoUpstream(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
+	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
@@ -80,7 +80,7 @@ func TestBuild_OpenAIProfileReady(t *testing.T) {
 	sp := newFixture(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Set("work", &models.Profile{
+	p.Providers.Set("work", &models.Profile{
 		Name:     "OpenAI",
 		Protocol: models.ProtocolOpenAI,
 		BaseURL:  "https://api.openai.com/v1",
@@ -103,7 +103,7 @@ func TestBuild_CopilotWithoutAuth_NotReady(t *testing.T) {
 	sp := newFixture(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Set("copilot-x", &models.Profile{Name: "copilot-x", Protocol: models.ProtocolCopilot})
+	p.Providers.Set("copilot-x", &models.Profile{Name: "copilot-x", Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	_, err = router.Build(context.Background(), sp.Config, sp.Logger(), "copilot-x")
@@ -116,7 +116,7 @@ func TestServeMessages_DelegatesToActive(t *testing.T) {
 	up := startEchoUpstream(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
+	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
 			sp := newFixture(t)
 			p, err := config.LoadProviders(sp.Config.ProvidersPath())
 			require.NoError(t, err)
-			p.Profiles.Set(tc.key, &models.Profile{Name: tc.key, Protocol: tc.protocol}) // no base_url!
+			p.Providers.Set(tc.key, &models.Profile{Name: tc.key, Protocol: tc.protocol}) // no base_url!
 			require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 			require.NotPanics(t, func() {
@@ -176,7 +176,7 @@ func TestBuild_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
 
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex, AuthFile: "~/custom-auth.json"})
+	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex, AuthFile: "~/custom-auth.json"})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	svc, err := router.Build(t.Context(), sp.Config, sp.Logger(), "cx")

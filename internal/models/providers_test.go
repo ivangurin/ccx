@@ -26,9 +26,9 @@ func TestProviders_UnmarshalJSON_ProvidersKey(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 4567, p.DaemonPort())
-	require.Equal(t, []string{x5Key, zaiKey}, p.Profiles.Keys)
-	require.Equal(t, models.ProtocolOpenAI, p.Profiles.Get(x5Key).Protocol)
-	require.Equal(t, "t", p.Profiles.Get(x5Key).AuthToken)
+	require.Equal(t, []string{x5Key, zaiKey}, p.Providers.Keys)
+	require.Equal(t, models.ProtocolOpenAI, p.Providers.Get(x5Key).Protocol)
+	require.Equal(t, "t", p.Providers.Get(x5Key).AuthToken)
 }
 
 func TestProviders_UnmarshalJSON_LegacyProfilesKey(t *testing.T) {
@@ -46,8 +46,8 @@ func TestProviders_UnmarshalJSON_LegacyProfilesKey(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 4567, p.DaemonPort())
-	require.Equal(t, []string{zaiKey, x5Key}, p.Profiles.Keys)
-	require.Equal(t, models.ProtocolAnthropic, p.Profiles.Get(zaiKey).Protocol)
+	require.Equal(t, []string{zaiKey, x5Key}, p.Providers.Keys)
+	require.Equal(t, models.ProtocolAnthropic, p.Providers.Get(zaiKey).Protocol)
 }
 
 func TestProviders_UnmarshalJSON_ProvidersKeyWins(t *testing.T) {
@@ -60,7 +60,7 @@ func TestProviders_UnmarshalJSON_ProvidersKeyWins(t *testing.T) {
 	}`), &p)
 
 	require.NoError(t, err)
-	require.Empty(t, p.Profiles.Keys)
+	require.Empty(t, p.Providers.Keys)
 }
 
 func TestProviders_UnmarshalJSON_UnusedKeyGarbageIgnored(t *testing.T) {
@@ -72,7 +72,7 @@ func TestProviders_UnmarshalJSON_UnusedKeyGarbageIgnored(t *testing.T) {
 	}`), &p)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{zaiKey}, p.Profiles.Keys)
+	require.Equal(t, []string{zaiKey}, p.Providers.Keys)
 }
 
 func TestProviders_UnmarshalJSON_DaemonBlockNormalized(t *testing.T) {
@@ -99,7 +99,7 @@ func TestProviders_UnmarshalJSON_DaemonBlockNormalized(t *testing.T) {
 
 func TestProviders_MarshalJSON_NoEmptyDaemonBlock(t *testing.T) {
 	p := models.Providers{}
-	p.Profiles.Set(x5Key, &models.Profile{Name: "X5", Protocol: models.ProtocolOpenAI})
+	p.Providers.Set(x5Key, &models.Profile{Name: "X5", Protocol: models.ProtocolOpenAI})
 
 	raw, err := json.Marshal(&p)
 	require.NoError(t, err)

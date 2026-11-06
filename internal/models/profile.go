@@ -30,8 +30,10 @@ type Model struct {
 
 // Profile is a single provider. The connection fields sit at the top level
 // (v3: no protocol-named block); which of them are meaningful is determined
-// by Protocol. Masquerade/CLI-mimicry defaults for empty fields live in
-// config (CopilotDefaults/CodexDefaults) and are resolved by the translators.
+// by Protocol. The client masquerade (UA, editor versions, originator) is
+// NOT configurable: it lives as constants next to the translators — a
+// gateway that changes its expectations needs a code change, not config
+// noise in every profile.
 type Profile struct {
 	Name     string   `json:"name"`
 	Protocol Protocol `json:"protocol"`
@@ -42,8 +44,6 @@ type Profile struct {
 	AuthToken string `json:"auth_token,omitempty"`
 	// anthropic: x-api-key (native Anthropic); openai: Authorization: Bearer.
 	APIKey string `json:"api_key,omitempty"`
-	// openai/copilot/codex: gateway UA filters and client masquerade.
-	UserAgent string `json:"user_agent,omitempty"`
 	// anthropic/openai: extra upstream headers.
 	Headers map[string]string `json:"extra_headers,omitempty"`
 
@@ -52,19 +52,8 @@ type Profile struct {
 	// openai: map reasoning_content deltas to thinking blocks (reserved).
 	ReasoningToThinking bool `json:"reasoning_to_thinking,omitempty"`
 
-	// copilot: the VSCode masquerade (the gateway filters outsiders out).
-	DeviceClientID      string `json:"device_client_id,omitempty"`
-	IntegrationID       string `json:"integration_id,omitempty"`
-	EditorVersion       string `json:"editor_version,omitempty"`
-	EditorPluginVersion string `json:"editor_plugin_version,omitempty"`
-	// PrefillFix: nil = protocol default (copilot: enabled — its gateway
-	// rejects a final assistant message without the fix; openai: disabled);
-	// an explicit false disables it.
-	PrefillFix *bool `json:"prefill_fix,omitempty"`
-
-	// codex: auth.json location (default ~/.codex/auth.json) and CLI mimicry.
-	AuthFile   string `json:"auth_file,omitempty"`
-	Originator string `json:"originator,omitempty"`
+	// codex: auth.json location (default ~/.codex/auth.json).
+	AuthFile string `json:"auth_file,omitempty"`
 
 	Env    map[string]string `json:"env,omitempty"`
 	Models []Model           `json:"models"`

@@ -65,7 +65,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	if err != nil {
 		return "", fmt.Errorf("ccms: providers.json unavailable (%v) — run ccms init first", err)
 	}
-	profile := providers.Profiles.Get(profileKey)
+	profile := providers.Providers.Get(profileKey)
 	if profile == nil {
 		return "", fmt.Errorf("ccms: unknown profile: %s (see ccms list)", profileKey)
 	}
@@ -219,8 +219,8 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 
 	// managed: env keys of all profiles (past extras go away) + ANTHROPIC_*
 	managed := map[string]bool{}
-	for _, key := range providers.Profiles.Keys {
-		for k := range providers.Profiles.Get(key).Env {
+	for _, key := range providers.Providers.Keys {
+		for k := range providers.Providers.Get(key).Env {
 			managed[k] = true
 		}
 	}

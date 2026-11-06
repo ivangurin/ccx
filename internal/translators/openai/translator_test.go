@@ -14,9 +14,8 @@ import (
 
 func newTranslator(baseURL string) *openai.Translator {
 	return openai.New(&models.Profile{
-		Protocol:  models.ProtocolOpenAI,
-		BaseURL:   baseURL,
-		UserAgent: "ccms-test/1",
+		Protocol: models.ProtocolOpenAI,
+		BaseURL:  baseURL,
 	})
 }
 
@@ -40,7 +39,7 @@ func TestServeMessages_NonStream(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "the answer")
 	require.Contains(t, rec.Body.String(), "end_turn")
 	require.Equal(t, "Bearer sk-test", gotAuth)
-	require.Equal(t, "ccms-test/1", gotUA)
+	require.Equal(t, openai.DefaultUserAgent, gotUA)
 }
 
 func TestServeMessages_Stream(t *testing.T) {

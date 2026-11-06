@@ -77,23 +77,24 @@ func NewWithBase(codeURL, tokenURL, exchangeURL, store string) *Client {
 	}
 }
 
-// Masquerade constants (public values of the GitHub Copilot Chat extension,
-// same as config.CopilotDefaults): GitHub answers the default Go UA on the
-// Copilot endpoints with "Please only use approved clients"
-// (notification_id go_http_client, verified live on the token exchange) and
-// is suspected of stalling the device-flow poll for it — every client
-// request masquerades as the extension.
+// Masquerade constants (public values of the GitHub Copilot Chat extension
+// — the single source for the auth client AND the chat translator): GitHub
+// answers the default Go UA on the Copilot endpoints with "Please only use
+// approved clients" (notification_id go_http_client, verified live on the
+// token exchange) and is suspected of stalling the device-flow poll for it
+// — every Copilot-bound request masquerades as the extension.
 const (
-	masqueradeUA    = "GitHubCopilotChat/0.28.0"
-	editorVersion   = "vscode/1.99.0"
-	editorPluginVer = "copilot-chat/0.28.0"
+	MasqueradeUA    = "GitHubCopilotChat/0.28.0"
+	EditorVersion   = "vscode/1.99.0"
+	EditorPluginVer = "copilot-chat/0.28.0"
+	IntegrationID   = "copilot-chat"
 )
 
 // masquerade dresses a request as the Copilot Chat extension client.
 func masquerade(req *http.Request) {
-	req.Header.Set("User-Agent", masqueradeUA)
-	req.Header.Set("Editor-Version", editorVersion)
-	req.Header.Set("Editor-Plugin-Version", editorPluginVer)
+	req.Header.Set("User-Agent", MasqueradeUA)
+	req.Header.Set("Editor-Version", EditorVersion)
+	req.Header.Set("Editor-Plugin-Version", EditorPluginVer)
 }
 
 // StartDeviceFlow requests a device code.

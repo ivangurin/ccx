@@ -41,7 +41,7 @@ func TestCommandUse_MissingProfileArg(t *testing.T) {
 func TestCommandUse_NoDefaultModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Profiles.Set("bare", &models.Profile{Name: "Bare", Protocol: models.ProtocolAnthropic, Models: nil})
+	p.Providers.Set("bare", &models.Profile{Name: "Bare", Protocol: models.ProtocolAnthropic, Models: nil})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	var out bytes.Buffer
 
@@ -56,7 +56,7 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
-	p.Profiles.Set("zai", &models.Profile{
+	p.Providers.Set("zai", &models.Profile{
 		Name:     "z.ai",
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  "https://api.z.ai/api/anthropic",
@@ -139,7 +139,7 @@ func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {
 	// non-tty stdin: menu → number choice → use fails on the missing daemon
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Profiles.Set("zai", &models.Profile{
+	p.Providers.Set("zai", &models.Profile{
 		Name: "z.ai", Protocol: models.ProtocolAnthropic,
 		BaseURL: "https://x",
 		Models:  []models.Model{{ID: "m", Default: true}},

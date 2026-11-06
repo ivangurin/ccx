@@ -66,7 +66,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 	p := &models.Providers{
 		Daemon: &models.Daemon{Port: 4567},
 	}
-	p.Profiles.Set("zai", &models.Profile{
+	p.Providers.Set("zai", &models.Profile{
 		Name:      "z.ai (GLM)",
 		Protocol:  models.ProtocolAnthropic,
 		BaseURL:   "https://api.z.ai/api/anthropic",
@@ -77,7 +77,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 			{ID: "glm-flash", Label: "Flash"},
 		},
 	})
-	p.Profiles.Set("x5", &models.Profile{
+	p.Providers.Set("x5", &models.Profile{
 		Name:     "X5",
 		Protocol: models.ProtocolOpenAI,
 		BaseURL:  "https://gw",
@@ -229,7 +229,7 @@ func TestApply_OpenAI_AuthTokenWinsOverAPIKey(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Get("x5").AuthToken = "sk-x5"
+	p.Providers.Get("x5").AuthToken = "sk-x5"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	_, err = sw.Apply(context.Background(), "x5", "")
@@ -246,7 +246,7 @@ func TestApply_NoCredentials_PlaceholderToken(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Get("x5").APIKey = ""
+	p.Providers.Get("x5").APIKey = ""
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	_, err = sw.Apply(context.Background(), "x5", "")
@@ -343,7 +343,7 @@ func TestApply_LockSerializes(t *testing.T) {
 func TestApply_MissingSettingsFails(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Profiles.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
+	p.Providers.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	sw := switcher.New(sp.Config, &fakeDaemon{restartOK: true})

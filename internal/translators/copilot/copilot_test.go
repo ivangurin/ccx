@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	copilot_client "github.com/ivangurin/ccms/internal/clients/copilot"
 	"github.com/ivangurin/ccms/internal/models"
 	"github.com/ivangurin/ccms/internal/translators/copilot"
 	"github.com/stretchr/testify/require"
@@ -42,13 +43,7 @@ func TestCopilot_MasqueradeHeaders(t *testing.T) {
 	up := capturingUpstream(t, &hdrs, `{"id":"c","choices":[{"message":{"content":"x"},"finish_reason":"stop"}],"usage":{}}`, false)
 
 	tr := copilot.NewForTest(&models.Profile{
-		Protocol:            models.ProtocolCopilot,
-		DeviceClientID:      "cid",
-		IntegrationID:       "copilot-chat",
-		EditorVersion:       "vscode/1.99.0",
-		EditorPluginVersion: "copilot-chat/0.28.0",
-		UserAgent:           "GitHubCopilotChat/0.28.0",
-		PrefillFix:          ptrBool(true),
+		Protocol: models.ProtocolCopilot,
 	}, staticToken{token: "gho_secret"}, up.URL)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-5.5","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`))
@@ -61,9 +56,9 @@ func TestCopilot_MasqueradeHeaders(t *testing.T) {
 	// No X-Github-Api-Version: it is a github.com REST header — the Copilot
 	// chat gateway answers it with "bad request: invalid apiVersion" (live).
 	require.Empty(t, hdrs.Get("X-Github-Api-Version"))
-	require.Equal(t, "copilot-chat", hdrs.Get("Copilot-Integration-Id"))
-	require.Equal(t, "vscode/1.99.0", hdrs.Get("Editor-Version"))
-	require.Equal(t, "GitHubCopilotChat/0.28.0", hdrs.Get("User-Agent"))
+	require.Equal(t, copilot_client.IntegrationID, hdrs.Get("Copilot-Integration-Id"))
+	require.Equal(t, copilot_client.EditorVersion, hdrs.Get("Editor-Version"))
+	require.Equal(t, copilot_client.MasqueradeUA, hdrs.Get("User-Agent"))
 }
 
 func TestCopilot_PrefillRewritten(t *testing.T) {
@@ -76,7 +71,7 @@ func TestCopilot_PrefillRewritten(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.Profile{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"claude-sonnet-5.5","max_tokens":10,
 		"messages":[{"role":"user","content":"write"},{"role":"assistant","content":[{"type":"text","text":"hal"}]}]
@@ -91,34 +86,11 @@ func TestCopilot_PrefillRewritten(t *testing.T) {
 	require.NotContains(t, body, `"role":"assistant"`)
 }
 
-func TestCopilot_PrefillDisabled(t *testing.T) {
-	var body string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		body = string(raw)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"c","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
-	}))
-	t.Cleanup(up.Close)
-
-	tr := copilot.NewForTest(&models.Profile{PrefillFix: ptrBool(false)}, staticToken{token: "t"}, up.URL)
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
-		"model":"m","max_tokens":1,
-		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]
-	}`))
-	rec := httptest.NewRecorder()
-
-	tr.ServeMessages(rec, req)
-
-	require.NotContains(t, body, "[continuation]")
-	require.Contains(t, body, `"assistant"`)
-}
-
 func TestCopilot_Stream(t *testing.T) {
 	var hdrs http.Header
 	up := capturingUpstream(t, &hdrs, "", true)
 
-	tr := copilot.NewForTest(&models.Profile{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	rec := httptest.NewRecorder()
 
@@ -134,32 +106,6 @@ func TestCopilot_Ready_UsesTokenSource(t *testing.T) {
 	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, "http://127.0.0.1:1")
 	require.NoError(t, tr.Ready(context.Background()))
 }
-
-// I7: a profile without prefill_fix (handwritten) — the fix is still applied
-// (default true per the plan; the Copilot gateway rejects prefill without it).
-func TestI7_PrefillDefaultTrue(t *testing.T) {
-	var body string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		body = string(raw)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"c","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
-	}))
-	t.Cleanup(up.Close)
-
-	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, up.URL) // PrefillFix not set
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
-		"model":"m","max_tokens":1,
-		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]
-	}`))
-	rec := httptest.NewRecorder()
-
-	tr.ServeMessages(rec, req)
-
-	require.Contains(t, body, "[continuation]", "the prefill fix is applied by default")
-}
-
-func ptrBool(b bool) *bool { return &b }
 
 // An upstream error is relayed as is (status + JSON body).
 func TestCopilot_UpstreamErrorRelayed(t *testing.T) {

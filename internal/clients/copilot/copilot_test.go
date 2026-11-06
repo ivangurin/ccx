@@ -43,6 +43,8 @@ func (f *fakeGitHub) handler(_ *testing.T) http.Handler {
 	return mux
 }
 
+const userTokenKey = "user_access_token"
+
 func futureUnix() string {
 	return strconv.FormatInt(time.Now().Add(1*time.Hour).Unix(), 10)
 }
@@ -84,7 +86,7 @@ func TestToken_LazyExchangeAndCache(t *testing.T) {
 	t.Cleanup(gh.Close)
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	// already authenticated
-	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{"user_access_token": "gho_user"}, 0o600))
+	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{userTokenKey: "gho_user"}, 0o600))
 
 	client := newClient(t, gh, store)
 	tok1, err := client.Token(context.Background())
@@ -191,7 +193,7 @@ func TestExchange_ErrorIncludesBodyMessage(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
-	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]string{"user_access_token": "gho_u"}, 0o600))
+	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]string{userTokenKey: "gho_u"}, 0o600))
 	client := copilot.NewWithBase(up.URL, up.URL, up.URL, store)
 
 	_, err := client.Token(context.Background())

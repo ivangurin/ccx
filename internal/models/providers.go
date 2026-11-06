@@ -11,13 +11,13 @@ type Daemon struct {
 	Port int `json:"port,omitempty"`
 }
 
-// Providers is the root of providers.json (unversioned). The profile map's
-// file key is "providers"; files from older releases use "profiles" — both
-// load forever (decoder-level backward compat), ccms never writes
+// Providers is the root of providers.json (unversioned). The provider
+// map's file key is "providers"; files from older releases use "profiles" —
+// both load forever (decoder-level backward compat), ccms never writes
 // "profiles".
 type Providers struct {
-	Daemon   *Daemon    `json:"daemon,omitempty"`
-	Profiles ProfileMap `json:"providers"`
+	Daemon    *Daemon    `json:"daemon,omitempty"`
+	Providers ProfileMap `json:"providers"`
 }
 
 // ProfileMap is providers in file order (see OrderedMap).
@@ -52,9 +52,9 @@ func (p *Providers) UnmarshalJSON(b []byte) error {
 	if len(src) == 0 {
 		src = raw.Legacy
 	}
-	p.Profiles = ProfileMap{}
+	p.Providers = ProfileMap{}
 	if len(src) > 0 {
-		if err := json.Unmarshal(src, &p.Profiles); err != nil {
+		if err := json.Unmarshal(src, &p.Providers); err != nil {
 			return err
 		}
 	}

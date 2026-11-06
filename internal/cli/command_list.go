@@ -21,14 +21,14 @@ func runList(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
-	if providers.Profiles.Len() == 0 {
+	if providers.Providers.Len() == 0 {
 		fmt.Fprintln(stdout, "No profiles — add them to providers.json or run ccms init")
 
 		return 0
 	}
 
-	for _, key := range providers.Profiles.Keys {
-		prof := providers.Profiles.Get(key)
+	for _, key := range providers.Providers.Keys {
+		prof := providers.Providers.Get(key)
 		fmt.Fprintf(stdout, "%s · %s [%s]\n", key, prof.Name, prof.Protocol)
 		for _, m := range prof.Models {
 			fmt.Fprintf(stdout, "  %s\n", modelLine(m))

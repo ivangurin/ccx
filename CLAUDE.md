@@ -44,10 +44,11 @@ restart with new launch params). Data ownership: the CLI owns
 `settings.json` and `ccms-state.json`; upstream credentials live in
 `~/.claude/providers.json` (unversioned, flat — the map sits under the
 `providers` key, connection fields `base_url`/`api_key`/… sit directly in
-the provider entry, `protocol` decides which of them are meaningful;
-`daemon.port` is optional; a legacy `profiles` key / `version` /
-`daemon.auth_token` load forever and self-migrate on the next load —
-best-effort rewrite via SaveProviders).
+the provider entry, `protocol` decides which of them are meaningful; the
+client masquerade — UA, editor versions, integration id, originator,
+prefill — is code constants, not config; `daemon.port` is optional; a
+legacy `profiles` key / `version` / `daemon.auth_token` load forever and
+self-migrate on the next load — best-effort rewrite via SaveProviders).
 
 ### Layer structure
 

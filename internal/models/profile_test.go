@@ -53,32 +53,25 @@ func TestOrderedMap_HasGet(t *testing.T) {
 }
 
 // A flat profile round-trips through JSON: connection fields on the profile
-// root, no protocol-named block.
+// root, no protocol-named block, no masquerade (it lives in code constants).
 func TestProfile_FlatJSONRoundTrip(t *testing.T) {
-	prefill := false
 	in := &models.Profile{
-		Name:                "work",
-		Protocol:            models.ProtocolCopilot,
-		BaseURL:             "https://gw/v1",
-		APIKey:              "k",
-		UserAgent:           "ua",
-		MaxTokensField:      "max_completion_tokens",
-		DeviceClientID:      "cid",
-		IntegrationID:       "copilot-chat",
-		EditorVersion:       "vscode/1.99.0",
-		EditorPluginVersion: "copilot-chat/0.28.0",
-		PrefillFix:          &prefill,
-		AuthFile:            "~/.codex/auth.json",
-		Originator:          "codex_cli_rs",
-		Headers:             map[string]string{"X-Org": "x5"},
-		Env:                 map[string]string{"A": "1"},
-		Models:              []models.Model{{ID: "m", Default: true}},
+		Name:           "work",
+		Protocol:       models.ProtocolCopilot,
+		BaseURL:        "https://gw/v1",
+		APIKey:         "k",
+		MaxTokensField: "max_completion_tokens",
+		AuthFile:       "~/.codex/auth.json",
+		Headers:        map[string]string{"X-Org": "x5"},
+		Env:            map[string]string{"A": "1"},
+		Models:         []models.Model{{ID: "m", Default: true}},
 	}
 
 	raw, err := json.Marshal(in) //nolint:gosec // test fixture, no real secrets
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), `"anthropic"`, "no protocol blocks in the flat layout")
 	require.NotContains(t, string(raw), `"copilot":{`)
+	require.NotContains(t, string(raw), "user_agent", "the masquerade is not schema")
 
 	var out models.Profile
 	require.NoError(t, json.Unmarshal(raw, &out))

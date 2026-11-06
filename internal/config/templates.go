@@ -4,69 +4,10 @@ import (
 	"github.com/ivangurin/ccms/internal/models"
 )
 
-// prefillFixDefault is PrefillFix=true by default for the copilot template.
-var prefillFixDefault = true
-
-// CopilotDefaults is the VSCode client masquerade (the Copilot gateway
-// filters out outsiders); values are public ones from the GitHub Copilot
-// Chat extension. Used as a partial Profile: templates copy it wholesale,
-// ResolveCopilot fills empty fields from it.
-var CopilotDefaults = models.Profile{
-	DeviceClientID:      "Iv1.b507a08c87ecfe98",
-	IntegrationID:       "copilot-chat",
-	EditorVersion:       "vscode/1.99.0",
-	EditorPluginVersion: "copilot-chat/0.28.0",
-	UserAgent:           "GitHubCopilotChat/0.28.0",
-	PrefillFix:          &prefillFixDefault,
-}
-
-// CodexDefaults mimics the codex CLI (ChatGPT subscription Responses API).
-var CodexDefaults = models.Profile{
-	AuthFile:   "~/.codex/auth.json",
-	Originator: "codex_cli_rs",
-	UserAgent:  "codex_cli_rs/1.0.0",
-}
-
-// ResolveCopilot returns a copy of the profile with empty masquerade fields
-// filled from CopilotDefaults (a profile hand-written without them still
-// impersonates VSCode — v2 nil-block parity). The stored file is not touched.
-func ResolveCopilot(p *models.Profile) *models.Profile {
-	out := *p
-	if out.DeviceClientID == "" {
-		out.DeviceClientID = CopilotDefaults.DeviceClientID
-	}
-	if out.IntegrationID == "" {
-		out.IntegrationID = CopilotDefaults.IntegrationID
-	}
-	if out.EditorVersion == "" {
-		out.EditorVersion = CopilotDefaults.EditorVersion
-	}
-	if out.EditorPluginVersion == "" {
-		out.EditorPluginVersion = CopilotDefaults.EditorPluginVersion
-	}
-	if out.UserAgent == "" {
-		out.UserAgent = CopilotDefaults.UserAgent
-	}
-	if out.PrefillFix == nil {
-		out.PrefillFix = CopilotDefaults.PrefillFix
-	}
-
-	return &out
-}
-
-// ResolveCodex returns a copy of the profile with empty CLI-mimicry fields
-// filled from CodexDefaults (auth_file has its own default in clients/codex).
-func ResolveCodex(p *models.Profile) *models.Profile {
-	out := *p
-	if out.Originator == "" {
-		out.Originator = CodexDefaults.Originator
-	}
-	if out.UserAgent == "" {
-		out.UserAgent = CodexDefaults.UserAgent
-	}
-
-	return &out
-}
+// The client masquerade (UA, editor versions, integration id, originator)
+// is not config anymore: it lives as constants next to the translators and
+// the copilot client. A gateway that changes its expectations needs a code
+// change — not the same values copy-pasted into every profile.
 
 func builtinOpenAIProfile() *models.Profile {
 	return &models.Profile{
@@ -90,7 +31,7 @@ func builtinOpenAIProfile() *models.Profile {
 }
 
 func builtinCopilotProfile() *models.Profile {
-	p := &models.Profile{
+	return &models.Profile{
 		Name:     "GitHub Copilot (personal)",
 		Protocol: models.ProtocolCopilot,
 		Env:      map[string]string{},
@@ -109,15 +50,13 @@ func builtinCopilotProfile() *models.Profile {
 			{ID: "claude-sonnet-5", Label: "Claude Sonnet 5"},
 		},
 	}
-
-	return ResolveCopilot(p)
 }
 
 func builtinCodexProfile() *models.Profile {
-	p := &models.Profile{
+	return &models.Profile{
 		Name:     "ChatGPT Codex (subscription)",
 		Protocol: models.ProtocolCodex,
-		AuthFile: CodexDefaults.AuthFile, // spelled out in the file: it documents where the login lives
+		AuthFile: "~/.codex/auth.json", // spelled out in the file: it documents where the login lives
 		Env:      map[string]string{},
 		Models: []models.Model{
 			{ID: "gpt-6.1-codex", Label: "GPT-6.1 Codex", Default: true},
@@ -125,6 +64,4 @@ func builtinCodexProfile() *models.Profile {
 			{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol"},
 		},
 	}
-
-	return ResolveCodex(p)
 }
