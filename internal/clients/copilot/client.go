@@ -62,9 +62,13 @@ type Client struct {
 	expiry time.Time
 }
 
-// New creates a client (store is the copilot-auth.json path).
+// New creates a client (store is the copilot-auth.json path). The device
+// flow (code + token polling) lives on github.com; only the copilot-token
+// exchange is api.github.com — wiring tokenURL to APIBase made every poll
+// hit api.github.com/login/oauth/access_token (404, JSON body) and loop
+// silently forever.
 func New(store string) *Client {
-	return NewWithBase(GitHubBase, APIBase, APIBase, store)
+	return NewWithBase(GitHubBase, GitHubBase, APIBase, store)
 }
 
 // NewWithBase is a client with overridden URLs (tests).
@@ -152,6 +156,14 @@ func (c *Client) PollDeviceFlow(ctx context.Context, deviceCode string) (string,
 		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 		if err != nil {
 			continue // network noise — wait for the next tick
+		}
+		// A non-2xx must surface, not loop: the endpoint answers 200 with an
+		// error JSON for pending states; anything else is a wiring/transport
+		// problem (the 404-forever bug hid in the silent default branch).
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+
+			return "", fmt.Errorf("copilot: device flow poll: github responded %d", resp.StatusCode)
 		}
 		var payload struct {
 			AccessToken string `json:"access_token"`
