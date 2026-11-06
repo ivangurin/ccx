@@ -146,6 +146,34 @@ mocks, cleanup). Upstreams are httptest fakes; SSE uses golden sequences in
 testdata. **Test coverage must be at least 80%** (`make test`,
 `-coverpkg=./...`).
 
+### Manual daemon verification (live, without touching settings.json)
+
+`ccms serve` never writes settings.json — it is safe to run next to a live
+Claude Code session (unlike `ccms use`, which switches the provider that
+session itself routes through; verify switches in a sandbox CCMS_HOME, never
+live). One daemon per CCMS_HOME (`daemon.lock` flock) — `ccms stop` the
+previous one first. `--daemon` detaches (Setsid); a foreground serve under a
+harness may be reaped between turns.
+
+```bash
+./bin/ccms serve --daemon --provider <key> --port 4570   # pick a free port
+curl -s http://127.0.0.1:4570/health                      # answering == Ready() passed
+TOKEN=$(jq -r '.providers.<key>.auth_token' ~/.claude/providers.json)
+curl -s http://127.0.0.1:4570/v1/messages -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"<id>","max_tokens":300,"messages":[{"role":"user","content":"…"}]}'
+# same request with "stream":true for SSE; also /v1/models, /v1/messages/count_tokens
+```
+
+Credentials per protocol: openai is pass-through (send the profile token);
+copilot/codex own theirs (any placeholder bearer works). Prerequisites:
+codex needs `~/.codex/auth.json`; copilot needs a cached token
+(`ccms auth copilot` device flow) — without it the daemon exits at startup
+with `copilot: not authenticated`. Protocol quirks: codex is stream-only
+(501 non-stream) and must send `store:false`; corporate OpenAI-compatible
+gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
+`CCMS_PORT=<n> ./bin/ccms stop` stops a non-default-port daemon.
+
 ## Conventions
 
 - **One file per service method / handler / translator step**: `switcher/apply.go`,
