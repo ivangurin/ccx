@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 
 	"github.com/ivangurin/ccms/internal/models"
@@ -57,12 +59,26 @@ func (c *Config) LogDir() string {
 	return filepath.Join(c.Home, "ccms", "logs")
 }
 
-// LoadProviders reads providers.json (unversioned, flat profile layout; a
-// legacy "version" field in the file is ignored).
+// LoadProviders reads providers.json (unversioned; the map key is
+// "providers", the legacy "profiles" key keeps loading forever). A file
+// still carrying pre-rename residue (version, daemon.auth_token, the
+// "profiles" key) is rewritten in the current schema on the spot — see
+// providers_migrate.go.
 func LoadProviders(path string) (*models.Providers, error) {
-	var p models.Providers
-	if err := jsonfile.ReadJSON(path, &p); err != nil {
+	data, err := jsonfile.ReadRaw(path)
+	if err != nil {
 		return nil, err
+	}
+
+	var p models.Providers
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, fmt.Errorf("jsonfile: unmarshal %s: %w", path, err)
+	}
+
+	// Detection runs only after a successful decode: a broken file must
+	// surface the unmarshal error, never a migration attempt.
+	if hasLegacyProvidersResidue(data) {
+		migrateProvidersFile(path, &p)
 	}
 
 	return &p, nil
