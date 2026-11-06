@@ -18,7 +18,7 @@ func loadProvidersOrHint(cfg *config.Config, stdout io.Writer) *models.Providers
 		return providers
 	}
 	if errors.Is(err, config.ErrUnsupportedVersion) {
-		fmt.Fprintln(stdout, "providers.json is in the old format (v1) — run ccms init to migrate")
+		fmt.Fprintln(stdout, "providers.json is in an unsupported format — run ccms init --force to regenerate it")
 
 		return nil
 	}

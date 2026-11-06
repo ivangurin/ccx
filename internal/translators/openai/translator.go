@@ -14,13 +14,13 @@ import (
 
 // Translator: Anthropic → OpenAI chat/completions.
 type Translator struct {
-	cfg  *models.OpenAIConfig
-	http *http.Client
+	profile *models.Profile
+	http    *http.Client
 }
 
 // New builds a translator (client without timeouts: SSE).
 func New(profile *models.Profile) *Translator {
-	return &Translator{cfg: profile.OpenAI, http: &http.Client{}}
+	return &Translator{profile: profile, http: &http.Client{}}
 }
 
 // Protocol is openai.
@@ -40,7 +40,7 @@ func (t *Translator) Close(_ context.Context) error {
 
 // chatURL is base_url + /chat/completions (base is the v1 root).
 func (t *Translator) chatURL() string {
-	return t.cfg.BaseURL + "/chat/completions"
+	return t.profile.BaseURL + "/chat/completions"
 }
 
 func (t *Translator) do(body []byte) (*http.Response, error) {
@@ -49,13 +49,13 @@ func (t *Translator) do(body []byte) (*http.Response, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if t.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+t.cfg.APIKey)
+	if t.profile.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+t.profile.APIKey)
 	}
-	if t.cfg.UserAgent != "" {
-		req.Header.Set("User-Agent", t.cfg.UserAgent) // UA filters of corporate gateways
+	if t.profile.UserAgent != "" {
+		req.Header.Set("User-Agent", t.profile.UserAgent) // UA filters of corporate gateways
 	}
-	for k, v := range t.cfg.Headers {
+	for k, v := range t.profile.Headers {
 		req.Header.Set(k, v)
 	}
 
@@ -93,7 +93,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	field := t.cfg.MaxTokensFld
+	field := t.profile.MaxTokensField
 	if field == "" {
 		field = "max_tokens"
 	}

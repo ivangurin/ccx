@@ -58,7 +58,7 @@ func TestServeMessages_Stream(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := codex.NewForTest(&models.CodexConfig{}, fakeAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	reqBody := `{"model":"gpt-6.1-codex","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(reqBody))
 	rec := httptest.NewRecorder()
@@ -82,7 +82,7 @@ func TestServeMessages_FunctionCallStream(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := codex.NewForTest(&models.CodexConfig{}, fakeAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	rec := httptest.NewRecorder()
 
@@ -102,7 +102,7 @@ func TestServeMessages_Headers(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := codex.NewForTest(&models.CodexConfig{Originator: "codex_cli_rs", UserAgent: "codex_cli_rs/1.0"}, fakeAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{Originator: "codex_cli_rs", UserAgent: "codex_cli_rs/1.0"}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()
 
@@ -116,4 +116,29 @@ func TestServeMessages_Headers(t *testing.T) {
 
 func jsonUnmarshal(raw string, v any) error {
 	return json.Unmarshal([]byte(raw), v)
+}
+
+// An upstream error is relayed as is (already JSON — status + body), and
+// count_tokens answers locally even with an empty body.
+func TestServeMessages_UpstreamErrorRelayed(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":{"message":"bad token"}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.JSONEq(t, `{"error":{"message":"bad token"}}`, rec.Body.String())
+
+	rec2 := httptest.NewRecorder()
+	tr.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil))
+	require.Equal(t, http.StatusOK, rec2.Code)
+	require.Contains(t, rec2.Body.String(), "input_tokens")
 }

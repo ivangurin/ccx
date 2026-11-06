@@ -9,8 +9,9 @@ import (
 	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 )
 
-// ErrUnsupportedVersion means providers.json is not v2 (ccms init migration needed).
-var ErrUnsupportedVersion = errors.New("config: unsupported providers.json version (run ccms init)")
+// ErrUnsupportedVersion means providers.json is not v3 (regenerate it with
+// ccms init --force).
+var ErrUnsupportedVersion = errors.New("config: unsupported providers.json version (run ccms init --force)")
 
 // ProvidersPath is the providers.json path (CCMS_PROVIDERS overrides it).
 func (c *Config) ProvidersPath() string {
@@ -62,13 +63,13 @@ func (c *Config) LogDir() string {
 	return filepath.Join(c.Home, "ccms", "logs")
 }
 
-// LoadProviders reads and validates providers.json v2.
+// LoadProviders reads and validates providers.json v3 (flat profile layout).
 func LoadProviders(path string) (*models.Providers, error) {
 	var p models.Providers
 	if err := jsonfile.ReadJSON(path, &p); err != nil {
 		return nil, err
 	}
-	if p.Version != 2 {
+	if p.Version != 3 {
 		return nil, fmt.Errorf("%w: found version %d", ErrUnsupportedVersion, p.Version)
 	}
 

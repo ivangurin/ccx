@@ -44,13 +44,14 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 
 	providers := &models.Providers{
-		Version: 2,
+		Version: 3,
 		Daemon:  models.Daemon{Port: port, AuthToken: "e2e-token"},
 	}
 	providers.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (fake)",
 		Protocol:  models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{BaseURL: upstream.URL, AuthToken: "up-secret"},
+		BaseURL:   upstream.URL,
+		AuthToken: "up-secret",
 		Models:    []models.Model{{ID: "glm-5.3[1m]", Default: true}},
 	})
 	cfg, err := config.NewFromEnv()

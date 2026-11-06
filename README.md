@@ -20,7 +20,7 @@ claude-codex by a built-in codex client.
 
 ```bash
 make install                      # build + /opt/homebrew/bin/ccms (PREFIX=…)
-ccms init                         # v1 config migration or import + templates
+ccms init                         # import from settings/env.json + templates
 ccms list                         # profiles and models
 ccms auth copilot                 # GitHub OAuth (for the copilot profile)
 ccms use work                     # switch (the daemon starts automatically)
@@ -35,23 +35,29 @@ fly; an anthropic passthrough goes **direct** — the upstream `base_url` and
 credential are written straight into the config (bash-ccx semantics) and the
 unused daemon is stopped.
 
-## Config (`~/.claude/providers.json`, v2, 0600 permissions)
+## Config (`~/.claude/providers.json`, v3, 0600 permissions)
+
+Connection fields live directly in the profile — no protocol-named block;
+`protocol` determines which of them are meaningful.
 
 ```jsonc
 {
-  "version": 2,
+  "version": 3,
   "daemon": {"port": 4567, "auth_token": "<hex>"},
   "profiles": {
     "zai": {
       "name": "z.ai (GLM)",
       "protocol": "anthropic",
-      "anthropic": {"base_url": "https://api.z.ai/api/anthropic", "auth_token": "<key>"},
+      "base_url": "https://api.z.ai/api/anthropic",
+      "auth_token": "<key>",
       "models": [{"id": "glm-5.3[1m]", "label": "GLM 5.3", "default": true}]
     },
     "work": {
       "name": "Work gateway",
       "protocol": "openai",
-      "openai": {"base_url": "https://…/v1", "api_key": "<token>", "user_agent": "claude-cli/2.0.1"},
+      "base_url": "https://…/v1",
+      "api_key": "<token>",
+      "user_agent": "claude-cli/2.0.1",
       "models": […]
     }
   }

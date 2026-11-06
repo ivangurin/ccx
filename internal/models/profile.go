@@ -1,6 +1,7 @@
-// Package models holds ccms domain DTOs. Profile v2: upstream credentials live
-// in the protocol block (selected by Protocol), env holds only user extras
-// for settings.json (not ANTHROPIC_*).
+// Package models holds ccms domain DTOs. Profile v3: upstream connection
+// fields (base_url, api_key, …) live directly in the profile — Protocol
+// determines which of them are meaningful; env holds only user extras for
+// settings.json (not ANTHROPIC_*).
 package models
 
 // Protocol is the provider's upstream protocol; it determines the daemon's translator.
@@ -27,58 +28,46 @@ type Model struct {
 	Default bool   `json:"default,omitempty"`
 }
 
-// AnthropicConfig is a direct Anthropic-compatible upstream.
-type AnthropicConfig struct {
-	BaseURL   string            `json:"base_url"`
-	AuthToken string            `json:"auth_token,omitempty"` // Authorization: Bearer
-	APIKey    string            `json:"api_key,omitempty"`    // x-api-key (native Anthropic)
-	Headers   map[string]string `json:"extra_headers,omitempty"`
-}
+// Profile is a single provider. The connection fields sit at the top level
+// (v3: no protocol-named block); which of them are meaningful is determined
+// by Protocol. Masquerade/CLI-mimicry defaults for empty fields live in
+// config (CopilotDefaults/CodexDefaults) and are resolved by the translators.
+type Profile struct {
+	Name     string   `json:"name"`
+	Protocol Protocol `json:"protocol"`
 
-// OpenAIConfig is an OpenAI-compatible upstream (api.openai.com, corporate gateways).
-type OpenAIConfig struct {
-	BaseURL      string            `json:"base_url"`
-	APIKey       string            `json:"api_key,omitempty"`
-	UserAgent    string            `json:"user_agent,omitempty"` // gateway UA filters (x5)
-	MaxTokensFld string            `json:"max_tokens_field,omitempty"`
-	PrefillFix   bool              `json:"prefill_fix,omitempty"`
-	Reasoning    bool              `json:"reasoning_to_thinking,omitempty"`
-	Headers      map[string]string `json:"extra_headers,omitempty"`
-}
+	// Connection (anthropic, openai).
+	BaseURL string `json:"base_url,omitempty"`
+	// anthropic: Authorization: Bearer — wins over api_key (proxy.go precedence).
+	AuthToken string `json:"auth_token,omitempty"`
+	// anthropic: x-api-key (native Anthropic); openai: Authorization: Bearer.
+	APIKey string `json:"api_key,omitempty"`
+	// openai/copilot/codex: gateway UA filters and client masquerade.
+	UserAgent string `json:"user_agent,omitempty"`
+	// anthropic/openai: extra upstream headers.
+	Headers map[string]string `json:"extra_headers,omitempty"`
 
-// CopilotConfig is GitHub Copilot: masquerading as a VSCode client is
-// mandatory (the gateway filters others out), the prefill fix is on by
-// default (the gateway rejects a final assistant message — the
-// copilot-bridge precedent).
-type CopilotConfig struct {
-	DeviceClientID string `json:"device_client_id,omitempty"`
-	IntegrationID  string `json:"integration_id,omitempty"`
-	EditorVersion  string `json:"editor_version,omitempty"`
-	EditorPlugin   string `json:"editor_plugin_version,omitempty"`
-	UserAgent      string `json:"user_agent,omitempty"`
-	// PrefillFix: nil = enabled (default — the Copilot gateway rejects
-	// prefill without the fix); explicit false disables it.
+	// openai: max_tokens vs max_completion_tokens request field.
+	MaxTokensField string `json:"max_tokens_field,omitempty"`
+	// openai: map reasoning_content deltas to thinking blocks (reserved).
+	ReasoningToThinking bool `json:"reasoning_to_thinking,omitempty"`
+
+	// copilot: the VSCode masquerade (the gateway filters outsiders out).
+	DeviceClientID      string `json:"device_client_id,omitempty"`
+	IntegrationID       string `json:"integration_id,omitempty"`
+	EditorVersion       string `json:"editor_version,omitempty"`
+	EditorPluginVersion string `json:"editor_plugin_version,omitempty"`
+	// PrefillFix: nil = protocol default (copilot: enabled — its gateway
+	// rejects a final assistant message without the fix; openai: disabled);
+	// an explicit false disables it.
 	PrefillFix *bool `json:"prefill_fix,omitempty"`
-}
 
-// CodexConfig is a ChatGPT subscription via the Responses API; login reuses
-// the codex CLI (auth.json), no separate authentication is needed.
-type CodexConfig struct {
+	// codex: auth.json location (default ~/.codex/auth.json) and CLI mimicry.
 	AuthFile   string `json:"auth_file,omitempty"`
 	Originator string `json:"originator,omitempty"`
-	UserAgent  string `json:"user_agent,omitempty"`
-}
 
-// Profile is a single provider.
-type Profile struct {
-	Name      string            `json:"name"`
-	Protocol  Protocol          `json:"protocol"`
-	Anthropic *AnthropicConfig  `json:"anthropic,omitempty"`
-	OpenAI    *OpenAIConfig     `json:"openai,omitempty"`
-	Copilot   *CopilotConfig    `json:"copilot,omitempty"`
-	Codex     *CodexConfig      `json:"codex,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	Models    []Model           `json:"models"`
+	Env    map[string]string `json:"env,omitempty"`
+	Models []Model           `json:"models"`
 }
 
 // ResolveModel finds a model by name or id and returns the real id

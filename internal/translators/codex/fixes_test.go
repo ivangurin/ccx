@@ -34,7 +34,7 @@ func upstream(t *testing.T, events string) *httptest.Server {
 // I3: an empty Responses stream → 502 JSON (not a 200 empty SSE).
 func TestI3_EmptyResponsesStream_502(t *testing.T) {
 	up := upstream(t, "")
-	tr := codex.NewForTest(&models.CodexConfig{}, staticAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{}, staticAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()
 
@@ -52,7 +52,7 @@ func TestI4_TextAfterFunctionCall_SeparateBlock(t *testing.T) {
 			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"id\":\"it2\"}}\n\n"+
 			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"done\",\"item_id\":\"it2\"}\n\n"+
 			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
-	tr := codex.NewForTest(&models.CodexConfig{}, staticAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{}, staticAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":9,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()
 
@@ -75,7 +75,7 @@ func TestI5_TextBlocksClosed(t *testing.T) {
 		"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"id\":\"it1\"}}\n\n"+
 			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\",\"item_id\":\"it1\"}\n\n"+
 			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{}}}\n\n")
-	tr := codex.NewForTest(&models.CodexConfig{}, staticAuth{}, up.URL)
+	tr := codex.NewForTest(&models.Profile{}, staticAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":9,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()
 
@@ -92,6 +92,6 @@ func TestI5_TextBlocksClosed(t *testing.T) {
 func TestI6_NilConfigBlockNoPanic(t *testing.T) {
 	// checked at the router factory level: see the router test; here — the translators themselves
 	require.NotPanics(t, func() {
-		_ = codex.NewForTest(&models.CodexConfig{}, staticAuth{}, "http://127.0.0.1:1")
+		_ = codex.NewForTest(&models.Profile{}, staticAuth{}, "http://127.0.0.1:1")
 	})
 }

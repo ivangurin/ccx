@@ -10,17 +10,17 @@ import (
 	"github.com/ivangurin/ccms/internal/models"
 )
 
-// Translator is a passthrough to profile.Anthropic.BaseURL.
+// Translator is a passthrough to profile.BaseURL.
 type Translator struct {
-	cfg  *models.AnthropicConfig
-	http *http.Client
+	profile *models.Profile
+	http    *http.Client
 }
 
 // New builds a passthrough translator.
 func New(profile *models.Profile) *Translator {
 	return &Translator{
-		cfg:  profile.Anthropic,
-		http: &http.Client{}, // no timeouts: SSE lives long
+		profile: profile,
+		http:    &http.Client{}, // no timeouts: SSE lives long
 	}
 }
 

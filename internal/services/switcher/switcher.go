@@ -116,9 +116,6 @@ func (s *Switcher) applyDirect(
 	profile *models.Profile,
 	profileKey, model string,
 ) (string, error) {
-	if profile.Anthropic == nil {
-		return "", fmt.Errorf("ccms: profile %s (anthropic) has no anthropic block in providers.json — settings.json untouched", profileKey)
-	}
 	env, err := directEnv(profile, model)
 	if err != nil {
 		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous profile", err)
@@ -131,7 +128,7 @@ func (s *Switcher) applyDirect(
 		return "", err
 	}
 
-	out := fmt.Sprintf("Switched: %s · model %s · %s (direct)", profile.Name, model, profile.Anthropic.BaseURL)
+	out := fmt.Sprintf("Switched: %s · model %s · %s (direct)", profile.Name, model, profile.BaseURL)
 	if err := s.daemon.Stop(ctx); err != nil {
 		out += fmt.Sprintf("\nnote: the daemon is still running: %v (ccms stop)", err)
 	}
@@ -145,23 +142,23 @@ func (s *Switcher) applyDirect(
 // ANTHROPIC_CUSTOM_HEADERS (Name: Value, newline-separated, key-sorted for
 // deterministic output), plus the profile extras and model pinning.
 func directEnv(profile *models.Profile, model string) (map[string]string, error) {
-	if profile.Anthropic.BaseURL == "" {
-		return nil, fmt.Errorf("ccms: profile %s has no anthropic.base_url — add it to providers.json", profile.Name)
+	if profile.BaseURL == "" {
+		return nil, fmt.Errorf("ccms: profile %s has no base_url — add it to providers.json", profile.Name)
 	}
 	env := map[string]string{}
 	for k, v := range profile.Env {
 		env[k] = v
 	}
-	env["ANTHROPIC_BASE_URL"] = profile.Anthropic.BaseURL
-	if profile.Anthropic.AuthToken != "" {
-		env["ANTHROPIC_AUTH_TOKEN"] = profile.Anthropic.AuthToken
-	} else if profile.Anthropic.APIKey != "" {
-		env["ANTHROPIC_API_KEY"] = profile.Anthropic.APIKey
+	env["ANTHROPIC_BASE_URL"] = profile.BaseURL
+	if profile.AuthToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = profile.AuthToken
+	} else if profile.APIKey != "" {
+		env["ANTHROPIC_API_KEY"] = profile.APIKey
 	}
-	if len(profile.Anthropic.Headers) > 0 {
-		parts := make([]string, 0, len(profile.Anthropic.Headers))
-		for _, key := range slices.Sorted(maps.Keys(profile.Anthropic.Headers)) {
-			parts = append(parts, key+": "+profile.Anthropic.Headers[key])
+	if len(profile.Headers) > 0 {
+		parts := make([]string, 0, len(profile.Headers))
+		for _, key := range slices.Sorted(maps.Keys(profile.Headers)) {
+			parts = append(parts, key+": "+profile.Headers[key])
 		}
 		env["ANTHROPIC_CUSTOM_HEADERS"] = strings.Join(parts, "\n")
 	}

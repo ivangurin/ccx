@@ -95,14 +95,14 @@ func (s *Service) Use(ctx context.Context, profileKey, model string) error {
 func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.Translator, error) {
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
-		if profile.Anthropic == nil {
-			return nil, errors.New("profile has no anthropic block (base_url) — fill it in via ccms edit")
+		if profile.BaseURL == "" {
+			return nil, errors.New("profile has no base_url — fill it in via ccms edit")
 		}
 
 		return anthropic.New(profile), nil
 	case models.ProtocolOpenAI:
-		if profile.OpenAI == nil {
-			return nil, errors.New("profile has no openai block (base_url) — fill it in via ccms edit")
+		if profile.BaseURL == "" {
+			return nil, errors.New("profile has no base_url — fill it in via ccms edit")
 		}
 
 		return openai.New(profile), nil
@@ -112,8 +112,8 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 		return copilot.New(profile, copilot_client.New(store)), nil
 	case models.ProtocolCodex:
 		authPath := codex.DefaultAuthPath()
-		if profile.Codex != nil && profile.Codex.AuthFile != "" {
-			authPath = expandHome(profile.Codex.AuthFile)
+		if profile.AuthFile != "" {
+			authPath = expandHome(profile.AuthFile)
 		}
 
 		return codex_tr.New(profile, codex.New(authPath)), nil

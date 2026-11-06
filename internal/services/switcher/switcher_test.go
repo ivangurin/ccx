@@ -64,13 +64,14 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 
 	// providers.json: zai (anthropic, no extras), x5 (openai + an extra key)
 	p := &models.Providers{
-		Version: 2,
+		Version: 3,
 		Daemon:  models.Daemon{Port: 4567, AuthToken: "daemon-token"},
 	}
 	p.Profiles.Set("zai", &models.Profile{
 		Name:      "z.ai (GLM)",
 		Protocol:  models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{BaseURL: "https://api.z.ai/api/anthropic", AuthToken: "sk-z"},
+		BaseURL:   "https://api.z.ai/api/anthropic",
+		AuthToken: "sk-z",
 		Env:       map[string]string{},
 		Models: []models.Model{
 			{ID: "glm-5.3[1m]", Name: "glm-5.3", Label: "GLM 5.3", Default: true},
@@ -80,7 +81,8 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 	p.Profiles.Set("x5", &models.Profile{
 		Name:     "X5",
 		Protocol: models.ProtocolOpenAI,
-		OpenAI:   &models.OpenAIConfig{BaseURL: "https://gw", APIKey: "k"},
+		BaseURL:  "https://gw",
+		APIKey:   "k",
 		Env:      map[string]string{"CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true"},
 		Models:   []models.Model{{ID: "copilot-code-large", Default: true}},
 	})
@@ -312,7 +314,7 @@ func TestApply_LockSerializes(t *testing.T) {
 
 func TestApply_MissingSettingsFails(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 2}
+	p := &models.Providers{Version: 3}
 	p.Profiles.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 

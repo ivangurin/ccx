@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ivangurin/ccms/internal/clients/codex"
+	"github.com/ivangurin/ccms/internal/config"
 	"github.com/ivangurin/ccms/internal/models"
 	"github.com/ivangurin/ccms/internal/pkg/sse"
 )
@@ -65,25 +66,21 @@ type AuthSource interface {
 
 // Translator is the codex translator.
 type Translator struct {
-	cfg   *models.CodexConfig
-	auths AuthSource
-	base  string
-	http  *http.Client
+	profile *models.Profile
+	auths   AuthSource
+	base    string
+	http    *http.Client
 }
 
-// New builds a translator.
+// New builds a translator. Empty mimicry fields are resolved from
+// config.CodexDefaults; the auth file location is resolved by the router.
 func New(profile *models.Profile, auths AuthSource) *Translator {
-	cfg := profile.Codex
-	if cfg == nil {
-		cfg = &models.CodexConfig{AuthFile: codex.DefaultAuthPath(), Originator: "codex_cli_rs", UserAgent: "codex_cli_rs/1.0"}
-	}
-
-	return &Translator{cfg: cfg, auths: auths, base: codex.APIBase, http: &http.Client{}}
+	return &Translator{profile: config.ResolveCodex(profile), auths: auths, base: codex.APIBase, http: &http.Client{}}
 }
 
 // NewForTest is one with an overridden base.
-func NewForTest(cfg *models.CodexConfig, auths AuthSource, baseURL string) *Translator {
-	return &Translator{cfg: cfg, auths: auths, base: baseURL, http: &http.Client{}}
+func NewForTest(profile *models.Profile, auths AuthSource, baseURL string) *Translator {
+	return &Translator{profile: config.ResolveCodex(profile), auths: auths, base: baseURL, http: &http.Client{}}
 }
 
 // Protocol is codex.
@@ -275,11 +272,11 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	if auth.AccountID != "" {
 		upReq.Header.Set("Chatgpt-Account-Id", auth.AccountID)
 	}
-	if t.cfg.Originator != "" {
-		upReq.Header.Set("Originator", t.cfg.Originator)
+	if t.profile.Originator != "" {
+		upReq.Header.Set("Originator", t.profile.Originator)
 	}
-	if t.cfg.UserAgent != "" {
-		upReq.Header.Set("User-Agent", t.cfg.UserAgent)
+	if t.profile.UserAgent != "" {
+		upReq.Header.Set("User-Agent", t.profile.UserAgent)
 	}
 
 	resp, err := t.http.Do(upReq)

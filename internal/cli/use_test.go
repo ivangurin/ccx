@@ -2,7 +2,9 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"net"
+	"os"
 	"strconv"
 	"testing"
 
@@ -17,7 +19,7 @@ const cmdUse = "use"
 
 func TestCommandUse_UnknownProfileFails(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{Version: 2}))
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{Version: 3}))
 	var out bytes.Buffer
 
 	code := cli.Execute([]string{cmdUse, "ghost"}, &out)
@@ -38,7 +40,7 @@ func TestCommandUse_MissingProfileArg(t *testing.T) {
 
 func TestCommandUse_NoDefaultModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 2}
+	p := &models.Providers{Version: 3}
 	p.Profiles.Set("bare", &models.Profile{Name: "Bare", Protocol: models.ProtocolAnthropic, Models: nil})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	var out bytes.Buffer
@@ -47,6 +49,45 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 
 	require.NotEqual(t, 0, code)
 	require.Contains(t, out.String(), "no default model")
+}
+
+// A successful direct switch with an explicit model alias: settings.json and
+// state are written inside the sandbox home.
+func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	p.Profiles.Set("zai", &models.Profile{
+		Name:     "z.ai",
+		Protocol: models.ProtocolAnthropic,
+		BaseURL:  "https://api.z.ai/api/anthropic",
+		Models: []models.Model{
+			{ID: "glm-5.3[1m]", Name: "glm-5.3", Default: true},
+			{ID: "glm-flash", Name: "flash"},
+		},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
+	var out bytes.Buffer
+
+	code := cli.Execute([]string{cmdUse, "zai", "flash"}, &out)
+
+	require.Equal(t, 0, code)
+	require.Contains(t, out.String(), "direct")
+	require.Contains(t, out.String(), "glm-flash")
+
+	st := readStateFile(t, sp.Config.StatePath())
+	require.Equal(t, "zai", st.Profile)
+	require.Equal(t, "glm-flash", st.Model)
+}
+
+func readStateFile(t *testing.T, path string) models.State {
+	t.Helper()
+	raw, err := os.ReadFile(path) //nolint:gosec // test sandbox
+	require.NoError(t, err)
+	var st models.State
+	require.NoError(t, json.Unmarshal(raw, &st))
+
+	return st
 }
 
 func TestCommandUse_NoProvidersHint(t *testing.T) {
@@ -64,7 +105,7 @@ func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	port := freePort(t)
 	t.Setenv("CCMS_PORT", strconv.Itoa(port))
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{
-		Version: 2, Daemon: models.Daemon{Port: port, AuthToken: "x"},
+		Version: 3, Daemon: models.Daemon{Port: port, AuthToken: "x"},
 	}))
 	var out bytes.Buffer
 
@@ -97,11 +138,11 @@ func TestCommandAuth_CodexHint(t *testing.T) {
 func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {
 	// non-tty stdin: menu → number choice → use fails on the missing daemon
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Version: 2}
+	p := &models.Providers{Version: 3}
 	p.Profiles.Set("zai", &models.Profile{
 		Name: "z.ai", Protocol: models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{BaseURL: "https://x"},
-		Models:    []models.Model{{ID: "m", Default: true}},
+		BaseURL: "https://x",
+		Models:  []models.Model{{ID: "m", Default: true}},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	var out bytes.Buffer

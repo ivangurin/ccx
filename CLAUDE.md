@@ -38,7 +38,9 @@ go test ./internal/services/switcher/... -run TestName -count=1
 CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
 the Anthropic API to the active profile's translator). Data ownership: the
 CLI owns `settings.json`, the daemon owns `ccms-state.json`; upstream
-credentials live in `~/.claude/providers.json` (v2, `protocol` per profile).
+credentials live in `~/.claude/providers.json` (v3: flat — connection fields
+`base_url`/`api_key`/… sit directly in the profile, `protocol` decides which
+of them are meaningful).
 
 ### Layer structure
 
@@ -48,8 +50,10 @@ internal/
   cli/                                  stdlib command dispatcher (use/list/status/init/serve/...)
   app/                                  app.Run(): serve mode: config→logger→closer→provider→router→http
                                          spawn.go: detached daemon launch (Setsid, pidfile)
-  config/                               env config + CCMS_* paths + providers.json v2 (load/save, 0600)
-                                         migrate.go: v1→v2 + import from settings/env.json
+  config/                               env config + CCMS_* paths + providers.json v3 (load/save, 0600)
+                                         init.go: ccms init — import from settings/env.json + templates
+                                         (no migrations: an old-format file is only regenerated via
+                                         ccms init --force)
   models/                               DTOs: anthropic(+sse), openai, codex, profile, providers,
                                          settings, state, admin
   service_provider/                     DI: lazy singleton getters

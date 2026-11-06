@@ -1,0 +1,111 @@
+package config_test
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+
+	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccms/internal/models"
+	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	keyDisableThinking = "CLAUDE_CODE_DISABLE_EXTENDED_THINKING"
+	profCopilot        = "copilot"
+	profOpenAI         = "openai"
+)
+
+func TestInitProviders_ExistingWithoutForceFails(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+
+	_, err := config.InitProviders(sp.Config, false)
+	require.NoError(t, err) // first generation
+
+	_, err = config.InitProviders(sp.Config, false)
+	require.ErrorIs(t, err, config.ErrProvidersExist)
+
+	_, err = config.InitProviders(sp.Config, true) // --force
+	require.NoError(t, err)
+}
+
+func TestInitProviders_GeneratesDaemon(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+
+	_, err := config.InitProviders(sp.Config, false)
+	require.NoError(t, err)
+
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.Equal(t, 3, p.Version)
+	require.Equal(t, config.DefaultDaemonPort, p.Daemon.Port)
+	require.NotEmpty(t, p.Daemon.AuthToken)
+	require.Len(t, p.Daemon.AuthToken, 64) // 32 bytes hex
+}
+
+func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	// settings.json with an env block (z.ai) + truncated env.json (x5)
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
+		"env": {"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-z",
+			"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3[1m]", "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-haiku",
+			"API_TIMEOUT_MS": "3000"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(sp.FilePath("env.json"), []byte(
+		`"ANTHROPIC_BASE_URL": "https://api-copilot.x5.ru/aigw", "ANTHROPIC_AUTH_TOKEN": "gw", "CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true",`,
+	), 0o600))
+
+	res, err := config.InitProviders(sp.Config, false)
+	require.NoError(t, err)
+
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+
+	zai := p.Profiles.Get("zai")
+	require.NotNil(t, zai)
+	require.Equal(t, models.ProtocolAnthropic, zai.Protocol)
+	require.Equal(t, "sk-z", zai.AuthToken)
+	// primary+haiku models from ANTHROPIC_DEFAULT_*
+	require.Equal(t, "glm-5.3[1m]", zai.Models[0].ID)
+	require.True(t, zai.Models[0].Default)
+	require.Equal(t, "glm-haiku", zai.Models[1].ID)
+	// user keys from settings.json are NOT carried into the profile
+	require.NotContains(t, zai.Env, "API_TIMEOUT_MS")
+
+	x5 := p.Profiles.Get("x5")
+	require.NotNil(t, x5)
+	require.Equal(t, "https://api-copilot.x5.ru/aigw", x5.BaseURL)
+	// carry-extras: non-ANTHROPIC keys of env.json move over
+	require.Equal(t, map[string]string{keyDisableThinking: "true"}, x5.Env)
+
+	for _, key := range []string{profOpenAI, profCopilot, "codex"} {
+		require.NotNil(t, p.Profiles.Get(key), "template profile %s", key)
+	}
+	require.Equal(t, models.ProtocolOpenAI, p.Profiles.Get(profOpenAI).Protocol)
+	require.Equal(t, models.ProtocolCopilot, p.Profiles.Get(profCopilot).Protocol)
+	require.Equal(t, models.ProtocolCodex, p.Profiles.Get("codex").Protocol)
+
+	// the flat layout: connection fields sit directly in the profile
+	require.Equal(t, "https://api.openai.com/v1", p.Profiles.Get(profOpenAI).BaseURL)
+	require.Equal(t, "copilot-chat", p.Profiles.Get(profCopilot).IntegrationID)
+	require.Equal(t, "~/.codex/auth.json", p.Profiles.Get("codex").AuthFile)
+	require.Empty(t, res.Warnings)
+}
+
+func TestInitProviders_SettingsUntouched(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	settings := sp.Config.SettingsPath()
+	require.NoError(t, os.WriteFile(settings, []byte(`{"env": {"ANTHROPIC_BASE_URL": "https://x"}}`), 0o600)) //nolint:gosec // test sandbox
+
+	_, err := config.InitProviders(sp.Config, false)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(settings) //nolint:gosec // test sandbox
+	require.NoError(t, err)
+	var raw struct {
+		Env map[string]string `json:"env"`
+	}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	require.Equal(t, "https://x", raw.Env["ANTHROPIC_BASE_URL"])
+}

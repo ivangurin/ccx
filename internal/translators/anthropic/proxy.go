@@ -24,7 +24,7 @@ var hopHeaders = []string{
 // the body as is, the profile's authorization (Bearer|x-api-key) instead of the
 // client's daemon token.
 func (t *Translator) upstreamRequest(r *http.Request, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, t.cfg.BaseURL+r.URL.RequestURI(), body) //nolint:gosec // base_url comes from the owner config
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, t.profile.BaseURL+r.URL.RequestURI(), body) //nolint:gosec // base_url comes from the owner config
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: build request: %w", err)
 	}
@@ -39,12 +39,12 @@ func (t *Translator) upstreamRequest(r *http.Request, body io.Reader) (*http.Req
 	// authorization: the client's daemon token is replaced with the profile's credentials
 	req.Header.Del("Authorization")
 	req.Header.Del("X-Api-Key")
-	if t.cfg.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+t.cfg.AuthToken)
-	} else if t.cfg.APIKey != "" {
-		req.Header.Set("X-Api-Key", t.cfg.APIKey)
+	if t.profile.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+t.profile.AuthToken)
+	} else if t.profile.APIKey != "" {
+		req.Header.Set("X-Api-Key", t.profile.APIKey)
 	}
-	for key, val := range t.cfg.Headers {
+	for key, val := range t.profile.Headers {
 		req.Header.Set(key, val)
 	}
 

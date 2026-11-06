@@ -19,7 +19,7 @@ Usage:
   ccms use <profile> [model]
   ccms list               profiles and models
   ccms status             active profile/model, daemon state
-  ccms init [--force]     create providers.json (import/migration)
+  ccms init [--force]     create providers.json (import from settings/env)
   ccms edit               open providers.json in $EDITOR
   ccms serve              daemon (foreground, debugging)
   ccms stop               the daemon

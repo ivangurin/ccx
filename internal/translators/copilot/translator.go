@@ -29,35 +29,29 @@ type TokenSource interface {
 
 // Translator is the copilot translator.
 type Translator struct {
-	cfg    *models.CopilotConfig
-	tokens TokenSource
-	base   string
-	http   *http.Client
+	profile *models.Profile
+	tokens  TokenSource
+	base    string
+	http    *http.Client
 }
 
-// New builds a translator (base is overridden by tests).
+// New builds a translator (base is overridden by tests). Empty masquerade
+// fields are resolved from config.CopilotDefaults — a profile without them
+// still impersonates VSCode.
 func New(profile *models.Profile, tokens TokenSource) *Translator {
-	cfg := profile.Copilot
-	if cfg == nil {
-		cfg = &config.CopilotDefaults
-	}
 	base := CopilotAPIBase
 
-	return &Translator{cfg: cfg, tokens: tokens, base: base, http: &http.Client{}}
+	return &Translator{profile: config.ResolveCopilot(profile), tokens: tokens, base: base, http: &http.Client{}}
 }
 
 // NewForTest is a translator with an overridden base URL.
-func NewForTest(cfg *models.CopilotConfig, tokens TokenSource, baseURL string) *Translator {
-	return &Translator{cfg: cfg, tokens: tokens, base: baseURL, http: &http.Client{}}
+func NewForTest(profile *models.Profile, tokens TokenSource, baseURL string) *Translator {
+	return &Translator{profile: config.ResolveCopilot(profile), tokens: tokens, base: baseURL, http: &http.Client{}}
 }
 
 // prefillEnabled: nil = true (default) — the gateway rejects prefill without the fix.
-func prefillEnabled(cfg *models.CopilotConfig) bool {
-	if cfg == nil || cfg.PrefillFix == nil {
-		return true
-	}
-
-	return *cfg.PrefillFix
+func prefillEnabled(profile *models.Profile) bool {
+	return profile.PrefillFix == nil || *profile.PrefillFix
 }
 
 // Protocol is copilot.
@@ -82,17 +76,17 @@ func (t *Translator) headers(token string) http.Header {
 	h.Set("Authorization", "Bearer "+token)
 	h.Set("Content-Type", "application/json")
 	h.Set("X-Github-Api-Version", "2022-11-28")
-	if t.cfg.IntegrationID != "" {
-		h.Set("Copilot-Integration-Id", t.cfg.IntegrationID)
+	if t.profile.IntegrationID != "" {
+		h.Set("Copilot-Integration-Id", t.profile.IntegrationID)
 	}
-	if t.cfg.EditorVersion != "" {
-		h.Set("Editor-Version", t.cfg.EditorVersion)
+	if t.profile.EditorVersion != "" {
+		h.Set("Editor-Version", t.profile.EditorVersion)
 	}
-	if t.cfg.EditorPlugin != "" {
-		h.Set("Editor-Plugin-Version", t.cfg.EditorPlugin)
+	if t.profile.EditorPluginVersion != "" {
+		h.Set("Editor-Plugin-Version", t.profile.EditorPluginVersion)
 	}
-	if t.cfg.UserAgent != "" {
-		h.Set("User-Agent", t.cfg.UserAgent)
+	if t.profile.UserAgent != "" {
+		h.Set("User-Agent", t.profile.UserAgent)
 	}
 
 	return h
@@ -112,7 +106,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if prefillEnabled(t.cfg) {
+	if prefillEnabled(t.profile) {
 		body, _ = prefill.Rewrite(body)
 	}
 	var req models.MessagesRequest

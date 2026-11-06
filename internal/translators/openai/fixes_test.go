@@ -45,7 +45,7 @@ func TestI2_UpstreamStreamBreak_EmitsError(t *testing.T) {
 
 	tr := openai.New(&models.Profile{
 		Protocol: models.ProtocolOpenAI,
-		OpenAI:   &models.OpenAIConfig{BaseURL: up.URL},
+		BaseURL:  up.URL,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()
@@ -68,7 +68,7 @@ func TestI3_EmptyUpstreamStream_502(t *testing.T) {
 
 	tr := openai.New(&models.Profile{
 		Protocol: models.ProtocolOpenAI,
-		OpenAI:   &models.OpenAIConfig{BaseURL: up.URL},
+		BaseURL:  up.URL,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[]}`))
 	rec := httptest.NewRecorder()

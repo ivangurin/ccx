@@ -8,7 +8,7 @@ import (
 	"github.com/ivangurin/ccms/internal/config"
 )
 
-// runInit — ccms init [--force]: create/migrate providers.json.
+// runInit — ccms init [--force]: create providers.json from the environment.
 func runInit(args []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -33,9 +33,6 @@ func runInit(args []string, stdout io.Writer) int {
 	}
 
 	fmt.Fprintf(stdout, "Created %s (mode 600).\n", res.Path)
-	if res.Migrated {
-		fmt.Fprintln(stdout, "Migrated v1 → v2 (proxy commands → protocol).")
-	}
 	fmt.Fprintln(stdout, "Profiles:")
 	for _, key := range res.Profiles {
 		fmt.Fprintf(stdout, "  %s\n", key)

@@ -41,13 +41,14 @@ func TestCopilot_MasqueradeHeaders(t *testing.T) {
 	var hdrs http.Header
 	up := capturingUpstream(t, &hdrs, `{"id":"c","choices":[{"message":{"content":"x"},"finish_reason":"stop"}],"usage":{}}`, false)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{
-		DeviceClientID: "cid",
-		IntegrationID:  "copilot-chat",
-		EditorVersion:  "vscode/1.99.0",
-		EditorPlugin:   "copilot-chat/0.28.0",
-		UserAgent:      "GitHubCopilotChat/0.28.0",
-		PrefillFix:     ptrBool(true),
+	tr := copilot.NewForTest(&models.Profile{
+		Protocol:            models.ProtocolCopilot,
+		DeviceClientID:      "cid",
+		IntegrationID:       "copilot-chat",
+		EditorVersion:       "vscode/1.99.0",
+		EditorPluginVersion: "copilot-chat/0.28.0",
+		UserAgent:           "GitHubCopilotChat/0.28.0",
+		PrefillFix:          ptrBool(true),
 	}, staticToken{token: "gho_secret"}, up.URL)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-5.5","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`))
@@ -73,7 +74,7 @@ func TestCopilot_PrefillRewritten(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.Profile{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"claude-sonnet-5.5","max_tokens":10,
 		"messages":[{"role":"user","content":"write"},{"role":"assistant","content":[{"type":"text","text":"hal"}]}]
@@ -98,7 +99,7 @@ func TestCopilot_PrefillDisabled(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(false)}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.Profile{PrefillFix: ptrBool(false)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"m","max_tokens":1,
 		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]
@@ -115,7 +116,7 @@ func TestCopilot_Stream(t *testing.T) {
 	var hdrs http.Header
 	up := capturingUpstream(t, &hdrs, "", true)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
+	tr := copilot.NewForTest(&models.Profile{PrefillFix: ptrBool(true)}, staticToken{token: "t"}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	rec := httptest.NewRecorder()
 
@@ -128,7 +129,7 @@ func TestCopilot_Stream(t *testing.T) {
 }
 
 func TestCopilot_Ready_UsesTokenSource(t *testing.T) {
-	tr := copilot.NewForTest(&models.CopilotConfig{}, staticToken{token: "t"}, "http://127.0.0.1:1")
+	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, "http://127.0.0.1:1")
 	require.NoError(t, tr.Ready(context.Background()))
 }
 
@@ -144,7 +145,7 @@ func TestI7_PrefillDefaultTrue(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	tr := copilot.NewForTest(&models.CopilotConfig{}, staticToken{token: "t"}, up.URL) // PrefillFix not set
+	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, up.URL) // PrefillFix not set
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
 		"model":"m","max_tokens":1,
 		"messages":[{"role":"user","content":"x"},{"role":"assistant","content":"pre"}]
@@ -157,3 +158,22 @@ func TestI7_PrefillDefaultTrue(t *testing.T) {
 }
 
 func ptrBool(b bool) *bool { return &b }
+
+// An upstream error is relayed as is (status + JSON body).
+func TestCopilot_UpstreamErrorRelayed(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"error":"denied"}`)
+	}))
+	t.Cleanup(up.Close)
+
+	tr := copilot.NewForTest(&models.Profile{}, staticToken{token: "t"}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.JSONEq(t, `{"error":"denied"}`, rec.Body.String())
+}

@@ -2,6 +2,8 @@ package switcher_test
 
 import (
 	"context"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -63,7 +65,7 @@ func (f *fakeAdminDaemon) config(t *testing.T) *config.Config {
 	port, err := strconv.Atoi(u.Port())
 	require.NoError(t, err)
 
-	p := &models.Providers{Version: 2, Daemon: models.Daemon{Port: port, AuthToken: "tok"}}
+	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: port, AuthToken: "tok"}}
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	return sp.Config
@@ -100,4 +102,64 @@ func TestHTTPDaemon_StopStillResponding(t *testing.T) {
 	d := switcher.NewHTTPDaemon(f.config(t))
 	err := d.Stop(ctx)
 	require.ErrorContains(t, err, "still responding")
+}
+
+// Ensure/Use against a live fake daemon: an alive /health means no spawn,
+// /admin/use relays the profile/model pair with the daemon token.
+func TestHTTPDaemon_EnsureAndUse_LiveDaemon(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	var gotAuth, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+		case "/admin/use":
+			raw, _ := io.ReadAll(r.Body)
+			gotBody = string(raw)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	p.Profiles.Set("x", &models.Profile{Name: "X", Protocol: models.ProtocolOpenAI, BaseURL: "https://gw"})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	sp.Config.DaemonPort = serverPort(t, srv) // the fake daemon's port
+
+	d := switcher.NewHTTPDaemon(sp.Config)
+	require.NoError(t, d.Ensure(context.Background()))
+	require.NoError(t, d.Use(context.Background(), "x", "m"))
+	require.Equal(t, "Bearer tok", gotAuth)
+	require.JSONEq(t, `{"profile":"x","model":"m"}`, gotBody)
+}
+
+// Use surfaces the daemon's refusal (a not-ready translator) as an error.
+func TestHTTPDaemon_UseRefused(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"not ready"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	sp.Config.DaemonPort = serverPort(t, srv)
+
+	d := switcher.NewHTTPDaemon(sp.Config)
+	err := d.Use(context.Background(), "x", "m")
+	require.ErrorContains(t, err, "not ready")
+}
+
+// serverPort — the TCP port of a test server (errcheck-safe assertion).
+func serverPort(t *testing.T, srv *httptest.Server) int {
+	t.Helper()
+	addr, ok := srv.Listener.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+
+	return addr.Port
 }

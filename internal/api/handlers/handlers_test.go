@@ -20,14 +20,14 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	sp := suite_provider.NewProvider(t)
 
 	p := &models.Providers{
-		Version: 2,
+		Version: 3,
 		Daemon:  models.Daemon{Port: 0, AuthToken: "test-token"},
 	}
 	p.Profiles.Set("zai", &models.Profile{
-		Name:      "z.ai",
-		Protocol:  models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{BaseURL: "http://upstream.invalid"},
-		Models:    []models.Model{{ID: "glm", Label: "GLM", Default: true}},
+		Name:     "z.ai",
+		Protocol: models.ProtocolAnthropic,
+		BaseURL:  "http://upstream.invalid",
+		Models:   []models.Model{{ID: "glm", Label: "GLM", Default: true}},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
@@ -94,7 +94,7 @@ func TestAdminUse_SwitchesRoute(t *testing.T) {
 	t.Cleanup(up.Close)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Profiles.Get("zai").Anthropic.BaseURL = up.URL
+	p.Profiles.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	body := bytes.NewBufferString(`{"profile":"zai","model":"glm"}`)
@@ -112,6 +112,14 @@ func TestAdminUse_SwitchesRoute(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp2.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
+
+	// count_tokens is routed through the active translator too
+	req3, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages/count_tokens", strings.NewReader(`{}`)) //nolint:gosec // test
+	req3.Header.Set("Authorization", "Bearer test-token")
+	resp3, err := http.DefaultClient.Do(req3)
+	require.NoError(t, err)
+	defer func() { _ = resp3.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp3.StatusCode)
 }
 
 func TestAdminUse_UnknownProfile_400(t *testing.T) {

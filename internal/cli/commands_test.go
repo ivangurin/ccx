@@ -35,7 +35,7 @@ func TestCommandInit_CreatesProviders(t *testing.T) {
 
 func TestCommandInit_SecondRunSuggestsForce(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version": 2, "profiles": {}}`), 0o600))
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version": 3, "profiles": {}}`), 0o600))
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdInit}, &out)
@@ -48,7 +48,7 @@ func TestCommandInit_SecondRunSuggestsForce(t *testing.T) {
 func TestCommandInit_ForceRegenerates(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(),
-		[]byte(`{"version": 2, "daemon": {"port": 1, "auth_token": "old"}, "profiles": {}}`), 0o600))
+		[]byte(`{"version": 3, "daemon": {"port": 1, "auth_token": "old"}, "profiles": {}}`), 0o600))
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdInit, "--force"}, &out)
@@ -62,7 +62,7 @@ func TestCommandInit_ForceRegenerates(t *testing.T) {
 
 func writeProviders(t *testing.T, path string, keysInOrder []string) {
 	t.Helper()
-	p := &models.Providers{Version: 2, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
+	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "tok"}}
 	for _, k := range keysInOrder {
 		p.Profiles.Set(k, &models.Profile{
 			Name:     "name-" + k,
@@ -96,7 +96,7 @@ func TestCommandList_OrdersByFile(t *testing.T) {
 
 func TestCommandList_NoProvidersHint(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version": 2, "profiles": {}}`), 0o600))
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"version": 3, "profiles": {}}`), 0o600))
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdList}, &out)

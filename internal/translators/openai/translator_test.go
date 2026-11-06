@@ -14,8 +14,10 @@ import (
 
 func newTranslator(baseURL string) *openai.Translator {
 	return openai.New(&models.Profile{
-		Protocol: models.ProtocolOpenAI,
-		OpenAI:   &models.OpenAIConfig{BaseURL: baseURL, APIKey: "sk-test", UserAgent: "ccms-test/1"},
+		Protocol:  models.ProtocolOpenAI,
+		BaseURL:   baseURL,
+		APIKey:    "sk-test",
+		UserAgent: "ccms-test/1",
 	})
 }
 

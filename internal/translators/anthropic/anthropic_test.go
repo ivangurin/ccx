@@ -1,6 +1,7 @@
 package anthropic_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -44,7 +45,8 @@ func fakeUpstream(t *testing.T, status int, body string, chunks []string) *httpt
 func newTranslator(baseURL string) *anthropic.Translator {
 	return anthropic.New(&models.Profile{
 		Protocol:  models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{BaseURL: baseURL, AuthToken: "upstream-secret"},
+		BaseURL:   baseURL,
+		AuthToken: "upstream-secret",
 	})
 }
 
@@ -94,8 +96,9 @@ func TestPassthrough_ApiKeyProfile(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	tr := anthropic.New(&models.Profile{
-		Protocol:  models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{BaseURL: up.URL, APIKey: "native-key"},
+		Protocol: models.ProtocolAnthropic,
+		BaseURL:  up.URL,
+		APIKey:   "native-key",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
@@ -160,4 +163,11 @@ func TestPassthrough_UpstreamDown(t *testing.T) {
 
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Body.String(), "error")
+}
+
+func TestTranslator_TrivialLifecycle(t *testing.T) {
+	tr := newTranslator("http://upstream.invalid")
+	require.Equal(t, models.ProtocolAnthropic, tr.Protocol())
+	require.NoError(t, tr.Ready(context.Background()))
+	require.NoError(t, tr.Close(context.Background()))
 }

@@ -16,19 +16,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newDirectSwitcher — a switcher with a single anthropic profile "p" built
-// from the given config block.
-func newDirectSwitcher(t *testing.T, block *models.AnthropicConfig) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
+// newDirectSwitcher — a switcher with a single anthropic profile "p";
+// mutate tweaks the flat connection fields (base_url, credentials, headers).
+func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 
-	p := &models.Providers{Version: 2, Daemon: models.Daemon{Port: 4567, AuthToken: "daemon-token"}}
-	p.Profiles.Set("p", &models.Profile{
-		Name:      "P",
-		Protocol:  models.ProtocolAnthropic,
-		Anthropic: block,
-		Models:    []models.Model{{ID: "m1", Default: true}},
-	})
+	prof := &models.Profile{
+		Name:     "P",
+		Protocol: models.ProtocolAnthropic,
+		Models:   []models.Model{{ID: "m1", Default: true}},
+	}
+	if mutate != nil {
+		mutate(prof)
+	}
+	p := &models.Providers{Version: 3, Daemon: models.Daemon{Port: 4567, AuthToken: "daemon-token"}}
+	p.Profiles.Set("p", prof)
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"ANTHROPIC_STALE_KEY": "old"}}`), 0o600))
 
@@ -70,7 +73,7 @@ func TestApply_DirectAnthropic(t *testing.T) {
 }
 
 func TestApply_DirectStopFailureNonFatal(t *testing.T) {
-	sw, d, sp := newDirectSwitcher(t, &models.AnthropicConfig{BaseURL: "https://up", AuthToken: "t"})
+	sw, d, sp := newDirectSwitcher(t, func(p *models.Profile) { p.BaseURL, p.AuthToken = "https://up", "t" })
 	d.stopErr = errors.New("daemon did not stop")
 
 	out, err := sw.Apply(context.Background(), "p", "")
@@ -81,10 +84,10 @@ func TestApply_DirectStopFailureNonFatal(t *testing.T) {
 }
 
 func TestApply_DirectAPIKeyAndHeaders(t *testing.T) {
-	sw, _, sp := newDirectSwitcher(t, &models.AnthropicConfig{
-		BaseURL: "https://up",
-		APIKey:  "sk-ant",
-		Headers: map[string]string{"X-Trace": "1", "X-Org": "x5"},
+	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
+		p.BaseURL = "https://up"
+		p.APIKey = "sk-ant"
+		p.Headers = map[string]string{"X-Trace": "1", "X-Org": "x5"}
 	})
 
 	_, err := sw.Apply(context.Background(), "p", "")
@@ -97,20 +100,12 @@ func TestApply_DirectAPIKeyAndHeaders(t *testing.T) {
 }
 
 func TestApply_DirectNoBaseURL(t *testing.T) {
-	sw, _, sp := newDirectSwitcher(t, &models.AnthropicConfig{AuthToken: "t"})
+	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) { p.AuthToken = "t" })
 	before := readSettings(t, sp.Config.SettingsPath())
 
 	_, err := sw.Apply(context.Background(), "p", "")
 	require.ErrorContains(t, err, "base_url")
 	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath())) // untouched
-	require.NoFileExists(t, sp.Config.StatePath())
-}
-
-func TestApply_DirectNilBlock(t *testing.T) {
-	sw, _, sp := newDirectSwitcher(t, nil) // protocol without the config block
-
-	_, err := sw.Apply(context.Background(), "p", "")
-	require.ErrorContains(t, err, "anthropic block")
 	require.NoFileExists(t, sp.Config.StatePath())
 }
 

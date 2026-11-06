@@ -13,17 +13,15 @@ import (
 
 func sampleProviders() *models.Providers {
 	out := &models.Providers{
-		Version: 2,
+		Version: 3,
 		Daemon:  models.Daemon{Port: 4567, AuthToken: "tok"},
 	}
 	out.Profiles.Set("zai", &models.Profile{
-		Name:     "z.ai",
-		Protocol: models.ProtocolAnthropic,
-		Anthropic: &models.AnthropicConfig{
-			BaseURL:   "https://api.z.ai/api/anthropic",
-			AuthToken: "secret",
-		},
-		Models: []models.Model{{ID: "glm-5.3[1m]", Label: "GLM 5.3", Default: true}},
+		Name:      "z.ai",
+		Protocol:  models.ProtocolAnthropic,
+		BaseURL:   "https://api.z.ai/api/anthropic",
+		AuthToken: "secret",
+		Models:    []models.Model{{ID: "glm-5.3[1m]", Label: "GLM 5.3", Default: true}},
 	})
 
 	return out
@@ -72,7 +70,7 @@ func TestSaveLoadProviders_PreservesProfileOrder(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	path := filepath.Join(sp.HomeDir(), "providers.json")
 
-	in := &models.Providers{Version: 2}
+	in := &models.Providers{Version: 3}
 	for _, key := range []string{"zai", "x5", profOpenAI2, profCopilot} {
 		in.Profiles.Set(key, &models.Profile{Name: key, Protocol: models.ProtocolAnthropic})
 	}
@@ -101,8 +99,14 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 
 	t.Setenv("CCMS_PROVIDERS", "/tmp/custom-providers.json")
 	t.Setenv("CCMS_SETTINGS", "/tmp/custom-settings.json")
+	t.Setenv("CCMS_STATE", "/tmp/custom-state.json")
+	t.Setenv("CCMS_BACKUP_DIR", "/tmp/custom-backups")
+	t.Setenv("CCMS_LOG_DIR", "/tmp/custom-logs")
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/custom-providers.json", cfg.ProvidersPath())
 	require.Equal(t, "/tmp/custom-settings.json", cfg.SettingsPath())
+	require.Equal(t, "/tmp/custom-state.json", cfg.StatePath())
+	require.Equal(t, "/tmp/custom-backups", cfg.BackupDir())
+	require.Equal(t, "/tmp/custom-logs", cfg.LogDir())
 }
