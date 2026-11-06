@@ -1,34 +1,31 @@
 // Package handlers — the daemon's HTTP layer: Anthropic-compatible /v1/* for
-// Claude Code and /admin/* for the CLI. One port; a static token from
-// providers.json (daemon.auth_token) guards both.
+// Claude Code and /admin/* for the CLI. One port, localhost-only; no auth
+// middleware — upstream credentials are pass-through (openai) or owned by the
+// translator (copilot/codex), so the daemon has no secret of its own.
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ivangurin/ccms/internal/api/middleware"
 	"github.com/ivangurin/ccms/internal/models"
 )
 
 // Routerer — the minimum the HTTP layer needs (implemented by services/router.Service).
 type Routerer interface {
-	Use(ctx context.Context, profile, model string) error
-	Active() (string, string, bool)
-	Ready() bool
+	Active() (provider string, protocol models.Protocol, ok bool)
 	ServeMessages(w http.ResponseWriter, r *http.Request)
 	ServeCountTokens(w http.ResponseWriter, r *http.Request)
 	Models() []models.Model
-	AuthToken() string
 }
 
 // Deps — HTTP layer dependencies.
 type Deps struct {
 	Router  Routerer
 	Version string
+	Port    int // the resolved listen port (reported by /admin/health)
 	Stop    func() // graceful shutdown (called from /admin/stop)
 }
 
@@ -41,17 +38,12 @@ func New(d Deps) http.Handler {
 
 	r.Get("/health", handleHealth(d))
 
-	r.Group(func(pr chi.Router) {
-		pr.Use(middleware.Auth(d.Router.AuthToken))
-		pr.Post("/v1/messages", d.Router.ServeMessages)
-		pr.Post("/v1/messages/count_tokens", d.Router.ServeCountTokens)
-		pr.Get("/v1/models", handleModels(d.Router))
+	r.Post("/v1/messages", d.Router.ServeMessages)
+	r.Post("/v1/messages/count_tokens", d.Router.ServeCountTokens)
+	r.Get("/v1/models", handleModels(d.Router))
 
-		pr.Get("/admin/health", handleAdminHealth(d))
-		pr.Get("/admin/ready", handleAdminReady(d.Router))
-		pr.Post("/admin/use", handleAdminUse(d.Router))
-		pr.Post("/admin/stop", handleAdminStop(d))
-	})
+	r.Get("/admin/health", handleAdminHealth(d))
+	r.Post("/admin/stop", handleAdminStop(d))
 
 	return r
 }
@@ -75,49 +67,19 @@ func handleModels(rt Routerer) http.HandlerFunc {
 
 func handleAdminHealth(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		profile, model, active := d.Router.Active()
+		provider, protocol, active := d.Router.Active()
 		resp := map[string]any{
 			"version": d.Version,
-			"ready":   d.Router.Ready(),
-			"active":  nil,
+			// /health answering already implies the route is ready (Build ran
+			// before listening); kept as a constant for probe compatibility.
+			"ready":  true,
+			"port":   d.Port,
+			"active": nil,
 		}
 		if active {
-			resp["active"] = map[string]string{"profile": profile, "model": model}
+			resp["active"] = map[string]string{"provider": provider, "protocol": string(protocol)}
 		}
 		writeJSON(w, http.StatusOK, resp)
-	}
-}
-
-func handleAdminReady(rt Routerer) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		if !rt.Ready() {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{statusField: "not ready"})
-
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{statusField: "ready"})
-	}
-}
-
-func handleAdminUse(rt Routerer) http.HandlerFunc {
-	type useRequest struct {
-		Profile string `json:"profile"`
-		Model   string `json:"model"`
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req useRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Profile == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "expected {profile, model}"})
-
-			return
-		}
-		if err := rt.Use(r.Context(), req.Profile, req.Model); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "profile": req.Profile, "model": req.Model})
 	}
 }
 

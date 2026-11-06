@@ -1,5 +1,6 @@
-// Package app — daemon wiring for ccms serve: config → logger → closer →
-// router (restore from state) → http → signals → graceful shutdown.
+// Package app — daemon wiring for ccms serve: config → logger → lock →
+// route (Build from --provider, Ready before listening) → http → signals →
+// graceful shutdown.
 package app
 
 import (
@@ -25,6 +26,14 @@ import (
 // Version — daemon version (ldflags).
 var Version = "dev"
 
+// ServeOptions — the daemon's launch parameters (ccms serve flags).
+type ServeOptions struct {
+	// Provider is the providers.json key the route is built from (required).
+	Provider string
+	// Port is the listen port; 0 = resolve (CCMS_PORT > daemon.port > 4567).
+	Port int
+}
+
 // App — the daemon.
 type App struct {
 	cfg *config.Config
@@ -36,11 +45,14 @@ func New(cfg *config.Config, log *slog.Logger) *App {
 	return &App{cfg: cfg, log: log}
 }
 
-// Run blocks until a signal/ctx cancel (or /admin/stop). A double start is
-// prevented: flock daemon.lock, the loser exits quietly (the winning
-// process will serve it — a race of two parallel ccms use).
-func (a *App) Run(ctx context.Context) error {
-	lock, err := flock.TryLock(a.daemonLockPath())
+// Run blocks until a signal/ctx cancel (or /admin/stop). The route is built
+// from opts BEFORE listening: /health answering means the translator passed
+// Ready(); a startup failure exits non-zero with the reason in daemon.log.
+// A double start is prevented by flock daemon.lock; the lock is retried for
+// a few seconds first — a restarting daemon may still hold it during its
+// graceful shutdown (the spawner waits for the port to close, not the exit).
+func (a *App) Run(ctx context.Context, opts ServeOptions) error {
+	lock, err := a.acquireLock()
 	if err != nil {
 		a.log.Info("daemon already running — exiting", "err", err)
 
@@ -48,21 +60,32 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	svc := router.New(a.cfg, a.log)
-	svc.Restore(ctx)
+	svc, err := router.Build(ctx, a.cfg, a.log, opts.Provider)
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
+
+	port := opts.Port
+	if port == 0 {
+		port = a.fallbackPort()
+	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cl := closer.New()
 	cl.Add("router", func() error { return svc.Close(context.Background()) })
 
-	srv, err := httpserver.New(a.listenAddr(), handlers.New(handlers.Deps{
+	srv, err := httpserver.New(addr, handlers.New(handlers.Deps{
 		Router:  svc,
 		Version: Version,
+		Port:    port,
 		Stop:    cancel,
 	}))
 	if err != nil {
-		return fmt.Errorf("app: listen %s: %w", a.listenAddr(), err)
+		_ = cl.Close(context.Background())
+
+		return fmt.Errorf("app: listen %s: %w", addr, err)
 	}
 	cl.Add("http", func() error {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -76,7 +99,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Start() }()
-	a.log.Info("ccms daemon listening", "addr", a.listenAddr(), "version", Version)
+	a.log.Info("ccms daemon listening", "addr", addr, "provider", opts.Provider, "version", Version)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -100,17 +123,33 @@ func (a *App) Run(ctx context.Context) error {
 	return cl.Close(closeCtx)
 }
 
-func (a *App) listenAddr() string {
-	port := a.cfg.DaemonPort
-	if port == 0 {
-		if providers, err := config.LoadProviders(a.cfg.ProvidersPath()); err == nil {
-			port = providers.Daemon.Port
-		} else {
-			port = config.DefaultDaemonPort
+// acquireLock takes daemon.lock with a bounded retry: the previous daemon may
+// hold it for a moment while its graceful shutdown drains in-flight requests.
+func (a *App) acquireLock() (*flock.Lock, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		lock, err := flock.TryLock(a.daemonLockPath())
+		if err == nil {
+			return lock, nil
 		}
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// fallbackPort resolves the listen port when ServeOptions.Port is unset:
+// CCMS_PORT > providers.json daemon.port > 4567.
+func (a *App) fallbackPort() int {
+	if a.cfg.DaemonPort != 0 {
+		return a.cfg.DaemonPort
+	}
+	if providers, err := config.LoadProviders(a.cfg.ProvidersPath()); err == nil && providers.Daemon.Port != 0 {
+		return providers.Daemon.Port
 	}
 
-	return fmt.Sprintf("127.0.0.1:%d", port)
+	return config.DefaultDaemonPort
 }
 
 func (a *App) daemonLockPath() string {

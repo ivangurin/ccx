@@ -173,3 +173,25 @@ func TestCommand_MissingProvidersInitHint(t *testing.T) {
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "ccms init")
 }
+
+func TestServe_RequiresProvider(t *testing.T) {
+	suite_provider.NewProvider(t) // sandbox: a broken config must not matter
+
+	var out bytes.Buffer
+	code := cli.Execute([]string{"serve"}, &out)
+
+	require.Equal(t, 1, code)
+	require.Contains(t, out.String(), "--provider")
+}
+
+func TestServe_FlagParsing(t *testing.T) {
+	opts, err := cli.ParseServeForTest([]string{"--provider", "work", "--port", "4600", "--daemon"})
+	require.NoError(t, err)
+	require.Equal(t, "work", opts.Provider)
+	require.Equal(t, 4600, opts.Port)
+}
+
+func TestServe_FlagParsing_UnknownFlagFails(t *testing.T) {
+	_, err := cli.ParseServeForTest([]string{"--provider", "work", "--nonsense"})
+	require.Error(t, err)
+}

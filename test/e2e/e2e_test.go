@@ -33,6 +33,8 @@ func freePort(t *testing.T) int {
 	return port
 }
 
+// End-to-end: the daemon launched with --provider zai proxies without any
+// client token (pass-through; localhost-only surface).
 func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	// fake upstream of an Anthropic-compatible provider
 	upstream := startFakeUpstream(t)
@@ -58,51 +60,41 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, config.SaveProviders(cfg.ProvidersPath(), providers))
 
-	// state: restart scenario — the route is restored from state
-	require.NoError(t, os.WriteFile(cfg.StatePath(), []byte(`{"profile":"zai","model":"glm-5.3[1m]","updated":"now"}`), 0o600))
-
 	log, err := logger.New(os.Stderr, "error", "json")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = app.New(cfg, log).Run(ctx) }()
+	go func() { _ = app.New(cfg, log).Run(ctx, app.ServeOptions{Provider: "zai", Port: port}) }()
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool { return alive(base + "/health") }, 5*time.Second, 50*time.Millisecond, "daemon did not come up")
 
-	t.Run("restore from state routes messages", func(t *testing.T) {
-		body := postJSON(t, base+"/v1/messages", "e2e-token", `{"model":"glm-5.3[1m]","stream":false}`)
-		require.JSONEq(t, `{"content":[{"type":"text","text":"hi"}]}`, body)
-	})
-
-	t.Run("unauthorized without token", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodPost, base+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
+	t.Run("messages route through without a client token", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, base+"/v1/messages", strings.NewReader(`{"model":"glm-5.3[1m]","stream":false}`)) //nolint:gosec // test
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer func() { _ = resp.Body.Close() }()
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.JSONEq(t, `{"content":[{"type":"text","text":"hi"}]}`, string(body))
 	})
 
-	t.Run("admin health reports active", func(t *testing.T) {
+	t.Run("admin health reports the launch state", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, base+"/admin/health", nil) //nolint:gosec // test
-		req.Header.Set("Authorization", "Bearer e2e-token")
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer func() { _ = resp.Body.Close() }()
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		require.Contains(t, string(body), `"zai"`)
-	})
-
-	t.Run("admin use switches", func(t *testing.T) {
-		body := postJSON(t, base+"/admin/use", "e2e-token", `{"profile":"zai","model":"glm-5.3[1m]"}`)
-		require.Contains(t, body, `"ok"`)
+		require.Contains(t, string(body), `"anthropic"`)
+		require.Contains(t, string(body), strconv.Itoa(port))
 	})
 
 	t.Run("models endpoint", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil) //nolint:gosec // test
-		req.Header.Set("Authorization", "Bearer e2e-token")
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer func() { _ = resp.Body.Close() }()
@@ -123,24 +115,11 @@ func startFakeUpstream(t *testing.T) *httptest.Server {
 }
 
 func alive(url string) bool {
-	resp, err := (&http.Client{Timeout: time.Second}).Get(url) //nolint:gosec // test
+	resp, err := (&http.Client{Timeout: time.Second}).Get(url) //nolint:gosec // local daemon
 	if err != nil {
 		return false
 	}
 	_ = resp.Body.Close()
 
 	return true
-}
-
-func postJSON(t *testing.T, url, token, body string) string {
-	t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body)) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	return string(data)
 }

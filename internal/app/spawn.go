@@ -15,7 +15,8 @@ import (
 
 // SpawnDetached starts a child daemon: its own session (Setsid — terminal
 // death doesn't kill it), stdout/stderr → daemon.log, stdin → /dev/null.
-func SpawnDetached(cfg *config.Config) error {
+// args are appended after "serve --daemon" (launch parameters).
+func SpawnDetached(cfg *config.Config, args ...string) error {
 	logPath := filepath.Join(cfg.LogDir(), "daemon.log")
 	if err := os.MkdirAll(cfg.LogDir(), 0o750); err != nil {
 		return fmt.Errorf("spawn: log dir: %w", err)
@@ -30,7 +31,8 @@ func SpawnDetached(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("spawn: executable: %w", err)
 	}
-	cmd := exec.Command(exe, "serve", "--daemon") //nolint:gosec // our own binary
+	serveArgs := append([]string{"serve", "--daemon"}, args...)
+	cmd := exec.Command(exe, serveArgs...) //nolint:gosec // our own binary
 	cmd.Stdin = nil
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

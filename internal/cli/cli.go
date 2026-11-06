@@ -21,7 +21,8 @@ Usage:
   ccms status             active profile/model, daemon state
   ccms init [--force]     create providers.json (import from settings/env)
   ccms edit               open providers.json in $EDITOR
-  ccms serve              daemon (foreground, debugging)
+  ccms serve [--daemon] --provider <key> [--port N]
+                          daemon (foreground; spawned by ccms use)
   ccms stop               the daemon
   ccms auth copilot       GitHub OAuth device flow
   ccms auth codex         check codex CLI login

@@ -1,8 +1,7 @@
-// Package router — the daemon's active route: profile → translator.
-// Use(): reread providers.json → build a translator by protocol →
-// Ready() → atomic swap (in-flight requests stay on the old one) → Close
-// the old one. The daemon is stateless regarding user files: the route is
-// restored from ccms-state.json (read-only) at startup.
+// Package router — the daemon's single route: the provider named at launch
+// (--provider) is resolved from providers.json once at startup; the built
+// translator serves for the daemon's whole life (switching = daemon restart
+// with new launch params, owned by the CLI switcher).
 package router
 
 import (
@@ -14,13 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 
 	"github.com/ivangurin/ccms/internal/clients/codex"
 	copilot_client "github.com/ivangurin/ccms/internal/clients/copilot"
 	"github.com/ivangurin/ccms/internal/config"
 	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 	"github.com/ivangurin/ccms/internal/translators"
 	"github.com/ivangurin/ccms/internal/translators/anthropic"
 	codex_tr "github.com/ivangurin/ccms/internal/translators/codex"
@@ -28,67 +25,46 @@ import (
 	"github.com/ivangurin/ccms/internal/translators/openai"
 )
 
-// route — a profile+model+translator bundle; immutable once installed.
-type route struct {
-	profile    string
-	model      string
-	translator translators.Translator
-}
-
-// Service — the daemon's router.
+// Service — the daemon's fixed route. Built once by Build before listening;
+// immutable afterwards (the daemon serves exactly one provider per process).
 type Service struct {
-	cfg     *config.Config
-	log     *slog.Logger
-	active  atomic.Pointer[route]
-	authTok atomic.Pointer[string]
+	profile       string
+	protocol      models.Protocol
+	translator    translators.Translator
+	providersPath string // Models() rereads providers.json on demand
 }
 
-// New creates the router service; the daemon's client token is loaded right
-// away (the auth middleware works before the first Use).
-func New(cfg *config.Config, log *slog.Logger) *Service {
-	s := &Service{cfg: cfg, log: log}
-	s.authTok.Store(new(string))
-	if providers, err := config.LoadProviders(cfg.ProvidersPath()); err == nil {
-		token := providers.Daemon.AuthToken
-		s.authTok.Store(&token)
-	} else {
-		log.Warn("providers.json unavailable at daemon startup", "err", err)
-	}
-
-	return s
-}
-
-// Use switches the active profile (rereading providers.json).
-func (s *Service) Use(ctx context.Context, profileKey, model string) error {
-	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
+// Build loads providers.json, resolves the profile by key, builds the
+// translator and runs its readiness check. Any failure must abort the daemon
+// startup BEFORE listening — /health answering then means "route ready".
+func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKey string) (*Service, error) {
+	providers, err := config.LoadProviders(cfg.ProvidersPath())
 	if err != nil {
-		return fmt.Errorf("router: providers.json: %w", err)
+		return nil, fmt.Errorf("router: providers.json: %w", err)
 	}
-	token := providers.Daemon.AuthToken
-	s.authTok.Store(&token)
 
-	profile := providers.Profiles.Get(profileKey)
+	profile := providers.Profiles.Get(providerKey)
 	if profile == nil {
-		return fmt.Errorf("router: unknown profile: %s", profileKey)
+		return nil, fmt.Errorf("router: unknown provider: %s", providerKey)
 	}
 
-	tr, err := buildTranslator(s.cfg, profile)
+	tr, err := buildTranslator(cfg, profile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := tr.Ready(ctx); err != nil {
 		_ = tr.Close(ctx)
 
-		return fmt.Errorf("router: profile %s not ready: %w", profileKey, err)
+		return nil, fmt.Errorf("router: provider %s not ready: %w", providerKey, err)
 	}
+	log.Info("route built", "profile", providerKey, "protocol", profile.Protocol)
 
-	old := s.active.Swap(&route{profile: profileKey, model: model, translator: tr})
-	if old != nil {
-		_ = old.translator.Close(ctx) // in-flight requests already hold their own reference
-	}
-	s.log.Info("route activated", "profile", profileKey, "model", model, "protocol", profile.Protocol)
-
-	return nil
+	return &Service{
+		profile:       providerKey,
+		protocol:      profile.Protocol,
+		translator:    tr,
+		providersPath: cfg.ProvidersPath(),
+	}, nil
 }
 
 // buildTranslator — the protocol → translator registry.
@@ -122,91 +98,42 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 	}
 }
 
-// Restore restores the route from ccms-state.json (daemon startup).
-func (s *Service) Restore(ctx context.Context) {
-	var state models.State
-	if err := jsonfile.ReadJSON(s.cfg.StatePath(), &state); err != nil || state.Profile == "" {
-		return
-	}
-	if err := s.Use(ctx, state.Profile, state.Model); err != nil {
-		if !errors.Is(err, context.Canceled) {
-			s.log.Warn("restore failed", "profile", state.Profile, "err", err)
-		}
-	}
-}
-
-// Active — (profile, model, whether a route exists).
-func (s *Service) Active() (profile, model string, ok bool) {
-	routeRef := s.active.Load()
-	if routeRef == nil {
+// Active — (provider key, protocol, whether a route exists; always true for a
+// Service returned by Build).
+func (s *Service) Active() (provider string, protocol models.Protocol, ok bool) {
+	if s == nil || s.translator == nil {
 		return "", "", false
 	}
 
-	return routeRef.profile, routeRef.model, true
+	return s.profile, s.protocol, true
 }
 
-// Ready — the active translator is ready (a route exists).
-func (s *Service) Ready() bool {
-	return s.active.Load() != nil
-}
-
-// AuthToken — the daemon's client token from providers.json.
-func (s *Service) AuthToken() string {
-	return *s.authTok.Load()
-}
-
-// ServeMessages delegates /v1/messages to the active translator.
+// ServeMessages delegates /v1/messages to the route's translator.
 func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
-	routeRef := s.active.Load()
-	if routeRef == nil {
-		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccms use")
-
-		return
-	}
-	routeRef.translator.ServeMessages(w, r)
+	s.translator.ServeMessages(w, r)
 }
 
 // ServeCountTokens delegates /v1/messages/count_tokens.
 func (s *Service) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
-	routeRef := s.active.Load()
-	if routeRef == nil {
-		writeAnthropicError(w, http.StatusServiceUnavailable, "no active profile — run ccms use")
-
-		return
-	}
-	routeRef.translator.ServeCountTokens(w, r)
+	s.translator.ServeCountTokens(w, r)
 }
 
-// Models — /v1/models from the active profile's models.
+// Models — /v1/models from the launched profile's models.
 func (s *Service) Models() []models.Model {
-	r := s.active.Load()
-	if r == nil {
-		return nil
-	}
-	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
+	providers, err := config.LoadProviders(s.providersPath)
 	if err != nil {
 		return nil
 	}
-	if p := providers.Profiles.Get(r.profile); p != nil {
+	if p := providers.Profiles.Get(s.profile); p != nil {
 		return p.Models
 	}
 
 	return nil
 }
 
-// Close quenches the active translator.
+// Close quenches the translator.
 func (s *Service) Close(ctx context.Context) error {
-	if r := s.active.Load(); r != nil {
-		return r.translator.Close(ctx)
-	}
-
-	return nil
-}
-
-func writeAnthropicError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg)
+	return s.translator.Close(ctx)
 }
 
 // expandHome — expand ~ in config paths (codex auth_file).

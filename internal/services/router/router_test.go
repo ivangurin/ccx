@@ -14,13 +14,14 @@ import (
 
 	"github.com/ivangurin/ccms/internal/config"
 	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
 	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccms/internal/services/router"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestRouter(t *testing.T, profiles ...string) (*router.Service, *suite_provider.Provider) {
+// newFixture writes a providers.json into a sandbox: the zai anthropic profile
+// (base_url is replaced with a live fake by the tests that need one).
+func newFixture(t *testing.T) *suite_provider.Provider {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 
@@ -35,161 +36,9 @@ func newTestRouter(t *testing.T, profiles ...string) (*router.Service, *suite_pr
 		AuthToken: "s",
 		Models:    []models.Model{{ID: "glm", Default: true}},
 	})
-	for _, key := range profiles {
-		protocol := models.Protocol(key)
-		if key == "copilot-x" {
-			protocol = models.ProtocolCopilot // test case: without ccms auth copilot
-		}
-		p.Profiles.Set(key, &models.Profile{Name: key, Protocol: protocol})
-	}
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	return router.New(sp.Config, sp.Logger()), sp
-}
-
-func TestUse_ActivatesRoute(t *testing.T) {
-	svc, sp := newTestRouter(t)
-	up := startEchoUpstream(t)
-
-	// replace base_url with a live fake
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-
-	require.NoError(t, svc.Use(context.Background(), "zai", "glm"))
-
-	profile, model, ok := svc.Active()
-	require.True(t, ok)
-	require.Equal(t, "zai", profile)
-	require.Equal(t, "glm", model)
-	require.True(t, svc.Ready())
-}
-
-func TestUse_UnknownProfile(t *testing.T) {
-	svc, _ := newTestRouter(t)
-
-	err := svc.Use(context.Background(), "nope", "m")
-	require.ErrorContains(t, err, "unknown profile")
-	_, _, ok := svc.Active()
-	require.False(t, ok)
-}
-
-func TestUse_OpenAIProfile_Activates(t *testing.T) {
-	// openai profile: the translator is built without an upstream check (Ready is trivial)
-	svc2, sp := newTestRouter(t)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Profiles.Set("oa", &models.Profile{
-		Name:     "OpenAI",
-		Protocol: models.ProtocolOpenAI,
-		BaseURL:  "https://api.openai.com/v1",
-		Models:   []models.Model{{ID: "gpt", Default: true}},
-	})
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-	require.NoError(t, svc2.Use(context.Background(), "oa", "gpt"))
-	profile, model, ok := svc2.Active()
-	require.True(t, ok)
-	require.Equal(t, "oa", profile)
-	require.Equal(t, "gpt", model)
-}
-
-func TestUse_CopilotWithoutAuth_NotReady(t *testing.T) {
-	svc, _ := newTestRouter(t, "copilot-x")
-
-	// without ccms auth copilot the translator is not ready — the switch is cancelled
-	err := svc.Use(context.Background(), "copilot-x", "m")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "not ready")
-	_, _, ok := svc.Active()
-	require.False(t, ok)
-}
-
-func TestServeMessages_NoActive_503(t *testing.T) {
-	svc, _ := newTestRouter(t)
-
-	rec := httptest.NewRecorder()
-	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{}`)))
-
-	resp := rec.Result()
-	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	require.Contains(t, rec.Body.String(), "ccms use")
-}
-
-func TestServeMessages_DelegatesToActive(t *testing.T) {
-	svc, sp := newTestRouter(t)
-	up := startEchoUpstream(t)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-	require.NoError(t, svc.Use(context.Background(), "zai", "glm"))
-
-	rec := httptest.NewRecorder()
-	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"m":1}`)))
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"echo":true}`, rec.Body.String())
-
-	// count_tokens is delegated to the active translator as well
-	rec2 := httptest.NewRecorder()
-	svc.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{}`)))
-	require.Equal(t, http.StatusOK, rec2.Code)
-}
-
-func TestUse_SwitchSwapsRoute(t *testing.T) {
-	svc, sp := newTestRouter(t, "zai2")
-	up := startEchoUpstream(t)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
-	// a second profile with a different base_url
-	p.Profiles.Set("zai2", &models.Profile{
-		Name:      "z.ai 2",
-		Protocol:  models.ProtocolAnthropic,
-		BaseURL:   up.URL,
-		AuthToken: "s",
-		Models:    []models.Model{{ID: "glm2", Default: true}},
-	})
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-
-	require.NoError(t, svc.Use(context.Background(), "zai", "glm"))
-	require.NoError(t, svc.Use(context.Background(), "zai2", "glm2"))
-
-	profile, model, _ := svc.Active()
-	require.Equal(t, "zai2", profile)
-	require.Equal(t, "glm2", model)
-}
-
-func TestRestore_FromState(t *testing.T) {
-	svc, sp := newTestRouter(t)
-	up := startEchoUpstream(t)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-
-	// daemon restart: state on disk — the route is restored
-	require.NoError(t, jsonfile.WriteAtomicJSON(sp.Config.StatePath(), models.State{Profile: "zai", Model: "glm"}, 0o600))
-	svc.Restore(context.Background())
-
-	profile, model, ok := svc.Active()
-	require.True(t, ok)
-	require.Equal(t, "zai", profile)
-	require.Equal(t, "glm", model)
-}
-
-func TestRestore_NoState_NoActive(t *testing.T) {
-	svc, _ := newTestRouter(t)
-	svc.Restore(context.Background())
-
-	_, _, ok := svc.Active()
-	require.False(t, ok)
-}
-
-func TestAuthToken(t *testing.T) {
-	svc, _ := newTestRouter(t)
-	require.Equal(t, "tok", svc.AuthToken())
+	return sp
 }
 
 func startEchoUpstream(t *testing.T) *httptest.Server {
@@ -204,9 +53,90 @@ func startEchoUpstream(t *testing.T) *httptest.Server {
 	return srv
 }
 
+func TestBuild_ActivatesRoute(t *testing.T) {
+	sp := newFixture(t)
+	up := startEchoUpstream(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Get("zai").BaseURL = up.URL
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	require.NoError(t, err)
+
+	provider, protocol, ok := svc.Active()
+	require.True(t, ok)
+	require.Equal(t, "zai", provider)
+	require.Equal(t, models.ProtocolAnthropic, protocol)
+}
+
+func TestBuild_UnknownProviderFails(t *testing.T) {
+	sp := newFixture(t)
+
+	_, err := router.Build(context.Background(), sp.Config, sp.Logger(), "nope")
+	require.ErrorContains(t, err, "unknown provider")
+}
+
+func TestBuild_OpenAIProfileReady(t *testing.T) {
+	sp := newFixture(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Set("work", &models.Profile{
+		Name:     "OpenAI",
+		Protocol: models.ProtocolOpenAI,
+		BaseURL:  "https://api.openai.com/v1",
+		Models:   []models.Model{{ID: "gpt", Default: true}},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "work")
+	require.NoError(t, err)
+
+	provider, protocol, ok := svc.Active()
+	require.True(t, ok)
+	require.Equal(t, "work", provider)
+	require.Equal(t, models.ProtocolOpenAI, protocol)
+}
+
+// without ccms auth copilot the translator is not ready — Build fails, the
+// daemon exits at startup instead of serving a dead route.
+func TestBuild_CopilotWithoutAuth_NotReady(t *testing.T) {
+	sp := newFixture(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Set("copilot-x", &models.Profile{Name: "copilot-x", Protocol: models.ProtocolCopilot})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = router.Build(context.Background(), sp.Config, sp.Logger(), "copilot-x")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not ready")
+}
+
+func TestServeMessages_DelegatesToActive(t *testing.T) {
+	sp := newFixture(t)
+	up := startEchoUpstream(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Profiles.Get("zai").BaseURL = up.URL
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"m":1}`)))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"echo":true}`, rec.Body.String())
+
+	// count_tokens is delegated to the active translator as well
+	rec2 := httptest.NewRecorder()
+	svc.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusOK, rec2.Code)
+}
+
 // I6: a hand-edited anthropic/openai profile without base_url — a clear
 // error, not a panic on every /v1/messages.
-func TestUse_NoBaseURL_FailsGracefully(t *testing.T) {
+func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
 	for _, tc := range []struct {
 		key      string
 		protocol models.Protocol
@@ -215,15 +145,15 @@ func TestUse_NoBaseURL_FailsGracefully(t *testing.T) {
 		{"bare-openai", models.ProtocolOpenAI},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
-			svc, sp := newTestRouter(t)
+			sp := newFixture(t)
 			p, err := config.LoadProviders(sp.Config.ProvidersPath())
 			require.NoError(t, err)
 			p.Profiles.Set(tc.key, &models.Profile{Name: tc.key, Protocol: tc.protocol}) // no base_url!
 			require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 			require.NotPanics(t, func() {
-				err := svc.Use(t.Context(), tc.key, "m")
-				require.Error(t, err, "a switch without base_url must be cancelled")
+				_, err := router.Build(t.Context(), sp.Config, sp.Logger(), tc.key)
+				require.Error(t, err, "a route without base_url must not be built")
 				require.Contains(t, err.Error(), "ccms edit")
 			})
 		})
@@ -232,10 +162,10 @@ func TestUse_NoBaseURL_FailsGracefully(t *testing.T) {
 
 // A codex profile with auth_file "~/…" — the ~ is expanded to the (sandboxed)
 // HOME, and a valid login makes the route ready.
-func TestUse_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
+func TestBuild_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	svc, sp := newTestRouter(t)
+	sp := newFixture(t)
 
 	// fake codex login: an access token with a future exp (TokenValid reads the JWT payload)
 	payload, err := json.Marshal(map[string]int64{"exp": time.Now().Add(time.Hour).Unix()})
@@ -250,9 +180,10 @@ func TestUse_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
 	p.Profiles.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex, AuthFile: "~/custom-auth.json"})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	require.NoError(t, svc.Use(t.Context(), "cx", "m"))
+	svc, err := router.Build(t.Context(), sp.Config, sp.Logger(), "cx")
+	require.NoError(t, err)
 
-	profile, _, ok := svc.Active()
+	provider, _, ok := svc.Active()
 	require.True(t, ok)
-	require.Equal(t, "cx", profile)
+	require.Equal(t, "cx", provider)
 }

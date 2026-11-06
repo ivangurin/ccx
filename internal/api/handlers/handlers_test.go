@@ -1,7 +1,8 @@
 package handlers_test
 
 import (
-	"bytes"
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,9 +16,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestApp assembles the daemon surface against a live echo upstream: no
+// auth middleware — a request without any token must reach the translator.
 func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"echo":true}`))
+	}))
+	t.Cleanup(up.Close)
 
 	p := &models.Providers{
 		Version: 3,
@@ -26,15 +35,17 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	p.Profiles.Set("zai", &models.Profile{
 		Name:     "z.ai",
 		Protocol: models.ProtocolAnthropic,
-		BaseURL:  "http://upstream.invalid",
+		BaseURL:  up.URL,
 		Models:   []models.Model{{ID: "glm", Label: "GLM", Default: true}},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc := router.New(sp.Config, sp.Logger())
+	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	require.NoError(t, err)
 	h := handlers.New(handlers.Deps{
 		Router:  svc,
 		Version: "test",
+		Port:    4567,
 		Stop:    func() {},
 	})
 	srv := httptest.NewServer(h)
@@ -53,153 +64,92 @@ func TestHealth_NoAuth(t *testing.T) {
 	require.Contains(t, resp.Header.Get("Content-Type"), "json")
 }
 
-func TestMessages_NoToken_401(t *testing.T) {
+// No credential on the request — it still reaches the translator (pass-through
+// auth: the daemon has no secret of its own to check).
+func TestV1Messages_NoAuthHeaderAccepted(t *testing.T) {
 	srv, _ := newTestApp(t)
 
 	resp, err := http.Post(srv.URL+"/v1/messages", "application/json", strings.NewReader(`{}`)) //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestMessages_WrongToken_401(t *testing.T) {
+func TestAdminUse_Returns404(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer wrong")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.Post(srv.URL+"/admin/use", "application/json", strings.NewReader(`{"profile":"zai"}`)) //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-func TestMessages_ValidToken_NoActive_503(t *testing.T) {
+func TestAdminReady_Returns404(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.Get(srv.URL + "/admin/ready") //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Content-Type"), "json")
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-func TestAdminUse_SwitchesRoute(t *testing.T) {
-	srv, sp := newTestApp(t)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":1}`))
-	}))
-	t.Cleanup(up.Close)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Profiles.Get("zai").BaseURL = up.URL
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+func TestAdminHealth_ReportsLaunchState(t *testing.T) {
+	srv, _ := newTestApp(t)
 
-	body := bytes.NewBufferString(`{"profile":"zai","model":"glm"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/use", body) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.Get(srv.URL + "/admin/health") //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// now /v1/messages passes and reaches the upstream
-	req2, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`)) //nolint:gosec // test
-	req2.Header.Set("Authorization", "Bearer test-token")
-	resp2, err := http.DefaultClient.Do(req2)
-	require.NoError(t, err)
-	defer func() { _ = resp2.Body.Close() }()
-	require.Equal(t, http.StatusOK, resp2.StatusCode)
-
-	// count_tokens is routed through the active translator too
-	req3, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages/count_tokens", strings.NewReader(`{}`)) //nolint:gosec // test
-	req3.Header.Set("Authorization", "Bearer test-token")
-	resp3, err := http.DefaultClient.Do(req3)
-	require.NoError(t, err)
-	defer func() { _ = resp3.Body.Close() }()
-	require.Equal(t, http.StatusOK, resp3.StatusCode)
-}
-
-func TestAdminUse_UnknownProfile_400(t *testing.T) {
-	srv, _ := newTestApp(t)
-
-	body := bytes.NewBufferString(`{"profile":"nope","model":"m"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/use", body) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestAdminReady_NoRoute_503(t *testing.T) {
-	srv, _ := newTestApp(t)
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/ready", nil) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-}
-
-func TestAdminHealth_WithoutRoute(t *testing.T) {
-	srv, _ := newTestApp(t)
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/health", nil) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Contains(t, resp.Header.Get("Content-Type"), "json")
+	var payload struct {
+		Version string `json:"version"`
+		Ready   bool   `json:"ready"`
+		Port    int    `json:"port"`
+		Active  struct {
+			Provider string `json:"provider"`
+			Protocol string `json:"protocol"`
+		} `json:"active"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	require.Equal(t, "test", payload.Version)
+	require.True(t, payload.Ready)
+	require.Equal(t, 4567, payload.Port)
+	require.Equal(t, "zai", payload.Active.Provider)
+	require.Equal(t, "anthropic", payload.Active.Protocol)
 }
 
 func TestAdminStop_TriggersCallback(t *testing.T) {
-	srv, sp := newTestApp(t)
-	svc := router.New(sp.Config, sp.Logger())
+	_, sp := newTestApp(t)
+
+	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	require.NoError(t, err)
 	stopped := make(chan struct{})
-	h := handlers.New(handlers.Deps{Router: svc, Version: "t", Stop: func() { close(stopped) }})
+	h := handlers.New(handlers.Deps{Router: svc, Version: "t", Port: 4567, Stop: func() { close(stopped) }})
 	local := httptest.NewServer(h)
 	t.Cleanup(local.Close)
 
-	req, _ := http.NewRequest(http.MethodPost, local.URL+"/admin/stop", nil) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.Post(local.URL+"/admin/stop", "", nil) //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	select {
 	case <-stopped:
-	case <-contextAfter(t):
+	case <-t.Context().Done():
 		t.Fatal("stop callback was not called")
 	}
-	_ = srv
-}
-
-func contextAfter(t *testing.T) <-chan struct{} {
-	t.Helper()
-	ch := make(chan struct{})
-	go func() {
-		<-t.Context().Done()
-		close(ch)
-	}()
-
-	return ch
 }
 
 func TestModels_ListsActive(t *testing.T) {
-	srv, sp := newTestApp(t)
-	svc := router.New(sp.Config, sp.Logger())
-	_ = svc // activating the route via admin is already covered; here only the format matters
+	srv, _ := newTestApp(t)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/models", nil) //nolint:gosec // test
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.Get(srv.URL + "/v1/models") //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var payload struct {
+		Data []map[string]string `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	require.Len(t, payload.Data, 1)
+	require.Equal(t, "glm", payload.Data[0]["id"])
 }
