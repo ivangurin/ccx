@@ -88,3 +88,20 @@ func TestReadJSON_MissingFile(t *testing.T) {
 	err := jsonfile.ReadJSON(path, &sample{})
 	require.Error(t, err)
 }
+
+func TestReadRaw_ReturnsFileBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"raw": true}`), 0o600))
+
+	data, err := jsonfile.ReadRaw(path)
+	require.NoError(t, err)
+	require.Equal(t, `{"raw": true}`, string(data))
+}
+
+func TestReadRaw_MissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json")
+
+	_, err := jsonfile.ReadRaw(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "jsonfile: read")
+}

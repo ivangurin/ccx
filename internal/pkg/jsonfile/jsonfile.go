@@ -72,3 +72,16 @@ func ReadJSON(path string, v any) error {
 
 	return nil
 }
+
+// ReadRaw reads the file's bytes as-is (same error wrapping as ReadJSON).
+// Why raw: callers that inspect the raw document for keys the decoder drops
+// (legacy-schema detection) must not read the file twice — a second read
+// races with a concurrent rewrite.
+func ReadRaw(path string) ([]byte, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path is a config-owner parameter, not user input
+	if err != nil {
+		return nil, fmt.Errorf("jsonfile: read %s: %w", path, err)
+	}
+
+	return data, nil
+}
