@@ -7,6 +7,22 @@ into the active provider's protocol. A rewrite of the bash tool
 copilot-api and copilot-bridge are replaced by built-in translators,
 claude-codex by a built-in codex client.
 
+## Install (macOS, Apple Silicon)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ivangurin/ccms/main/install.sh | sh
+```
+
+Downloads the latest release and installs it to `/usr/local/bin/ccms` (same
+destination and permissions as `make install`). Uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ivangurin/ccms/main/uninstall.sh | sh
+```
+
+Removes the binary only — `~/.claude/providers.json` and the rest of the
+setup stay untouched.
+
 ## Protocols (profile `protocol` field)
 
 | protocol | Upstream | Replaces |
@@ -19,7 +35,7 @@ claude-codex by a built-in codex client.
 ## Quick start
 
 ```bash
-make install                      # build + /opt/homebrew/bin/ccms (PREFIX=…)
+make install                      # build + /usr/local/bin/ccms (PREFIX=…)
 ccms init                         # import from settings/env.json + templates
 ccms list                         # profiles and models
 ccms auth copilot                 # GitHub OAuth (for the copilot profile)
