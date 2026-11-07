@@ -20,6 +20,7 @@ const (
 // BuildChatRequest maps a MessagesRequest to chat/completions. maxTokensField
 // is the token-limit field name from the profile (max_tokens | max_completion_tokens).
 func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *models.ChatRequest {
+	sanitizeOrphans(req)
 	out := &models.ChatRequest{
 		Model:       req.Model,
 		MaxTokens:   req.MaxTokens,

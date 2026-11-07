@@ -17,7 +17,7 @@ func TestBuildChatRequest_StripsBillingLine(t *testing.T) {
 		Model:     "gpt",
 		MaxTokens: 10,
 		System:    json.RawMessage(`"x-anthropic-billing-header: tier=free\nYou are a helpful assistant."`),
-		Messages:  []models.Message{{Role: "user", Content: json.RawMessage(`"hi"`)}},
+		Messages:  []models.Message{{Role: tRoleUser, Content: json.RawMessage(`"hi"`)}},
 	}
 	chat := openai.BuildChatRequest(req, "max_tokens")
 	require.Len(t, chat.Messages, 2)

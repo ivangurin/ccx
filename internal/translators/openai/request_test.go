@@ -93,16 +93,19 @@ func TestBuild_ToolResultBlockContent(t *testing.T) {
 	out := openai.BuildChatRequest(req(t, `{
 		"model": "gpt", "max_tokens": 1,
 		"messages": [
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "t1", "name": "bash", "input": {}}
+			]},
 			{"role": "user", "content": [
 				{"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "res"}]}
 			]}
 		]
 	}`), "max_tokens")
 
-	// a single message with tool_result → a single tool message
-	require.Len(t, out.Messages, 1)
-	require.Equal(t, "res", out.Messages[0].Content)
-	require.Equal(t, "t1", out.Messages[0].ToolCallID)
+	// the paired tool_result → a single tool message
+	require.Len(t, out.Messages, 2)
+	require.Equal(t, "res", out.Messages[1].Content)
+	require.Equal(t, "t1", out.Messages[1].ToolCallID)
 }
 
 func TestBuild_InlineSystemMessages(t *testing.T) {
