@@ -162,6 +162,57 @@ internal/
 - Atomic writes: tmp file in the same directory + rename; backups and configs
   are 0600.
 
+### Translator runtime invariants (v0.0.4 hardening)
+
+- **Upstream read deadlines (readguard)**: first-byte 120s / idle 120s for
+  streams, whole-generation 600s for non-stream — a non-stream response's
+  first body byte IS the finished generation, so the first-token patience
+  must not cap it. A watchdog cancels the request context (client bodies
+  expose no net.Conn for SetReadDeadline); timeouts surface as named errors.
+- **Copilot quota marking**: the gateway bills one premium interaction per
+  user-initiated turn — tool continuations, compaction, subagent and
+  prefill-continuation turns are marked `x-initiator: agent` (compact
+  detection matches machine-generated signals only; a user typing
+  "Pending Tasks:" still bills). Request/interaction ids derive
+  deterministically from session+turn so client retries aggregate into one
+  interaction, computed from the PRE-merge body (the tool_result merge
+  absorbs the text the turn seed needs). `ccx status` shows the quota panel
+  only when the active provider's protocol is copilot, from that provider's
+  own credential store.
+- **Billing line strip**: Claude Code leads its system prompt with
+  `x-anthropic-billing-header:` — stripped before any upstream (cache-prefix
+  noise at best, a rejection on strict gateways at worst); leading line
+  only, mid-text occurrences are the user's words.
+- **Client session id (sessionid)**: headers first (Session-Id only counts
+  beyond 20 chars), then metadata.session_id, then the `_session_` tail of
+  metadata.user_id — feeds the codex cache key/session headers and the
+  copilot quota ids; empty means no session, never an error.
+- **Codex client-version gate**: the backend gates model availability by
+  client version — the Version header and the UA carry 0.159.0 and move
+  together; a stale one locks newer models out of the catalog.
+- **Codex auth generations**: the native codex CLI takes no lock —
+  tokens.last_refresh (RFC3339Nano, the token ACQUISITION moment, not the
+  write moment) orders generations; a rejected refresh adopts a strictly
+  newer on-disk generation (ONE adoptive refresh if its access is also
+  expired), saves are compare-and-swap (a newer foreign generation is never
+  clobbered); ties and undated files lose — refusing to act on an ambiguous
+  order is safer than guessing.
+- **Orphan tool_result healing (openai)**: a tool_result whose call is not
+  among the pending assistant calls becomes a text block (a dangling
+  tool_call_id is a guaranteed 400 on strict upstreams); pairing works by
+  subtraction — a mixed tool_result+text message answers some calls without
+  ending the turn, system hooks ride through.
+- **Anthropic rectify retry**: ONE retry on thinking-contract 400s
+  (signature/thinking-block → strip thinking from the history;
+  budget_tokens floor → clamp to 1024); unrelated 400s relay untouched; the
+  passthrough buffers the body (64 MiB bound; over → 413, never a silent
+  truncation) and arms a FRESH deadline for the retry.
+- **Usage log**: append-only `~/.ccx/logs/usage-YYYY-MM-DD.jsonl`
+  (provider/protocol/model/stream/tokens/latency/TTFT/status; counts and
+  timings only — never bodies or credentials); stream breaks record
+  502+error, count_tokens records nothing; passthrough token counts stay
+  zero by design (SSE is never parsed there).
+
 ## Testing
 
 Tests use testify (`require`); the suite provider is
