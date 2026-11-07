@@ -17,6 +17,7 @@ import (
 	"github.com/ivangurin/ccx/internal/translators/openai"
 	"github.com/ivangurin/ccx/internal/translators/prefill"
 	"github.com/ivangurin/ccx/internal/translators/relay"
+	"github.com/ivangurin/ccx/internal/translators/sessionid"
 )
 
 // CopilotAPIBase is the Copilot gateway endpoint.
@@ -81,6 +82,31 @@ func (t *Translator) headers(token string) http.Header {
 	return h
 }
 
+// quotaHeaders adds the billing classification to the masquerade headers:
+// the initiator (user bills a premium interaction, agent is a continuation),
+// the deterministic request/interaction ids (the gateway aggregates client
+// retries sharing an interaction id instead of billing each attempt), and
+// the subagent marker (subagent turns run inside the parent interaction).
+func (t *Translator) quotaHeaders(h http.Header, cls quotaClass, sid string, body map[string]any) http.Header {
+	requestID, interactionID := quotaIDs(sid, body)
+	h.Set("X-Initiator", cls.Initiator)
+	h.Set("X-Request-ID", requestID)
+	h.Set("X-Interaction-Id", interactionID)
+	if cls.IsSubagent {
+		h.Set("X-Interaction-Type", "conversation-subagent")
+	}
+
+	return h
+}
+
+// metadataRaw re-serializes the raw metadata value for sessionid (nil
+// marshals to "null", which parses to an empty session — fine).
+func metadataRaw(body map[string]any) json.RawMessage {
+	raw, _ := json.Marshal(body["metadata"]) //nolint:errchkjson // re-serialize of parsed JSON
+
+	return raw
+}
+
 // ServeMessages: POST /v1/messages (prefill fix → openai mapping → gateway).
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 64*1024*1024))
@@ -98,6 +124,12 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	// The prefill fix is unconditionally on: the Copilot gateway rejects a
 	// final assistant message without it (copilot-bridge.py precedent).
 	body, _ = prefill.Rewrite(body)
+	// Quota marking runs before the merge (the classification reads the
+	// request as the client shaped it) and before the unmarshal (the merge
+	// works on the raw shape).
+	sid := sessionid.FromRequest(r, metadataRaw(body))
+	cls := classifyQuota(body)
+	body = mergeToolResults(body)
 	var req models.MessagesRequest
 	remarshaled, err := json.Marshal(body)
 	if err != nil {
@@ -135,7 +167,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	upReq.Header = t.headers(token)
+	upReq.Header = t.quotaHeaders(t.headers(token), cls, sid, body)
 	resp, err := t.http.Do(upReq)
 	if err != nil {
 		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
