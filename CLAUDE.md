@@ -182,8 +182,9 @@ Credentials per protocol: openai is pass-through (send the profile token);
 copilot/codex own theirs (any placeholder bearer works). Prerequisites:
 codex needs `~/.codex/auth.json`; copilot needs a cached token
 (`ccx auth copilot` device flow) — without it the daemon exits at startup
-with `copilot: not authenticated`. Protocol quirks: codex is stream-only
-(501 non-stream) and must send `store:false`; corporate OpenAI-compatible
+with `copilot: not authenticated`. Protocol quirks: the codex upstream is
+stream-only (non-stream client requests are served by upstream stream +
+aggregation) and must send `store:false`; corporate OpenAI-compatible
 gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
 `CCX_PORT=<n> ./bin/ccx stop` stops a non-default-port daemon.
 
