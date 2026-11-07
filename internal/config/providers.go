@@ -38,13 +38,16 @@ func (c *Config) SettingsPath() string {
 	return filepath.Join(userHome, ".claude", "settings.json")
 }
 
-// StatePath is the ccx-state.json path (CCX_STATE overrides it).
+// StatePath is the state.json path (CCX_STATE overrides it). The name lost
+// its ccx- prefix (2026-11-07): inside ~/.ccx the directory already carries
+// the tool's name, matching providers.json; the pre-rename ccx-state.json
+// stays on disk unread — the same clean break as the legacy data migration.
 func (c *Config) StatePath() string {
 	if c.StateFile != "" {
 		return c.StateFile
 	}
 
-	return filepath.Join(c.Home, "ccx-state.json")
+	return filepath.Join(c.Home, "state.json")
 }
 
 // BackupDir is the settings.json backup directory, pinned to <Home>/backups

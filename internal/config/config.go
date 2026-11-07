@@ -27,7 +27,7 @@ const (
 // Config is the ccx process environment (CLI and daemon read the same one).
 type Config struct {
 	// Home is the ccx data root (default ~/.ccx): providers.json,
-	// ccx-state.json, backups/, logs/, daemon.lock/pid, the copilot store.
+	// state.json, backups/, logs/, daemon.lock/pid, the copilot store.
 	// It is deliberately NOT the Claude Code root: of Claude's ~/.claude
 	// only settings.json is touched (edited in place, never moved).
 	Home string `env:"CCX_HOME"`

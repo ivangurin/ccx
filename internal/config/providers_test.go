@@ -82,7 +82,7 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 
 	require.Equal(t, filepath.Join(home, "providers.json"), sp.Config.ProvidersPath())
 	require.Equal(t, filepath.Join(home, "settings.json"), sp.Config.SettingsPath())
-	require.Equal(t, filepath.Join(home, "ccx-state.json"), sp.Config.StatePath())
+	require.Equal(t, filepath.Join(home, "state.json"), sp.Config.StatePath())
 	require.Equal(t, filepath.Join(home, "backups"), sp.Config.BackupDir())
 	require.Equal(t, filepath.Join(home, "logs"), sp.Config.LogDir())
 

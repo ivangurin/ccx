@@ -17,7 +17,7 @@ var copilotQuota = func(storePath string) (*copilot_client.QuotaInfo, error) {
 	return copilot_client.New(storePath).Quota(context.Background())
 }
 
-// runStatus — ccx status: active provider/model from ccx-state.json; a
+// runStatus — ccx status: active provider/model from state.json; a
 // Copilot quota panel rides along when the active provider speaks copilot —
 // the pool is what the daemon's quota marking spends, and status is where
 // the burn becomes visible instead of felt.

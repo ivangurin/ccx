@@ -42,7 +42,7 @@ go test ./internal/services/switcher/... -run TestName -count=1
 CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
 the Anthropic API to the launched provider's translator; switching = daemon
 restart with new launch params). Data ownership: ccx owns its data root
-`~/.ccx` (`CCX_HOME`) — providers.json, ccx-state.json, backups/, logs/,
+`~/.ccx` (`CCX_HOME`) — providers.json, state.json, backups/, logs/,
 daemon.lock/pid, the per-provider credential stores auth/<key>.json; of
 Claude Code's `~/.claude` only
 `settings.json` is touched (edited in place, never moved; `CCX_SETTINGS`
@@ -152,9 +152,11 @@ internal/
   provider's own (`auth_token` > `api_key` > placeholder `ccx`): for openai
   it is pass-through — Claude Code sends it, the daemon forwards it upstream
   unchanged.
-- **`ccx-state.json`** `~/.ccx/ccx-state.json` `{profile, model, updated}` —
+- **`state.json`** `~/.ccx/state.json` `{profile, model, updated}` —
   format is 1:1 with bash-ccx's state file (statusline.sh reads it — point
-  its path at `~/.ccx/ccx-state.json`; the JSON schema is unchanged).
+  its path at `~/.ccx/state.json`; the JSON schema is unchanged). Renamed
+  from `ccx-state.json` (2026-11-07) with no fallback read: the pre-rename
+  file stays on disk unread, same clean break as the legacy data migration.
 - Atomic writes: tmp file in the same directory + rename; backups and configs
   are 0600.
 
@@ -226,6 +228,12 @@ session itself routes through; verify switches in a sandbox CCX_HOME, never
 live). One daemon per CCX_HOME (`daemon.lock` flock) — `ccx stop` the
 previous one first. `--daemon` detaches (Setsid); a foreground serve under a
 harness may be reaped between turns.
+
+The live `~/.ccx` is not a stable fixture: it routes the very session
+working on this code, and the owner may switch profiles or hand-move files
+mid-task (verified live: state.json was hand-renamed while the rename change
+was being built, and a blind hand-copy would have clobbered the fresh file) —
+re-check live paths immediately before any write into them.
 
 ```bash
 ./bin/ccx serve --daemon --provider <key> --port 4570   # pick a free port

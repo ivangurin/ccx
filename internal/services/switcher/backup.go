@@ -55,7 +55,7 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
-// writeStateFile — atomic write of ccx-state.json (format 1:1 with bash-ccx).
+// writeStateFile — atomic write of state.json (format 1:1 with bash-ccx).
 func writeStateFile(path string, state models.State) error {
 	if err := jsonfile.WriteAtomicJSON(path, state, 0o600); err != nil {
 		return fmt.Errorf("ccx: writing state: %w", err)
