@@ -23,6 +23,20 @@ type PremiumQuota struct {
 	Entitlement int    `json:"entitlement"`
 	Remaining   int    `json:"remaining"`
 	ResetDate   string `json:"reset_date"`
+
+	// Unlimited marks an uncounted pool: the schema reports it for the chat
+	// and completions snapshots, so a premium pool may report it on some
+	// plans — printing 0/0 for it would invent numbers.
+	Unlimited bool
+}
+
+// QuotaSnapshot is one entry of the account's quota_snapshots map (chat,
+// completions, premium_interactions — same shape for every key).
+type QuotaSnapshot struct {
+	Entitlement int  `json:"entitlement"`
+	Remaining   int  `json:"remaining"`
+	CreditsUsed int  `json:"credits_used"`
+	Unlimited   bool `json:"unlimited"`
 }
 
 // Quota fetches the account's plan and premium interaction pool. The daemon's
@@ -58,14 +72,30 @@ func (c *Client) Quota(ctx context.Context) (*QuotaInfo, error) {
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var payload struct {
-		CopilotPlan         string        `json:"copilot_plan"`
-		PremiumInteractions *PremiumQuota `json:"premium_interactions"`
+		CopilotPlan         string                   `json:"copilot_plan"`
+		PremiumInteractions *PremiumQuota            `json:"premium_interactions"`
+		QuotaResetDate      string                   `json:"quota_reset_date"`
+		QuotaSnapshots      map[string]QuotaSnapshot `json:"quota_snapshots"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, errors.New("copilot: quota: unexpected response")
 	}
 
-	return &QuotaInfo{CopilotPlan: payload.CopilotPlan, PremiumInteractions: payload.PremiumInteractions}, nil
+	// GitHub moved the pool from a top-level premium_interactions object into
+	// the quota_snapshots map, with the reset date hoisted to the top level
+	// (verified live 2026-11-07). The snapshot shape is the current schema and
+	// wins; the legacy top-level object stays parsed for older responses.
+	pool := payload.PremiumInteractions
+	if s, ok := payload.QuotaSnapshots["premium_interactions"]; ok {
+		pool = &PremiumQuota{
+			Entitlement: s.Entitlement,
+			Remaining:   s.Remaining,
+			ResetDate:   payload.QuotaResetDate,
+			Unlimited:   s.Unlimited,
+		}
+	}
+
+	return &QuotaInfo{CopilotPlan: payload.CopilotPlan, PremiumInteractions: pool}, nil
 }
 
 // internalUserURL rewrites the token-exchange URL to the account endpoint on

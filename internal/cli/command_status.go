@@ -71,6 +71,11 @@ func printCopilotQuota(cfg *config.Config, providerKey string, stdout io.Writer)
 		return
 	}
 	p := q.PremiumInteractions
+	if p.Unlimited {
+		fmt.Fprintln(stdout, "  premium interactions: unlimited")
+
+		return
+	}
 	reset := p.ResetDate
 	if reset == "" {
 		reset = "unknown"

@@ -182,6 +182,13 @@ internal/
   absorbs the text the turn seed needs). `ccx status` shows the quota panel
   only when the active provider's protocol is copilot, from that provider's
   own credential store.
+- **Copilot quota response shape**: `/copilot_internal/user` dropped the
+  top-level `premium_interactions` object — the pool now lives in
+  `quota_snapshots["premium_interactions"]` with the reset date hoisted to
+  top-level `quota_reset_date`; the legacy shape stays parsed as fallback
+  (verified live 2026-11-07). The copilot token itself is now an opaque
+  `tid=…;…` string, not a JWT, and carries no quota — nothing parses it as
+  one (verified live).
 - **Billing line strip**: Claude Code leads its system prompt with
   `x-anthropic-billing-header:` — stripped before any upstream (cache-prefix
   noise at best, a rejection on strict gateways at worst); leading line

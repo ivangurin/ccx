@@ -85,7 +85,31 @@ func TestStatus_QuotaFailureIsAWarning(t *testing.T) {
 	require.Contains(t, out.String(), "Copilot quota:  unavailable")
 }
 
-// No pool reported (business accounts) — the panel says so instead of
+// An unlimited pool prints as such — 0/0 numbers would be invented data.
+func TestStatus_QuotaUnlimited(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{}
+	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	setStatusState(t, sp.Config, "work")
+
+	old := copilotQuota
+	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+		return &copilot.QuotaInfo{
+			CopilotPlan:         "INDIVIDUAL",
+			PremiumInteractions: &copilot.PremiumQuota{Unlimited: true},
+		}, nil
+	}
+	t.Cleanup(func() { copilotQuota = old })
+
+	var out bytes.Buffer
+	require.Equal(t, 0, runStatus(nil, &out))
+
+	require.Contains(t, out.String(), "premium interactions: unlimited")
+	require.NotContains(t, out.String(), "0/0")
+}
+
+// No pool reported by either response shape — the panel says so instead of
 // inventing zeros.
 func TestStatus_QuotaWithoutPool(t *testing.T) {
 	sp := suite_provider.NewProvider(t)

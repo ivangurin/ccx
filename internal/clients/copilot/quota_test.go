@@ -54,6 +54,64 @@ func TestQuota(t *testing.T) {
 	require.Equal(t, "2026-12-01", q.PremiumInteractions.ResetDate)
 }
 
+// The 2026-11 response shape: the pool lives in the quota_snapshots map
+// (with the reset date hoisted to the top level) instead of a top-level
+// premium_interactions object. Payload trimmed from a live response.
+func TestQuota_Snapshots(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/copilot_internal/user" {
+			w.WriteHeader(http.StatusNotFound)
+
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"copilot_plan": "individual",
+			"quota_reset_date": "2026-12-01",
+			"quota_snapshots": {
+				"chat": {"unlimited": true, "entitlement": 0, "remaining": 0, "credits_used": 0},
+				"completions": {"unlimited": true, "entitlement": 0, "remaining": 0, "credits_used": 0},
+				"premium_interactions": {"unlimited": false, "entitlement": 1500, "remaining": -19, "credits_used": 1518}
+			}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+	store := filepath.Join(t.TempDir(), "copilot-auth.json")
+	storeWithUserToken(t, store)
+
+	c := NewWithBase(GitHubBase, GitHubBase, srv.URL+"/copkit/token", store)
+	q, err := c.Quota(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "individual", q.CopilotPlan)
+	require.NotNil(t, q.PremiumInteractions)
+	require.Equal(t, 1500, q.PremiumInteractions.Entitlement)
+	require.Equal(t, -19, q.PremiumInteractions.Remaining)
+	require.Equal(t, "2026-12-01", q.PremiumInteractions.ResetDate)
+}
+
+// An unlimited premium pool must not surface as invented 0/0 numbers.
+func TestQuota_SnapshotsUnlimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"copilot_plan": "individual",
+			"quota_reset_date": "2026-12-01",
+			"quota_snapshots": {
+				"premium_interactions": {"unlimited": true, "entitlement": 0, "remaining": 0, "credits_used": 0}
+			}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+	store := filepath.Join(t.TempDir(), "copilot-auth.json")
+	storeWithUserToken(t, store)
+
+	c := NewWithBase(GitHubBase, GitHubBase, srv.URL+"/copkit/token", store)
+	q, err := c.Quota(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, q.PremiumInteractions)
+	require.True(t, q.PremiumInteractions.Unlimited)
+}
+
 func TestQuota_NoPremiumField(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
