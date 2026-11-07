@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ContentBlock is a content block of an Anthropic message.
 type ContentBlock struct {
@@ -21,11 +24,27 @@ type Message struct {
 	Content json.RawMessage `json:"content"` // string | []ContentBlock
 }
 
-// Tool is a tool definition.
+// Tool is a tool definition. Type is empty for client-executed function
+// tools; server-side tools carry a versioned type (web_search_20250305,
+// computer_20250124, …) — the kind that executes upstream and must not be
+// translated into a client function.
 type Tool struct {
+	Type        string          `json:"type,omitempty"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// IsServerTool: a tool executed on the provider side (Anthropic server
+// tools / hosted built-ins), not a client function. "custom" is Anthropic's
+// client-side custom tool — not a server tool.
+func (t Tool) IsServerTool() bool {
+	return t.Type != "" && t.Type != "custom"
+}
+
+// IsWebSearch: the hosted web search server tool (web_search_YYYYMMDD).
+func (t Tool) IsWebSearch() bool {
+	return strings.HasPrefix(t.Type, "web_search")
 }
 
 // MessagesRequest is POST /v1/messages (the fields translators need).

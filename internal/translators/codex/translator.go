@@ -50,13 +50,15 @@ type ResponsesItem struct {
 	// SSE-event concept, call_id alone ties a call to its output.
 }
 
-// ResponsesTool is a function definition.
+// ResponsesTool is a tool definition: a function, or a hosted tool (e.g.
+// {"type":"web_search"}) which must serialize bare — the backend validates
+// strictly and rejects unknown fields on hosted tools.
 type ResponsesTool struct {
 	Type        string          `json:"type"`
-	Name        string          `json:"name"`
+	Name        string          `json:"name,omitempty"`
 	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters"`
-	Strict      bool            `json:"strict"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
 }
 
 // ResponsesRequest is POST /codex/responses.
@@ -130,10 +132,20 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 		Stream:          req.Stream,
 	}
 	for _, tool := range req.Tools {
-		out.Tools = append(out.Tools, ResponsesTool{
-			Type: "function", Name: tool.Name, Description: tool.Description,
-			Parameters: tool.InputSchema,
-		})
+		switch {
+		case tool.IsWebSearch():
+			// the hosted search tool (see websearch.go); bare object only
+			out.Tools = append(out.Tools, ResponsesTool{Type: responsesToolWebSearch})
+		case tool.IsServerTool():
+			// other server tools have no hosted counterpart: a phantom
+			// function nobody executes is worse than absence — that is
+			// exactly how WebSearch used to return empty results
+		default:
+			out.Tools = append(out.Tools, ResponsesTool{
+				Type: "function", Name: tool.Name, Description: tool.Description,
+				Parameters: tool.InputSchema,
+			})
+		}
 	}
 	for _, msg := range req.Messages {
 		if msg.Role == roleSystem {
@@ -341,7 +353,16 @@ type streamEvent struct {
 		Name   string `json:"name"`
 		CallID string `json:"call_id"`
 		ID     string `json:"id"`
+		Action *struct {
+			Type  string `json:"type"`
+			Query string `json:"query"`
+		} `json:"action"`
 	} `json:"item"`
+	Annotation *struct {
+		Type  string `json:"type"`
+		URL   string `json:"url"`
+		Title string `json:"title"`
+	} `json:"annotation"`
 	Response *struct {
 		Usage *models.Usage `json:"usage"`
 	} `json:"response"`
@@ -356,6 +377,7 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 	itemOrder := []string{}
 	var usage models.Usage
 	stopReason := "end_turn"
+	var search webSearchCollector
 
 	var writer *sse.Writer
 	emit := func(ev models.AnthropicEvent) {
@@ -417,11 +439,23 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 				if id == "" {
 					id = se.Item.CallID
 				}
-				if se.Item.Type == "function_call" {
+				switch se.Item.Type {
+				case "function_call":
 					openBlock(id, models.AnthropicBlock{Type: typeToolUse, ID: se.Item.CallID, Name: se.Item.Name})
-				} else {
+				case responsesItemWebSearchCall:
+					// hosted search: no client block — collected at item.done
+				default:
 					openBlock(id, models.AnthropicBlock{Type: typeText})
 				}
+			}
+		case "response.output_item.done":
+			// only the done item carries the action (added is status-only)
+			if se.Item != nil && se.Item.Type == responsesItemWebSearchCall && se.Item.Action != nil {
+				search.onCallDone(se.Item.ID, se.Item.Action.Type, se.Item.Action.Query)
+			}
+		case "response.output_text.annotation.added":
+			if se.Annotation != nil {
+				search.onAnnotation(se.Annotation.Type, se.Annotation.URL, se.Annotation.Title)
 			}
 		case "response.output_text.delta":
 			if _, ok := itemIdx[se.ItemID]; !ok {
@@ -446,6 +480,11 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 
 					break
 				}
+			}
+			// the search blocks open last: annotations are complete only
+			// here, and the closing loop below stops them in order
+			for _, blk := range search.blocks() {
+				openBlock(blk.itemID, blk.block)
 			}
 		case "response.failed":
 			emit(models.AnthropicEvent{

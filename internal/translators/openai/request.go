@@ -34,6 +34,12 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 		}{IncludeUsage: true}
 	}
 	for _, tool := range req.Tools {
+		if tool.IsServerTool() {
+			// no chat/completions counterpart: a phantom function nobody
+			// executes is worse than absence — WebSearch used to come back
+			// empty through exactly this mangling
+			continue
+		}
 		out.Tools = append(out.Tools, models.ChatTool{
 			Type: "function",
 			Function: models.ChatFunctionDef{

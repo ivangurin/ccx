@@ -29,12 +29,14 @@ type AnthropicMessagePayload struct {
 
 // AnthropicBlock is content_block_start.content_block.
 type AnthropicBlock struct {
-	Type     string          `json:"type"`
-	Text     string          `json:"text,omitempty"`
-	Thinking string          `json:"thinking,omitempty"`
-	ID       string          `json:"id,omitempty"`
-	Name     string          `json:"name,omitempty"`
-	Input    json.RawMessage `json:"input,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Thinking  string          `json:"thinking,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"` // web_search_tool_result: paired server_tool_use id
+	Content   json.RawMessage `json:"content,omitempty"`     // web_search_tool_result: []search_result
 }
 
 // AnthropicDelta is content_block_delta.delta.

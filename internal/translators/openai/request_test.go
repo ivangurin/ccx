@@ -43,6 +43,24 @@ func TestBuild_SystemBlocks(t *testing.T) {
 	require.Equal(t, "system", out.Messages[0].Role)
 }
 
+// Server-side tools (web_search_*, computer_*, …) have no chat/completions
+// counterpart. They used to be mangled into phantom functions nobody
+// executes — Claude Code's WebSearch silently returned empty results; now
+// they are dropped from the upstream request.
+func TestBuild_SkipsServerTools(t *testing.T) {
+	out := openai.BuildChatRequest(req(t, `{
+		"model": "gpt", "max_tokens": 1,
+		"messages": [{"role": "user", "content": "hi"}],
+		"tools": [
+			{"type":"web_search_20250305","name":"web_search"},
+			{"name":"bash","description":"run","input_schema":{"type":"object"}}
+		]
+	}`), "max_tokens")
+
+	require.Len(t, out.Tools, 1)
+	require.Equal(t, "bash", out.Tools[0].Function.Name)
+}
+
 func TestBuild_ToolUseAndResult(t *testing.T) {
 	out := openai.BuildChatRequest(req(t, `{
 		"model": "gpt", "max_tokens": 1,
