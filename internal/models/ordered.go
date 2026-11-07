@@ -7,7 +7,7 @@ import (
 )
 
 // OrderedMap is a JSON object as a map preserving the file's key order:
-// order = the order of the menu and ccms list (jq in bash-ccx preserved order, a Go map does not).
+// order = the order of the menu and ccx list (jq in bash-ccx preserved order, a Go map does not).
 type OrderedMap[V any] struct {
 	Keys []string
 	m    map[string]V

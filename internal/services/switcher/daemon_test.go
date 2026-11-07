@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccms/internal/services/switcher"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/services/switcher"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,9 +141,9 @@ func TestHTTPDaemon_StopEscalatesToSignalWhenPortStaysOpen(t *testing.T) {
 		_ = sleep.Wait()
 		close(procDone)
 	}()
-	require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
+	require.NoError(t, os.MkdirAll(cfg.Home, 0o750))
 	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
-		filepath.Join(cfg.CCMSDir(), "daemon.pid"),
+		filepath.Join(cfg.Home, "daemon.pid"),
 		[]byte(strconv.Itoa(sleep.Process.Pid)), 0o600,
 	))
 	// the fake daemon's handler watches the child: once it is dead, the port closes
@@ -172,8 +172,8 @@ func TestHTTPDaemon_StopMissingOrGarbagePidfile(t *testing.T) {
 		shortenWaits()
 		f := newFakeAdminDaemon(t, false) // port stays open
 		cfg := f.config(t)
-		require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
-		require.NoError(t, os.WriteFile(filepath.Join(cfg.CCMSDir(), "daemon.pid"), []byte("garbage"), 0o600)) //nolint:gosec // test sandbox
+		require.NoError(t, os.MkdirAll(cfg.Home, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(cfg.Home, "daemon.pid"), []byte("garbage"), 0o600)) //nolint:gosec // test sandbox
 
 		ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 		defer cancel()
@@ -285,9 +285,9 @@ func TestHTTPDaemon_RestartWaitsForDrainingOldDaemon(t *testing.T) {
 	// the child runs our own binary: the identity check must let the
 	// hard-kill through at the drain deadline
 	child := selfChild(t)
-	require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
+	require.NoError(t, os.MkdirAll(cfg.Home, 0o750))
 	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
-		filepath.Join(cfg.CCMSDir(), "daemon.pid"), []byte(strconv.Itoa(child.Process.Pid)), 0o600,
+		filepath.Join(cfg.Home, "daemon.pid"), []byte(strconv.Itoa(child.Process.Pid)), 0o600,
 	))
 
 	// the spawn seam brings up the NEW fake daemon on the freed port
@@ -316,7 +316,7 @@ func TestHTTPDaemon_RestartWaitsForDrainingOldDaemon(t *testing.T) {
 	}
 }
 
-// A pid that no longer belongs to ccms must never be signaled, even when the
+// A pid that no longer belongs to ccx must never be signaled, even when the
 // port stays open: the ladder only escalates against our own process.
 func TestHTTPDaemon_StopSkipsSignalForForeignPid(t *testing.T) {
 	shortenWaits()
@@ -326,9 +326,9 @@ func TestHTTPDaemon_StopSkipsSignalForForeignPid(t *testing.T) {
 	foreign := exec.Command("/bin/sleep", "30") //nolint:gosec // system binary, foreign name
 	require.NoError(t, foreign.Start())
 	t.Cleanup(func() { _ = foreign.Process.Kill() })
-	require.NoError(t, os.MkdirAll(cfg.CCMSDir(), 0o750))
+	require.NoError(t, os.MkdirAll(cfg.Home, 0o750))
 	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
-		filepath.Join(cfg.CCMSDir(), "daemon.pid"), []byte(strconv.Itoa(foreign.Process.Pid)), 0o600,
+		filepath.Join(cfg.Home, "daemon.pid"), []byte(strconv.Itoa(foreign.Process.Pid)), 0o600,
 	))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

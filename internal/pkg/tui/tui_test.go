@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/pkg/tui"
+	"github.com/ivangurin/ccx/internal/pkg/tui"
 	"github.com/stretchr/testify/require"
 )
 

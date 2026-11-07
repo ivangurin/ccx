@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/flock"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/flock"
 )
 
 // Daemon — the daemon contract for switching (the implementation is an
@@ -49,7 +49,7 @@ func New(cfg *config.Config, daemon Daemon) *Switcher {
 func (s *Switcher) Apply(ctx context.Context, profileKey, modelArg string) (string, error) {
 	lock, err := flock.LockWait(lockPath(s.cfg), s.cfg.LockTimeout)
 	if err != nil {
-		return "", fmt.Errorf("ccms: failed to acquire the switcher lock: %w", err)
+		return "", fmt.Errorf("ccx: failed to acquire the switcher lock: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
@@ -57,26 +57,26 @@ func (s *Switcher) Apply(ctx context.Context, profileKey, modelArg string) (stri
 }
 
 func lockPath(cfg *config.Config) string {
-	return cfg.Home + "/.ccms.lock"
+	return cfg.Home + "/.ccx.lock"
 }
 
 func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string) (string, error) {
 	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
 	if err != nil {
-		return "", fmt.Errorf("ccms: providers.json unavailable (%v) — run ccms init first", err)
+		return "", fmt.Errorf("ccx: providers.json unavailable (%v) — run ccx init first", err)
 	}
 	profile := providers.Providers.Get(profileKey)
 	if profile == nil {
-		return "", fmt.Errorf("ccms: unknown profile: %s (see ccms list)", profileKey)
+		return "", fmt.Errorf("ccx: unknown profile: %s (see ccx list)", profileKey)
 	}
 
 	model, ok := profile.ResolveModel(modelArg)
 	if !ok {
 		if modelArg == "" {
-			return "", fmt.Errorf("ccms: profile %s has no default model — specify one: ccms %s <model>", profileKey, profileKey)
+			return "", fmt.Errorf("ccx: profile %s has no default model — specify one: ccx %s <model>", profileKey, profileKey)
 		}
 
-		return "", fmt.Errorf("ccms: model %s not found in profile %s (see ccms list)", modelArg, profileKey)
+		return "", fmt.Errorf("ccx: model %s not found in profile %s (see ccx list)", modelArg, profileKey)
 	}
 
 	// An anthropic passthrough goes direct: the upstream speaks the native
@@ -89,7 +89,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	// Invariant: the restarted daemon is ready BEFORE the settings.json edit.
 	port := config.ResolveDaemonPort(s.cfg, 0)
 	if err := s.daemon.Restart(ctx, profileKey, port); err != nil {
-		return "", fmt.Errorf("ccms: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous profile", err)
+		return "", fmt.Errorf("ccx: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous profile", err)
 	}
 
 	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model); err != nil {
@@ -125,7 +125,7 @@ func (s *Switcher) applyDirect(
 
 	out := fmt.Sprintf("Switched: %s · model %s · %s (direct)", profile.Name, model, profile.BaseURL)
 	if err := s.daemon.Stop(ctx); err != nil {
-		out += fmt.Sprintf("\nnote: the daemon is still running: %v (ccms stop)", err)
+		out += fmt.Sprintf("\nnote: the daemon is still running: %v (ccx stop)", err)
 	}
 
 	return out, nil
@@ -138,7 +138,7 @@ func (s *Switcher) applyDirect(
 // deterministic output), plus the profile extras and model pinning.
 func directEnv(profile *models.Profile, model string) (map[string]string, error) {
 	if profile.BaseURL == "" {
-		return nil, fmt.Errorf("ccms: profile %s has no base_url — add it to providers.json", profile.Name)
+		return nil, fmt.Errorf("ccx: profile %s has no base_url — add it to providers.json", profile.Name)
 	}
 	env := map[string]string{}
 	for k, v := range profile.Env {
@@ -183,7 +183,7 @@ func daemonEnv(profile *models.Profile, model string, port int) map[string]strin
 	case profile.APIKey != "":
 		env["ANTHROPIC_API_KEY"] = profile.APIKey
 	default:
-		env["ANTHROPIC_AUTH_TOKEN"] = "ccms"
+		env["ANTHROPIC_AUTH_TOKEN"] = "ccx"
 	}
 	for _, key := range pinnedKeys {
 		env[key] = model
@@ -210,7 +210,7 @@ var pinnedKeys = []string{
 func (s *Switcher) writeSettings(providers *models.Providers, env map[string]string, model string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
-		return fmt.Errorf("ccms: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
+		return fmt.Errorf("ccx: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
 	}
 
 	if err := backupSettings(s.cfg, settings); err != nil {
@@ -240,13 +240,13 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 	slices.Sort(stale)
 
 	if err := settings.PatchEnv(stale, env); err != nil {
-		return fmt.Errorf("ccms: %w", err)
+		return fmt.Errorf("ccx: %w", err)
 	}
 	if err := settings.SetModelPin(model); err != nil {
-		return fmt.Errorf("ccms: %w", err)
+		return fmt.Errorf("ccx: %w", err)
 	}
 	if err := writeFileAtomic(s.cfg.SettingsPath(), settings.Bytes()); err != nil {
-		return fmt.Errorf("ccms: writing settings.json: %w", err)
+		return fmt.Errorf("ccx: writing settings.json: %w", err)
 	}
 
 	return nil

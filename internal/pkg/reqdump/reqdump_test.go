@@ -9,7 +9,7 @@ import (
 )
 
 func TestWriteDisabledWithoutEnv(t *testing.T) {
-	t.Setenv("CCMS_DUMP_DIR", "")
+	t.Setenv("CCX_DUMP_DIR", "")
 	require.False(t, Enabled())
 
 	Write("anthropic-req", []byte(`{}`))
@@ -21,7 +21,7 @@ func TestWriteDisabledWithoutEnv(t *testing.T) {
 
 func TestWriteCreatesFileWithBody(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "dumps") // lazy MkdirAll
-	t.Setenv("CCMS_DUMP_DIR", dir)
+	t.Setenv("CCX_DUMP_DIR", dir)
 	require.True(t, Enabled())
 
 	Write("anthropic-req", []byte(`{"model":"m"}`))

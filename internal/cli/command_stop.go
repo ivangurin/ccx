@@ -6,15 +6,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccx/internal/config"
 )
 
-// runStop — ccms stop: POST /admin/stop (graceful shutdown of the daemon;
+// runStop — ccx stop: POST /admin/stop (graceful shutdown of the daemon;
 // the surface is localhost-only, no token).
 func runStop(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(stdout, "ccms: %v\n", err)
+		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
 		return 1
 	}
@@ -27,10 +27,10 @@ func runStop(_ []string, stdout io.Writer) int {
 	}
 
 	req, _ := http.NewRequest(http.MethodPost, base+"/admin/stop", nil) //nolint:gosec // local address
-	req.Header.Set("X-Ccms", "1")                                       // the admin marker (browser drive-by defense)
+	req.Header.Set("X-Ccx", "1")                                        // the admin marker (browser drive-by defense)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
-		fmt.Fprintf(stdout, "ccms: failed to stop the daemon: %v\n", err)
+		fmt.Fprintf(stdout, "ccx: failed to stop the daemon: %v\n", err)
 
 		return 1
 	}
@@ -45,7 +45,7 @@ func runStop(_ []string, stdout io.Writer) int {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	fmt.Fprintf(stdout, "ccms: daemon is still responding (log: %s)\n", cfg.LogDir()+"/daemon.log")
+	fmt.Fprintf(stdout, "ccx: daemon is still responding (log: %s)\n", cfg.LogDir()+"/daemon.log")
 
 	return 0
 }

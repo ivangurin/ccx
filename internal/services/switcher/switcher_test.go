@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
-	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccms/internal/services/switcher"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/services/switcher"
 	"github.com/stretchr/testify/require"
 )
 
@@ -177,7 +177,7 @@ func TestApply_HappyPath(t *testing.T) {
 
 // A switch must be invisible outside the env block and the model pin: blocks
 // keep their order and formatting, the env block keeps its lines (a fresh key
-// is appended at its end) — the file is the user's, not ccms's.
+// is appended at its end) — the file is the user's, not ccx's.
 func TestApply_PreservesSettingsFormatting(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 
@@ -253,7 +253,7 @@ func TestApply_NoCredentials_PlaceholderToken(t *testing.T) {
 	require.NoError(t, err)
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
-	require.Equal(t, "ccms", env["ANTHROPIC_AUTH_TOKEN"])
+	require.Equal(t, "ccx", env["ANTHROPIC_AUTH_TOKEN"])
 }
 
 // A failed restart leaves settings.json byte-identical — the invariant.

@@ -13,10 +13,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ivangurin/ccms/internal/clients/codex"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/reqdump"
-	"github.com/ivangurin/ccms/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/clients/codex"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/reqdump"
+	"github.com/ivangurin/ccx/internal/pkg/sse"
 )
 
 // role/type constants (goconst).
@@ -541,7 +541,7 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 func relayError(w http.ResponseWriter, resp *http.Response) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	// the rejected upstream payload is the primary debugging artifact (the
-	// paired codex-req dump shows what triggered it) — keep it under CCMS_DUMP_DIR
+	// paired codex-req dump shows what triggered it) — keep it under CCX_DUMP_DIR
 	reqdump.Write(fmt.Sprintf("codex-resp-%d", resp.StatusCode), body)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)

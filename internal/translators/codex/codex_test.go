@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	codexauth "github.com/ivangurin/ccms/internal/clients/codex"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/translators/codex"
+	codexauth "github.com/ivangurin/ccx/internal/clients/codex"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/stretchr/testify/require"
 )
 
@@ -200,7 +200,7 @@ func TestBuildResponsesRequest_SystemRoleMergesIntoInstructions(t *testing.T) {
 }
 
 // The outgoing Responses payload and the rejected upstream body are dumped
-// under CCMS_DUMP_DIR — the pair (what we sent / why it was rejected) is the
+// under CCX_DUMP_DIR — the pair (what we sent / why it was rejected) is the
 // artifact live debugging needs.
 func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -211,7 +211,7 @@ func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	dir := filepath.Join(t.TempDir(), "dumps")
-	t.Setenv("CCMS_DUMP_DIR", dir)
+	t.Setenv("CCX_DUMP_DIR", dir)
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","system":"s","stream":true,"messages":[{"role":"user","content":"x"}]}`))

@@ -1,5 +1,5 @@
 // Package copilot implements the GitHub OAuth device flow and exchange for a
-// copilot-token. Tokens are stored in ~/.claude/ccms/copilot-auth.json (600);
+// copilot-token. Tokens are stored in ~/.claude/ccx/copilot-auth.json (600);
 // exchange is lazy — driven by expires_at (no background goroutines, per the
 // "lazy refresh" plan).
 package copilot
@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// ErrNotAuthenticated means the device is not authenticated (run ccms auth copilot).
-var ErrNotAuthenticated = errors.New("copilot: not authenticated — run ccms auth copilot")
+// ErrNotAuthenticated means the device is not authenticated (run ccx auth copilot).
+var ErrNotAuthenticated = errors.New("copilot: not authenticated — run ccx auth copilot")
 
 // GitHubBase is the OAuth entry point (overridden by tests).
 const GitHubBase = "https://github.com"
@@ -260,7 +260,7 @@ func (c *Client) exchange(ctx context.Context, userToken string) (string, time.T
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
-		return "", time.Time{}, errors.New("copilot: user token invalid (401) — ccms auth copilot")
+		return "", time.Time{}, errors.New("copilot: user token invalid (401) — ccx auth copilot")
 	}
 	if resp.StatusCode != http.StatusOK {
 		// The body names the real reason (verified live: trade_restricted_country,

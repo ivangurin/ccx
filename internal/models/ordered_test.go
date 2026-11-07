@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 	"github.com/stretchr/testify/require"
 )
 
 // UnmarshalJSON keeps the file order of the keys (loadProviders relies on it:
-// ccms list and the menu show profiles exactly as written in providers.json).
+// ccx list and the menu show profiles exactly as written in providers.json).
 func TestOrderedMap_UnmarshalJSON_KeepsFileOrder(t *testing.T) {
 	raw := []byte(`{"zai": {"name": "Z"}, "acme": {"name": "A"}, "openai": {"name": "O"}}`)
 

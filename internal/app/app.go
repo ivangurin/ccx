@@ -1,4 +1,4 @@
-// Package app — daemon wiring for ccms serve: config → logger → lock →
+// Package app — daemon wiring for ccx serve: config → logger → lock →
 // route (Build from --provider, Ready before listening) → http → signals →
 // graceful shutdown.
 package app
@@ -15,22 +15,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/api/handlers"
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/pkg/closer"
-	"github.com/ivangurin/ccms/internal/pkg/flock"
-	"github.com/ivangurin/ccms/internal/pkg/httpserver"
-	"github.com/ivangurin/ccms/internal/services/router"
+	"github.com/ivangurin/ccx/internal/api/handlers"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/pkg/closer"
+	"github.com/ivangurin/ccx/internal/pkg/flock"
+	"github.com/ivangurin/ccx/internal/pkg/httpserver"
+	"github.com/ivangurin/ccx/internal/services/router"
 )
 
 // Version — daemon version (ldflags).
 var Version = "dev"
 
-// ServeOptions — the daemon's launch parameters (ccms serve flags).
+// ServeOptions — the daemon's launch parameters (ccx serve flags).
 type ServeOptions struct {
 	// Provider is the providers.json key the route is built from (required).
 	Provider string
-	// Port is the listen port; 0 = resolve (CCMS_PORT > daemon.port > 4567).
+	// Port is the listen port; 0 = resolve (CCX_PORT > daemon.port > 4567).
 	Port int
 }
 
@@ -99,7 +99,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Start() }()
-	a.log.Info("ccms daemon listening", "addr", addr, "provider", opts.Provider, "version", Version)
+	a.log.Info("ccx daemon listening", "addr", addr, "provider", opts.Provider, "version", Version)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -126,6 +126,9 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 // acquireLock takes daemon.lock with a bounded retry: the previous daemon may
 // hold it for a moment while its graceful shutdown drains in-flight requests.
 func (a *App) acquireLock() (*flock.Lock, error) {
+	// a fresh install may not have the ccx home yet — the lock lives there
+	_ = os.MkdirAll(a.cfg.Home, 0o750)
+
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		lock, err := flock.TryLock(a.daemonLockPath())
@@ -140,7 +143,7 @@ func (a *App) acquireLock() (*flock.Lock, error) {
 }
 
 // fallbackPort resolves the listen port when ServeOptions.Port is unset:
-// CCMS_PORT > providers.json daemon.port > 4567.
+// CCX_PORT > providers.json daemon.port > 4567.
 func (a *App) fallbackPort() int {
 	if a.cfg.DaemonPort != 0 {
 		return a.cfg.DaemonPort
@@ -153,11 +156,11 @@ func (a *App) fallbackPort() int {
 }
 
 func (a *App) daemonLockPath() string {
-	return filepath.Join(a.cfg.CCMSDir(), "daemon.lock")
+	return filepath.Join(a.cfg.Home, "daemon.lock")
 }
 
 func (a *App) pidfilePath() string {
-	return filepath.Join(a.cfg.CCMSDir(), "daemon.pid")
+	return filepath.Join(a.cfg.Home, "daemon.pid")
 }
 
 func (a *App) writePidfile() {

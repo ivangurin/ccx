@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	codexauth "github.com/ivangurin/ccms/internal/clients/codex"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/translators/codex"
+	codexauth "github.com/ivangurin/ccx/internal/clients/codex"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/stretchr/testify/require"
 )
 

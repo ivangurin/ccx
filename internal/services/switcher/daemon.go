@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/app"
-	"github.com/ivangurin/ccms/internal/config"
+	"github.com/ivangurin/ccx/internal/app"
+	"github.com/ivangurin/ccx/internal/config"
 )
 
 // Wait/escalation timings (vars: tests shorten them; the defaults bound the
@@ -85,7 +85,7 @@ func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int) 
 // in-flight requests for up to 30s while holding daemon.lock — spawning
 // before the exit would lose the lock race (the new daemon exits quietly)
 // and fail the switch with the daemon down. At the deadline a still-living
-// ccms process is hard-killed (it overran its own drain budget).
+// ccx process is hard-killed (it overran its own drain budget).
 func (d *HTTPDaemon) waitDrained(ctx context.Context) error {
 	pid, ok := d.readPid()
 	if !ok {
@@ -97,7 +97,7 @@ func (d *HTTPDaemon) waitDrained(ctx context.Context) error {
 			return err
 		}
 		if time.Now().After(deadline) {
-			if ownsCCMS(pid) {
+			if ownsCCX(pid) {
 				_ = syscall.Kill(pid, syscall.SIGKILL) //nolint:gosec // our own overran daemon
 			}
 
@@ -130,7 +130,7 @@ func (d *HTTPDaemon) Stop(ctx context.Context) error {
 	// pid's identity is verified first: a stale pidfile whose pid was reused
 	// must not get an innocent process killed.
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
-		if pid, ok := d.readPid(); ok && ownsCCMS(pid) {
+		if pid, ok := d.readPid(); ok && ownsCCX(pid) {
 			_ = syscall.Kill(pid, sig) //nolint:gosec // our own daemon process
 		}
 		wait := termWait
@@ -152,7 +152,7 @@ func (d *HTTPDaemon) postStop(ctx context.Context, base string) {
 	if err != nil {
 		return
 	}
-	req.Header.Set("X-Ccms", "1")                                 // the admin marker (browser drive-by defense)
+	req.Header.Set("X-Ccx", "1")                                  // the admin marker (browser drive-by defense)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req) //nolint:gosec // local address
 	if err != nil {
 		return
@@ -179,7 +179,7 @@ func (d *HTTPDaemon) waitPortClosed(ctx context.Context, base string, budget tim
 
 // readPid parses daemon.pid; any failure means "nothing to signal".
 func (d *HTTPDaemon) readPid() (int, bool) {
-	raw, err := os.ReadFile(filepath.Join(d.cfg.CCMSDir(), "daemon.pid")) //nolint:gosec // fixed path
+	raw, err := os.ReadFile(filepath.Join(d.cfg.Home, "daemon.pid")) //nolint:gosec // fixed path
 	if err != nil {
 		return 0, false
 	}
@@ -199,9 +199,9 @@ func pidAlive(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
-// ownsCCMS — the pid still runs a binary with our own name (ps comm). The
+// ownsCCX — the pid still runs a binary with our own name (ps comm). The
 // signal ladder must never fire on a reused pid from a stale pidfile.
-func ownsCCMS(pid int) bool {
+func ownsCCX(pid int) bool {
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output() //nolint:gosec // read-only query
 	if err != nil {
 		return false

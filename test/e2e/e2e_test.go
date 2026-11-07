@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/app"
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/logger"
+	"github.com/ivangurin/ccx/internal/app"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/logger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,11 +39,11 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 	// fake upstream of an Anthropic-compatible provider
 	upstream := startFakeUpstream(t)
 
-	// CCMS_HOME sandbox + providers.json with a live upstream
+	// CCX_HOME sandbox + providers.json with a live upstream
 	home := t.TempDir()
 	port := freePort(t)
-	t.Setenv("CCMS_HOME", home)
-	t.Setenv("CCMS_PORT", strconv.Itoa(port))
+	t.Setenv("CCX_HOME", home)
+	t.Setenv("CCX_PORT", strconv.Itoa(port))
 
 	providers := &models.Providers{
 		Daemon: &models.Daemon{Port: port},
@@ -82,7 +82,7 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 
 	t.Run("admin health reports the launch state", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, base+"/admin/health", nil) //nolint:gosec // test
-		req.Header.Set("X-Ccms", "1")
+		req.Header.Set("X-Ccx", "1")
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer func() { _ = resp.Body.Close() }()

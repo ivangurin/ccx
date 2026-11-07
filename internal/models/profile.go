@@ -1,4 +1,4 @@
-// Package models holds ccms domain DTOs. Profile v3: upstream connection
+// Package models holds ccx domain DTOs. Profile v3: upstream connection
 // fields (base_url, api_key, …) live directly in the profile — Protocol
 // determines which of them are meaningful; env holds only user extras for
 // settings.json (not ANTHROPIC_*).

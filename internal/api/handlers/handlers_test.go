@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/api/handlers"
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccms/internal/services/router"
+	"github.com/ivangurin/ccx/internal/api/handlers"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/services/router"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +94,7 @@ func TestAdminHealth_ReportsLaunchState(t *testing.T) {
 	srv, _ := newTestApp(t)
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/admin/health", nil) //nolint:gosec // test
-	req.Header.Set("X-Ccms", "1")
+	req.Header.Set("X-Ccx", "1")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
@@ -127,7 +127,7 @@ func TestAdminStop_TriggersCallback(t *testing.T) {
 	t.Cleanup(local.Close)
 
 	req, _ := http.NewRequest(http.MethodPost, local.URL+"/admin/stop", nil) //nolint:gosec // test
-	req.Header.Set("X-Ccms", "1")
+	req.Header.Set("X-Ccx", "1")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	_ = resp.Body.Close()
@@ -170,7 +170,7 @@ func TestGuard_ForeignHostRejected(t *testing.T) {
 	}
 }
 
-// /admin/* requires the non-simple X-CCMS header: a custom header forces a
+// /admin/* requires the non-simple X-CCX header: a custom header forces a
 // CORS preflight, which a drive-by web page cannot pass silently (the old
 // Bearer token used to gate this; pass-through auth removed it).
 func TestGuard_AdminWithoutMarkerRejected(t *testing.T) {

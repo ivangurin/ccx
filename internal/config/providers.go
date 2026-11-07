@@ -3,13 +3,14 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// ProvidersPath is the providers.json path (CCMS_PROVIDERS overrides it).
+// ProvidersPath is the providers.json path (CCX_PROVIDERS overrides it).
 func (c *Config) ProvidersPath() string {
 	if c.ProvidersFile != "" {
 		return c.ProvidersFile
@@ -18,25 +19,34 @@ func (c *Config) ProvidersPath() string {
 	return filepath.Join(c.Home, "providers.json")
 }
 
-// SettingsPath is the Claude Code settings.json path (CCMS_SETTINGS overrides it).
+// SettingsPath is the Claude Code settings.json path (CCX_SETTINGS overrides
+// it). The default deliberately lives in Claude Code's own root (~/.claude),
+// outside the ccx home: settings.json belongs to Claude Code, ccx only edits
+// it in place — it never moves with the data.
 func (c *Config) SettingsPath() string {
 	if c.SettingsFile != "" {
 		return c.SettingsFile
 	}
 
-	return filepath.Join(c.Home, "settings.json")
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		// unreachable in practice: NewFromEnv fails fast on a broken HOME
+		return filepath.Join(".claude", "settings.json")
+	}
+
+	return filepath.Join(userHome, ".claude", "settings.json")
 }
 
-// StatePath is the ccms-state.json path (CCMS_STATE overrides it).
+// StatePath is the ccx-state.json path (CCX_STATE overrides it).
 func (c *Config) StatePath() string {
 	if c.StateFile != "" {
 		return c.StateFile
 	}
 
-	return filepath.Join(c.Home, "ccms-state.json")
+	return filepath.Join(c.Home, "ccx-state.json")
 }
 
-// BackupDir is the settings.json backup directory (CCMS_BACKUP_DIR overrides it).
+// BackupDir is the settings.json backup directory (CCX_BACKUP_DIR overrides it).
 func (c *Config) BackupDir() string {
 	if c.BackupDirPath != "" {
 		return c.BackupDirPath
@@ -45,18 +55,13 @@ func (c *Config) BackupDir() string {
 	return filepath.Join(c.Home, "backups")
 }
 
-// CCMSDir is the ccms data directory: logs, daemon.lock/pid (inside Home).
-func (c *Config) CCMSDir() string {
-	return filepath.Join(c.Home, "ccms")
-}
-
-// LogDir is the daemon log directory (CCMS_LOG_DIR overrides it).
+// LogDir is the daemon log directory (CCX_LOG_DIR overrides it).
 func (c *Config) LogDir() string {
 	if c.LogDirPath != "" {
 		return c.LogDirPath
 	}
 
-	return filepath.Join(c.Home, "ccms", "logs")
+	return filepath.Join(c.Home, "logs")
 }
 
 // LoadProviders reads providers.json (unversioned; the map key is
@@ -85,7 +90,7 @@ func LoadProviders(path string) (*models.Providers, error) {
 }
 
 // ResolveDaemonPort is the single port-resolution chain for CLI and daemon:
-// the --port flag > CCMS_PORT (c.DaemonPort) > providers.json daemon.port >
+// the --port flag > CCX_PORT (c.DaemonPort) > providers.json daemon.port >
 // DefaultDaemonPort. An unreadable providers.json falls through to the
 // default (best-effort: switching still works, on the default port).
 func ResolveDaemonPort(c *Config, flagPort int) int {

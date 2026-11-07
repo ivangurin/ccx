@@ -9,7 +9,7 @@ package codex
 import (
 	"encoding/json"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 const (

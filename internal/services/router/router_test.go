@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccms/internal/services/router"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/services/router"
 	"github.com/stretchr/testify/require"
 )
 
@@ -97,7 +97,7 @@ func TestBuild_OpenAIProfileReady(t *testing.T) {
 	require.Equal(t, models.ProtocolOpenAI, protocol)
 }
 
-// without ccms auth copilot the translator is not ready — Build fails, the
+// without ccx auth copilot the translator is not ready — Build fails, the
 // daemon exits at startup instead of serving a dead route.
 func TestBuild_CopilotWithoutAuth_NotReady(t *testing.T) {
 	sp := newFixture(t)
@@ -133,7 +133,7 @@ func TestServeMessages_DelegatesToActive(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec2.Code)
 }
 
-// CCMS_DUMP_DIR captures the raw client body verbatim (unknown fields
+// CCX_DUMP_DIR captures the raw client body verbatim (unknown fields
 // included) and the request still reaches the translator untouched.
 func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	sp := newFixture(t)
@@ -146,7 +146,7 @@ func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	require.NoError(t, err)
 
 	dir := filepath.Join(t.TempDir(), "dumps")
-	t.Setenv("CCMS_DUMP_DIR", dir)
+	t.Setenv("CCX_DUMP_DIR", dir)
 
 	rec := httptest.NewRecorder()
 	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages",
@@ -191,7 +191,7 @@ func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
 			require.NotPanics(t, func() {
 				_, err := router.Build(t.Context(), sp.Config, sp.Logger(), tc.key)
 				require.Error(t, err, "a route without base_url must not be built")
-				require.Contains(t, err.Error(), "ccms edit")
+				require.Contains(t, err.Error(), "ccx edit")
 			})
 		})
 	}

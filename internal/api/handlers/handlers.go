@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 // Routerer — the minimum the HTTP layer needs (implemented by services/router.Service).
@@ -30,7 +30,7 @@ type Deps struct {
 }
 
 // New assembles a chi router: a loopback-Host guard on everything (DNS
-// rebinding) and the X-Ccms marker on /admin/* (browser drive-by); no token
+// rebinding) and the X-Ccx marker on /admin/* (browser drive-by); no token
 // — pass-through auth owns /v1/*, the surface is localhost-only.
 const statusField = "status"
 

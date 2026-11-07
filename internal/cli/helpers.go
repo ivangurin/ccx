@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 // loadProvidersOrHint reads providers.json; if it is missing or unreadable,
@@ -16,7 +16,7 @@ func loadProvidersOrHint(cfg *config.Config, stdout io.Writer) *models.Providers
 	if err == nil {
 		return providers
 	}
-	fmt.Fprint(stdout, "ccms: providers.json not found — run ccms init first\n")
+	fmt.Fprint(stdout, "ccx: providers.json not found — run ccx init first\n")
 
 	return nil
 }

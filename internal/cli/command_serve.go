@@ -10,32 +10,32 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ivangurin/ccms/internal/app"
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/pkg/logger"
+	"github.com/ivangurin/ccx/internal/app"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/pkg/logger"
 )
 
-// runServe — ccms serve [--daemon] --provider <key> [--port N]: run the daemon
+// runServe — ccx serve [--daemon] --provider <key> [--port N]: run the daemon
 // (foreground for debugging; --daemon is SpawnDetached's internal mode, output
 // already goes to daemon.log). The route comes from --provider — there is no
 // in-daemon switching anymore.
 func runServe(args []string, stdout io.Writer) int {
 	opts, err := parseServeArgs(args[1:])
 	if err != nil {
-		fmt.Fprintf(stdout, "ccms: %v\n", err)
+		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
 		return 1
 	}
 
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ccms: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ccx: %v\n", err)
 
 		return 1
 	}
 	log, err := logger.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ccms: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ccx: %v\n", err)
 
 		return 1
 	}
@@ -57,7 +57,7 @@ func parseServeArgs(args []string) (app.ServeOptions, error) {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // runServe prints the error itself; no double usage dump
 	provider := fs.String("provider", "", "providers.json key to proxy (required)")
-	port := fs.Int("port", 0, "listen port (default: CCMS_PORT > daemon.port > 4567)")
+	port := fs.Int("port", 0, "listen port (default: CCX_PORT > daemon.port > 4567)")
 	daemon := fs.Bool("daemon", false, "spawned mode (output to daemon.log)")
 	if err := fs.Parse(args); err != nil {
 		return app.ServeOptions{}, err

@@ -3,7 +3,7 @@ package config
 import (
 	"encoding/json"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 // hasLegacyProvidersResidue reports whether the RAW bytes carry pre-rename
@@ -46,7 +46,7 @@ func hasLegacyProvidersResidue(data []byte) bool {
 // always see a complete file and both migrators derive identical content
 // from the same legacy bytes (last rename wins; after the first success the
 // file is clean and nothing migrates again). The one residual window — a
-// ccms edit/init --force landing between our read and rename — is a NEW
+// ccx edit/init --force landing between our read and rename — is a NEW
 // pairing (read paths never wrote this file before) at pre-existing
 // severity: last-writer-wins between two atomic writes, and the loser is
 // a re-runnable init or the editor's own save.

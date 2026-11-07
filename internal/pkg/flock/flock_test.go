@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/pkg/flock"
+	"github.com/ivangurin/ccx/internal/pkg/flock"
 	"github.com/stretchr/testify/require"
 )
 

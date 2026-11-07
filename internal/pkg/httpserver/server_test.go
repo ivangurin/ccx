@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/pkg/httpserver"
+	"github.com/ivangurin/ccx/internal/pkg/httpserver"
 	"github.com/stretchr/testify/require"
 )
 

@@ -16,16 +16,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ivangurin/ccms/internal/clients/codex"
-	copilot_client "github.com/ivangurin/ccms/internal/clients/copilot"
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/reqdump"
-	"github.com/ivangurin/ccms/internal/translators"
-	"github.com/ivangurin/ccms/internal/translators/anthropic"
-	codex_tr "github.com/ivangurin/ccms/internal/translators/codex"
-	"github.com/ivangurin/ccms/internal/translators/copilot"
-	"github.com/ivangurin/ccms/internal/translators/openai"
+	"github.com/ivangurin/ccx/internal/clients/codex"
+	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/reqdump"
+	"github.com/ivangurin/ccx/internal/translators"
+	"github.com/ivangurin/ccx/internal/translators/anthropic"
+	codex_tr "github.com/ivangurin/ccx/internal/translators/codex"
+	"github.com/ivangurin/ccx/internal/translators/copilot"
+	"github.com/ivangurin/ccx/internal/translators/openai"
 )
 
 // Service — the daemon's fixed route. Built once by Build before listening;
@@ -75,18 +75,18 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
 		if profile.BaseURL == "" {
-			return nil, errors.New("profile has no base_url — fill it in via ccms edit")
+			return nil, errors.New("profile has no base_url — fill it in via ccx edit")
 		}
 
 		return anthropic.New(profile), nil
 	case models.ProtocolOpenAI:
 		if profile.BaseURL == "" {
-			return nil, errors.New("profile has no base_url — fill it in via ccms edit")
+			return nil, errors.New("profile has no base_url — fill it in via ccx edit")
 		}
 
 		return openai.New(profile), nil
 	case models.ProtocolCopilot:
-		store := filepath.Join(cfg.CCMSDir(), "copilot-auth.json")
+		store := filepath.Join(cfg.Home, "copilot-auth.json")
 
 		return copilot.New(profile, copilot_client.New(store)), nil
 	case models.ProtocolCodex:
@@ -112,7 +112,7 @@ func (s *Service) Active() (provider string, protocol models.Protocol, ok bool) 
 }
 
 // ServeMessages delegates /v1/messages to the route's translator. The raw
-// client body is peeked for an opt-in CCMS_DUMP_DIR dump before delegation:
+// client body is peeked for an opt-in CCX_DUMP_DIR dump before delegation:
 // the exact payload a real client sends is the only reproduction for some
 // upstream bugs (see internal/pkg/reqdump).
 func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {

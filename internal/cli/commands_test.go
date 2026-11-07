@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/cli"
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
-	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/cli"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,7 +106,7 @@ func TestCommandList_NoProvidersHint(t *testing.T) {
 	code := cli.Execute([]string{cmdList}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "ccms init")
+	require.Contains(t, out.String(), "ccx init")
 }
 
 func TestCommandStatus_WithState(t *testing.T) {
@@ -175,7 +175,7 @@ func TestCommand_MissingProvidersInitHint(t *testing.T) {
 	code := cli.Execute([]string{cmdList}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "ccms init")
+	require.Contains(t, out.String(), "ccx init")
 }
 
 func TestServe_RequiresProvider(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/stretchr/testify/require"
 )
 

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/clients/codex"
+	"github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,23 +7,23 @@ RESET := \033[0m
 
 .PHONY: run
 run: .hooks ## Run the daemon in foreground (dev)
-	@echo "$(GREEN)▶$(RESET) Running ccms daemon..."
-	@go run ./cmd/ccms serve
+	@echo "$(GREEN)▶$(RESET) Running ccx daemon..."
+	@go run ./cmd/ccx serve
 
 .PHONY: build
 build: ## Build the binary
-	go build -o $(BIN_DIR)/ccms ./cmd/ccms
+	go build -o $(BIN_DIR)/ccx ./cmd/ccx
 
 # sudo lives in the recipes only: `install: build` builds as the invoking
 # user, so nothing compiles or caches under root
 .PHONY: install
-install: build ## Build and install the binary to $(PREFIX)/bin/ccms (sudo)
+install: build ## Build and install the binary to $(PREFIX)/bin/ccx (sudo)
 	sudo mkdir -p $(PREFIX)/bin
-	sudo install -m 0755 $(BIN_DIR)/ccms $(PREFIX)/bin/ccms
+	sudo install -m 0755 $(BIN_DIR)/ccx $(PREFIX)/bin/ccx
 
 .PHONY: uninstall
 uninstall: ## Remove the installed binary from $(PREFIX)/bin (sudo)
-	sudo rm -f $(PREFIX)/bin/ccms
+	sudo rm -f $(PREFIX)/bin/ccx
 
 .PHONY: lint
 lint: .hooks ## Run linters on changed files

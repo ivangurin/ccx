@@ -7,7 +7,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 // Translator is a passthrough to profile.BaseURL.

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	suite_provider "github.com/ivangurin/ccms/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,15 +82,15 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 
 	require.Equal(t, filepath.Join(home, "providers.json"), sp.Config.ProvidersPath())
 	require.Equal(t, filepath.Join(home, "settings.json"), sp.Config.SettingsPath())
-	require.Equal(t, filepath.Join(home, "ccms-state.json"), sp.Config.StatePath())
+	require.Equal(t, filepath.Join(home, "ccx-state.json"), sp.Config.StatePath())
 	require.Equal(t, filepath.Join(home, "backups"), sp.Config.BackupDir())
-	require.Equal(t, filepath.Join(home, "ccms", "logs"), sp.Config.LogDir())
+	require.Equal(t, filepath.Join(home, "logs"), sp.Config.LogDir())
 
-	t.Setenv("CCMS_PROVIDERS", "/tmp/custom-providers.json")
-	t.Setenv("CCMS_SETTINGS", "/tmp/custom-settings.json")
-	t.Setenv("CCMS_STATE", "/tmp/custom-state.json")
-	t.Setenv("CCMS_BACKUP_DIR", "/tmp/custom-backups")
-	t.Setenv("CCMS_LOG_DIR", "/tmp/custom-logs")
+	t.Setenv("CCX_PROVIDERS", "/tmp/custom-providers.json")
+	t.Setenv("CCX_SETTINGS", "/tmp/custom-settings.json")
+	t.Setenv("CCX_STATE", "/tmp/custom-state.json")
+	t.Setenv("CCX_BACKUP_DIR", "/tmp/custom-backups")
+	t.Setenv("CCX_LOG_DIR", "/tmp/custom-logs")
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/custom-providers.json", cfg.ProvidersPath())
@@ -98,6 +98,23 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, "/tmp/custom-state.json", cfg.StatePath())
 	require.Equal(t, "/tmp/custom-backups", cfg.BackupDir())
 	require.Equal(t, "/tmp/custom-logs", cfg.LogDir())
+}
+
+func TestSettingsPath_DefaultLivesInClaudeDir(t *testing.T) {
+	// settings.json belongs to Claude Code: its default path stays in
+	// ~/.claude regardless of CCX_HOME (the sandbox must not capture it,
+	// the live settings must not leak into tests) — the escape hatch is
+	// CCX_SETTINGS, which the suite provider sets for the other tests.
+	t.Setenv("CCX_HOME", "/tmp/some-ccx-home")
+	t.Setenv("CCX_SETTINGS", "")
+
+	cfg, err := config.NewFromEnv()
+	require.NoError(t, err)
+
+	userHome, err := os.UserHomeDir()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(userHome, ".claude", "settings.json"), cfg.SettingsPath())
+	require.NotEqual(t, filepath.Join(cfg.Home, "settings.json"), cfg.SettingsPath())
 }
 
 // writePortFixture writes providers.json with the given daemon.port
@@ -114,7 +131,7 @@ func writePortFixture(t *testing.T, sp *suite_provider.Provider, port *int) {
 func TestResolveDaemonPort_FlagWins(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writePortFixture(t, sp, newInt(4600))
-	sp.Config.DaemonPort = 4699 // CCMS_PORT
+	sp.Config.DaemonPort = 4699 // CCX_PORT
 
 	require.Equal(t, 4700, config.ResolveDaemonPort(sp.Config, 4700))
 }
@@ -122,7 +139,7 @@ func TestResolveDaemonPort_FlagWins(t *testing.T) {
 func TestResolveDaemonPort_EnvOverProviders(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writePortFixture(t, sp, newInt(4600))
-	sp.Config.DaemonPort = 4699 // CCMS_PORT
+	sp.Config.DaemonPort = 4699 // CCX_PORT
 
 	require.Equal(t, 4699, config.ResolveDaemonPort(sp.Config, 0))
 }

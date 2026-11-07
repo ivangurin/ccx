@@ -2,7 +2,7 @@ package models
 
 import "encoding/json"
 
-// Daemon holds the local ccms daemon's only parameter: the listen port
+// Daemon holds the local ccx daemon's only parameter: the listen port
 // (optional — absent/0 means the default 4567 at resolution time). There is
 // no daemon-owned secret anymore: openai credentials are pass-through (the
 // token Claude Code sends travels upstream), copilot/codex own theirs in
@@ -13,7 +13,7 @@ type Daemon struct {
 
 // Providers is the root of providers.json (unversioned). The provider
 // map's file key is "providers"; files from older releases use "profiles" —
-// both load forever (decoder-level backward compat), ccms never writes
+// both load forever (decoder-level backward compat), ccx never writes
 // "profiles".
 type Providers struct {
 	Daemon    *Daemon    `json:"daemon,omitempty"`

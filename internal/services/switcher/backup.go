@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
 // backupSettings — back up settings.json before editing: a umask-077
@@ -18,7 +18,7 @@ import (
 func backupSettings(cfg *config.Config, settings *models.Settings) error {
 	data := settings.Bytes()
 	if err := os.MkdirAll(cfg.BackupDir(), 0o750); err != nil {
-		return fmt.Errorf("ccms: backup dir: %w", err)
+		return fmt.Errorf("ccx: backup dir: %w", err)
 	}
 	name := fmt.Sprintf("settings-%s-%d.json", time.Now().Format("20060102-150405"), os.Getpid())
 	path := filepath.Join(cfg.BackupDir(), name)
@@ -29,7 +29,7 @@ func backupSettings(cfg *config.Config, settings *models.Settings) error {
 // writeFileAtomic — tmp in the same directory + rename, perms 600.
 func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".ccmstmp-*")
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".ccxtmp-*")
 	if err != nil {
 		return fmt.Errorf("tmp: %w", err)
 	}
@@ -55,10 +55,10 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
-// writeStateFile — atomic write of ccms-state.json (format 1:1 with bash-ccx).
+// writeStateFile — atomic write of ccx-state.json (format 1:1 with bash-ccx).
 func writeStateFile(path string, state models.State) error {
 	if err := jsonfile.WriteAtomicJSON(path, state, 0o600); err != nil {
-		return fmt.Errorf("ccms: writing state: %w", err)
+		return fmt.Errorf("ccx: writing state: %w", err)
 	}
 
 	return nil

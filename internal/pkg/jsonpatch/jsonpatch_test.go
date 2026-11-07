@@ -3,7 +3,7 @@ package jsonpatch_test
 import (
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/pkg/jsonpatch"
+	"github.com/ivangurin/ccx/internal/pkg/jsonpatch"
 	"github.com/stretchr/testify/require"
 )
 

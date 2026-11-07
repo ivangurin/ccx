@@ -1,5 +1,5 @@
 # Release: a pushed v* tag builds the darwin/arm64 binary and attaches it
-# to a generated GitHub Release as ccms-macos-<tag>.zip (tag verbatim, "v"
+# to a generated GitHub Release as ccx-macos-<tag>.zip (tag verbatim, "v"
 # included). Cross-compiled on ubuntu — Go needs no macOS runner for this,
 # and macOS minutes cost 10x.
 name: release
@@ -21,10 +21,14 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Build darwin/arm64
-        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o bin/ccms ./cmd/ccms
+        # the tag is baked into cli.Version: a released binary must not
+        # answer "dev" to `ccx version`
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath
+          -ldflags "-X github.com/ivangurin/ccx/internal/cli.Version=${GITHUB_REF_NAME}"
+          -o bin/ccx ./cmd/ccx
       - name: Zip binary to archive root
-        run: zip -j "ccms-macos-${GITHUB_REF_NAME}.zip" bin/ccms
+        run: zip -j "ccx-macos-${GITHUB_REF_NAME}.zip" bin/ccx
       - name: Create release with the artifact
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "ccms-macos-${GITHUB_REF_NAME}.zip" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" "ccx-macos-${GITHUB_REF_NAME}.zip" --generate-notes

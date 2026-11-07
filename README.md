@@ -1,6 +1,6 @@
-# Claude Code Model Switcher
+# ccx
 
-A single Go binary (`ccms`) for switching Claude Code LLM providers: the CLI
+A single Go binary (`ccx`) for switching Claude Code LLM providers: the CLI
 switches profiles, the embedded daemon translates the Anthropic Messages API
 into the active provider's protocol. A rewrite of the bash tool
 [`ccx`](../ccx) (the behavior reference) with no external proxies: ccr,
@@ -10,18 +10,20 @@ claude-codex by a built-in codex client.
 ## Install (macOS, Apple Silicon)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ivangurin/ccms/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ivangurin/ccx/main/install.sh | sh
 ```
 
-Downloads the latest release and installs it to `/usr/local/bin/ccms` (same
+Downloads the latest release and installs it to `/usr/local/bin/ccx` (same
 destination and permissions as `make install`). Uninstall:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ivangurin/ccms/main/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ivangurin/ccx/main/uninstall.sh | sh
 ```
 
-Removes the binary only — `~/.claude/providers.json` and the rest of the
-setup stay untouched.
+Removes the binary only — `~/.ccx` (providers.json, state, backups, logs)
+and the rest of the setup stay untouched. Data from the pre-rename release
+(kept in `~/.claude`) is copied into `~/.ccx` automatically on the first
+run; the old copies can be deleted by hand.
 
 ## Protocols (profile `protocol` field)
 
@@ -35,19 +37,19 @@ setup stay untouched.
 ## Quick start
 
 ```bash
-make install                      # build + /usr/local/bin/ccms (PREFIX=…)
-ccms init                         # import from settings/env.json + templates
-ccms list                         # profiles and models
-ccms auth copilot                 # GitHub OAuth (for the copilot profile)
-ccms use work                     # switch (the daemon starts automatically)
-ccms use zai                      # switch to an anthropic profile — direct, no daemon
-ccms status                       # profile/model/daemon
+make install                      # build + /usr/local/bin/ccx (PREFIX=…)
+ccx init                         # import from settings/env.json + templates
+ccx list                         # profiles and models
+ccx auth copilot                 # GitHub OAuth (for the copilot profile)
+ccx use work                     # switch (the daemon starts automatically)
+ccx use zai                      # switch to an anthropic profile — direct, no daemon
+ccx status                       # profile/model/daemon
 ```
 
 How `ANTHROPIC_BASE_URL` ends up in `~/.claude/settings.json` depends on the
 profile's protocol: translated ones (openai/copilot/codex) point at the local
 daemon (`http://127.0.0.1:4567` by default) and switching restarts the daemon
-with the new provider as a launch parameter (`ccms serve --daemon --provider
+with the new provider as a launch parameter (`ccx serve --daemon --provider
 <key> --port <port>`); an anthropic passthrough goes **direct** — the upstream
 `base_url` and credential are written straight into the config (bash-ccx
 semantics) and the unused daemon is stopped. For openai the credential is
@@ -55,7 +57,7 @@ pass-through: settings.json gets the provider's own token, Claude Code sends
 it with every request, and the daemon forwards it upstream unchanged — it
 holds no secret of its own.
 
-## Config (`~/.claude/providers.json`, 0600 permissions)
+## Config (`~/.ccx/providers.json`, 0600 permissions)
 
 Connection fields live directly in the provider entry — no protocol-named
 block; `protocol` determines which of them are meaningful. The map lives
@@ -64,7 +66,7 @@ key, `version`, `daemon.auth_token`) keep loading and are rewritten in the
 current schema on the next load. The client masquerade (UA, editor
 versions, integration id, originator, prefill fix) is not config: it lives
 in code constants next to the translators. The optional `daemon.port`
-defaults to 4567 (precedence: `--port` flag > `CCMS_PORT` > `daemon.port` >
+defaults to 4567 (precedence: `--port` flag > `CCX_PORT` > `daemon.port` >
 4567).
 
 ```jsonc
@@ -91,7 +93,7 @@ defaults to 4567 (precedence: `--port` flag > `CCMS_PORT` > `daemon.port` >
 
 ## Commands
 
-`ccms` (menu) · `ccms use <profile> [model]` (alias `ccms <profile>`) · `list` ·
+`ccx` (menu) · `ccx use <profile> [model]` (alias `ccx <profile>`) · `list` ·
 `status` · `init [--force]` · `edit` · `serve --provider <key> [--port N]`
 (daemon in foreground) · `stop` · `auth copilot` · `auth codex` · `version` ·
 `help`

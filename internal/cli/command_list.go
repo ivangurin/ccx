@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ivangurin/ccms/internal/config"
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
-// runList — ccms list: profiles and models in file order.
+// runList — ccx list: profiles and models in file order.
 func runList(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
-		fmt.Fprintf(stdout, "ccms: %v\n", err)
+		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
 		return 1
 	}
@@ -22,7 +22,7 @@ func runList(_ []string, stdout io.Writer) int {
 	}
 
 	if providers.Providers.Len() == 0 {
-		fmt.Fprintln(stdout, "No profiles — add them to providers.json or run ccms init")
+		fmt.Fprintln(stdout, "No profiles — add them to providers.json or run ccx init")
 
 		return 0
 	}

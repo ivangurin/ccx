@@ -4,7 +4,7 @@
 // order, indentation, blank lines, the trailing newline — survives
 // byte-for-byte. Unlike a full unmarshal→marshal round-trip (or sjson, which
 // inserts compactly with a hanging comma), the untouched parts of the file
-// are never reformatted; ccms does not own settings.json, so its edits must
+// are never reformatted; ccx does not own settings.json, so its edits must
 // be invisible in a diff.
 package jsonpatch
 

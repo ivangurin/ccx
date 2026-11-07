@@ -9,15 +9,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ivangurin/ccms/internal/pkg/jsonpatch"
+	"github.com/ivangurin/ccx/internal/pkg/jsonpatch"
 )
 
 // Settings is Claude Code's settings.json patched byte-precisely: the file's
-// own text is edited in place (jsonpatch), so everything ccms does not own
+// own text is edited in place (jsonpatch), so everything ccx does not own
 // survives a switch byte-for-byte — key order, indentation, the trailing
 // newline. Fresh env keys land at the end of the env block; a replaced key
 // keeps its line. This goes beyond bash-ccx, whose jq round-trip reformatted
-// the whole file: ccms does not own settings that belong to someone else.
+// the whole file: ccx does not own settings that belong to someone else.
 type Settings struct {
 	raw []byte
 }

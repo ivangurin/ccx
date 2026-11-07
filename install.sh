@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the latest ccms release to /usr/local/bin — the same destination
+# Installs the latest ccx release to /usr/local/bin — the same destination
 # and permissions as `make install` (Makefile PREFIX default). Supports only
 # what the release workflow publishes: darwin/arm64.
 #
@@ -9,7 +9,7 @@
 # password on /dev/tty, not on the pipe.
 set -eu
 
-repo=ivangurin/ccms
+repo=ivangurin/ccx
 prefix=/usr/local/bin
 
 os=$(uname -s)
@@ -33,14 +33,14 @@ fi
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
-echo "Downloading ccms $tag ..."
-curl -fSL -o "$workdir/ccms.zip" \
-    "https://github.com/$repo/releases/download/$tag/ccms-macos-$tag.zip"
-unzip -q "$workdir/ccms.zip" -d "$workdir"
+echo "Downloading ccx $tag ..."
+curl -fSL -o "$workdir/ccx.zip" \
+    "https://github.com/$repo/releases/download/$tag/ccx-macos-$tag.zip"
+unzip -q "$workdir/ccx.zip" -d "$workdir"
 
 # /usr/local/bin does not exist on a fresh Apple Silicon macOS (Homebrew
 # lives in /opt/homebrew there) — create it, mirroring the Makefile recipe.
 sudo mkdir -p "$prefix"
-sudo install -m 0755 "$workdir/ccms" "$prefix/ccms"
+sudo install -m 0755 "$workdir/ccx" "$prefix/ccx"
 
-echo "Installed $prefix/ccms ($tag)"
+echo "Installed $prefix/ccx ($tag)"

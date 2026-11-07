@@ -8,12 +8,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ivangurin/ccms/internal/models"
-	"github.com/ivangurin/ccms/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
 // DefaultDaemonPort is the default daemon port (fixed: settings.json points
-// at it once; a port conflict is a comprehensible error + CCMS_PORT).
+// at it once; a port conflict is a comprehensible error + CCX_PORT).
 const DefaultDaemonPort = 4567
 
 // zaiProfileName is the display name of the profile imported from settings.json.
@@ -23,7 +23,7 @@ const zaiProfileName = "z.ai (GLM)"
 // --force refuses (never silently overwrite user credentials).
 var ErrProvidersExist = errors.New("config: providers.json already exists (use --force)")
 
-// InitResult is the outcome of ccms init for display to the user.
+// InitResult is the outcome of ccx init for display to the user.
 type InitResult struct {
 	Path     string
 	Profiles []string // keys in creation order
@@ -64,7 +64,7 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 		providers.Providers.Set("zai", zai)
 	} else {
 		providers.Providers.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Env: map[string]string{}})
-		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccms edit")
+		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccx edit")
 	}
 
 	if work := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); work != nil {

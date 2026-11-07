@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 // The client masquerade (UA, editor versions, integration id, originator)

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/translators/prefill"
+	"github.com/ivangurin/ccx/internal/translators/prefill"
 	"github.com/stretchr/testify/require"
 )
 

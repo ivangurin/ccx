@@ -3,7 +3,7 @@ package chatstream
 import (
 	"slices"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
 // event names (goconst).

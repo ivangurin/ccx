@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ivangurin/ccms/internal/models"
+	"github.com/ivangurin/ccx/internal/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,7 +140,7 @@ func TestSettings_PatchEnvPreservesBlankLinesAndInlineBlocks(t *testing.T) {
 
   "statusLine": {
     "type": "command",
-    "command": "ccms statusline"
+    "command": "ccx statusline"
   }
 }
 `
@@ -161,7 +161,7 @@ func TestSettings_PatchEnvPreservesBlankLinesAndInlineBlocks(t *testing.T) {
 
   "statusLine": {
     "type": "command",
-    "command": "ccms statusline"
+    "command": "ccx statusline"
   },
   "model": "glm-5.3[1m]",
   "availableModels": ["glm-5.3[1m]"],

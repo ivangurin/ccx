@@ -5,12 +5,12 @@ import (
 	"net/http"
 )
 
-// adminMarker is the header only ccms's own clients send on /admin/*. A
+// adminMarker is the header only ccx's own clients send on /admin/*. A
 // custom header is not a CORS "simple" one: a browser must preflight it, and
 // the preflight has no CORS policy to satisfy — a drive-by web page cannot
 // POST /admin/stop fire-and-forget anymore (the removed daemon token used to
 // gate this; pass-through auth took it away, see the package doc).
-const adminMarker = "X-Ccms"
+const adminMarker = "X-Ccx"
 
 // requireLocalHost rejects requests whose Host is not a loopback origin.
 // Defense against DNS rebinding: a public name that resolves to 127.0.0.1
@@ -32,7 +32,7 @@ func requireLocalHost(next http.Handler) http.Handler {
 	})
 }
 
-// requireAdminMarker enforces the X-Ccms header on /admin/* (see adminMarker).
+// requireAdminMarker enforces the X-Ccx header on /admin/* (see adminMarker).
 func requireAdminMarker(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(adminMarker) == "" {
