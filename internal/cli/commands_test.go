@@ -15,11 +15,14 @@ import (
 )
 
 const (
-	cmdInit   = "init"
-	cmdList   = "list"
-	cmdStatus = "status"
-	cmdEdit   = "edit"
-	profZai   = "zai"
+	cmdInit       = "init"
+	cmdList       = "list"
+	cmdStatus     = "status"
+	cmdEdit       = "edit"
+	profZai       = "zai"
+	profZaiName   = "z.ai"
+	modelFlash    = "flash"
+	modelGLMFlash = "glm-flash"
 )
 
 func TestCommandInit_CreatesProviders(t *testing.T) {

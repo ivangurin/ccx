@@ -64,6 +64,77 @@ func TestExecute_HelpFlag(t *testing.T) {
 	require.Contains(t, out.String(), "use")
 }
 
+// `ccx <provider> [model]` is a shortcut for `ccx use <provider> [model]`
+// (bash parity): the root command dispatches an unknown first argument to
+// use, so a real provider applies just like via the explicit verb.
+func TestExecute_ShortcutAppliesUse(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
+	p.Providers.Set(profZai, &models.Profile{
+		Name:     profZaiName,
+		Protocol: models.ProtocolAnthropic,
+		BaseURL:  "https://api.z.ai/api/anthropic",
+		Models: []models.Model{
+			{ID: "glm-5.3[1m]", Name: "glm-5.3", Default: true},
+			{ID: modelGLMFlash, Name: modelFlash},
+		},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
+	var out bytes.Buffer
+
+	code := cli.Execute([]string{profZai, modelFlash}, &out)
+
+	require.Equal(t, 0, code)
+	require.Contains(t, out.String(), modelGLMFlash)
+
+	st := readStateFile(t, sp.Config.StatePath())
+	require.Equal(t, profZai, st.Profile)
+	require.Equal(t, modelGLMFlash, st.Model)
+}
+
+// The bash-ccx single-dash aliases dispatch to the full commands: each alias
+// produces the same output and exit code as its expansion.
+func TestExecute_ShortAliases(t *testing.T) {
+	for alias, full := range map[string]string{"-l": "list", "-s": "status", "-e": "edit"} { //nolint:paralleltest // table shares nothing
+		t.Run(alias, func(t *testing.T) {
+			suite_provider.NewProvider(t) // sandbox: commands read the real env
+			var aliasOut, fullOut bytes.Buffer
+
+			aliasCode := cli.Execute([]string{alias}, &aliasOut)
+			fullCode := cli.Execute([]string{full}, &fullOut)
+
+			require.Equal(t, fullCode, aliasCode)
+			require.Equal(t, fullOut.String(), aliasOut.String())
+		})
+	}
+}
+
+func TestExecute_VersionFlag(t *testing.T) {
+	for _, flag := range []string{"-v", "--version"} { //nolint:paralleltest // table shares nothing
+		t.Run(flag, func(t *testing.T) {
+			var out bytes.Buffer
+
+			code := cli.Execute([]string{flag}, &out)
+
+			require.Equal(t, 0, code)
+			require.Equal(t, "ccx dev\n", out.String())
+		})
+	}
+}
+
+// `completion` is a real cobra subcommand, not a provider key: the shortcut
+// must not swallow it.
+func TestExecute_CompletionIsNotShortcut(t *testing.T) {
+	var out bytes.Buffer
+
+	code := cli.Execute([]string{"completion", "zsh"}, &out)
+
+	require.Equal(t, 0, code)
+	require.Contains(t, out.String(), "#compdef ccx")
+	require.NotContains(t, out.String(), "unknown provider")
+}
+
 // A legacy file with a "version" field loads: the decoder ignores the unknown
 // field (the schema is unversioned now).
 func TestExecute_LegacyVersionFieldIgnored(t *testing.T) {

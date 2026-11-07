@@ -229,6 +229,10 @@ edited in place, never moved or reformatted.
 | `ccx stop` | stop the daemon |
 | `ccx auth [provider]` | login flow for the provider's protocol (copilot device flow / codex OAuth); no argument — auth state of every provider |
 | `ccx version` / `ccx help` | version / help |
+| `ccx completion <shell>` | shell completion script (zsh/bash/fish/powershell) |
+
+Single-dash aliases from bash-ccx also work: `ccx -l` (list), `ccx -s`
+(status), `ccx -e` (edit), `ccx -v` (version).
 
 ## Development
 

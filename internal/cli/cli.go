@@ -1,73 +1,129 @@
-// Package cli — stdlib command dispatcher for ccx. Commands are simple verbs
-// with 0–2 arguments; cobra is not needed (why: minimal dependencies, commands
-// are ported from bash-ccx 1:1 along with their tests).
+// Package cli — cobra command tree for ccx. Every command is a thin cobra
+// shell over a runXxx(args, stdout) int body (argv-style args, args[0] is the
+// command name): the bodies keep the bash-ccx exit codes and hint texts that
+// the ported tests pin, cobra owns parsing, help and shell completion.
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // Version is set at build time (-X ...cli.Version=...), dev — locally.
 var Version = "dev"
 
-const usage = `ccx — switching LLM providers for Claude Code
+// exitError carries a command body's non-zero exit code through cobra's
+// error channel; the body already printed its own message, so Execute must
+// not print anything for it.
+type exitError struct{ code int }
 
-Usage:
-  ccx                    interactive menu: provider → model
-  ccx use <provider> [model]
-  ccx list               providers and models
-  ccx status             active provider/model, daemon state
-  ccx init [--force]     create providers.json (import from settings/env)
-  ccx edit               open providers.json in $EDITOR
-  ccx serve [--daemon] [--debug] --provider <key> [--port N]
-                          daemon (foreground; spawned by ccx use)
-  ccx stop               the daemon
-  ccx auth [provider]    login flow (copilot/codex); no argument — auth state
-  ccx version            binary version
-  ccx help               this help
-`
+func (e exitError) Error() string { return fmt.Sprintf("exit status %d", e.code) }
+
+// shortAliases — bash-ccx single-dash command aliases (ccx -l == ccx list).
+// cobra has no such notion for subcommands, so the first argument is rewritten
+// before parsing.
+var shortAliases = map[string]string{"-l": "list", "-s": "status", "-e": "edit"}
 
 // Execute runs the command; returns the process exit code.
 func Execute(args []string, stdout io.Writer) int {
-	if len(args) == 0 {
-		return runMenu(args, stdout)
-	}
-	switch args[0] {
-	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "ccx %s\n", Version)
-
-		return 0
-	case "help", "--help", "-h":
-		fmt.Fprint(stdout, usage)
-
-		return 0
-	case "init":
-		return runInit(args, stdout)
-	case "list", "-l":
-		return runList(args, stdout)
-	case "status", "-s":
-		return runStatus(args, stdout)
-	case "edit", "-e":
-		return runEdit(args, stdout)
-	case "use":
-		return runUse(args, stdout)
-	case "serve":
-		return runServe(args, stdout)
-	case "stop":
-		return runStop(args, stdout)
-	case "auth":
-		return runAuth(args, stdout)
-	default:
-		// not a command — likely a provider: ccx zai / ccx zai glm-5.3 (bash parity)
-		if !strings.HasPrefix(args[0], "-") {
-			useArgs := append([]string{"use", args[0]}, args[1:]...)
-
-			return runUse(useArgs, stdout)
+	if len(args) > 0 {
+		if full, ok := shortAliases[args[0]]; ok {
+			args = append([]string{full}, args[1:]...)
 		}
-		fmt.Fprintf(stdout, "ccx: unknown command %q\n\n%s", args[0], usage)
-
-		return 1
 	}
+
+	root := newRootCmd(stdout)
+	root.SetArgs(args)
+
+	err := root.Execute()
+	if err == nil {
+		return 0
+	}
+	if ee, ok := errors.AsType[exitError](err); ok {
+		return ee.code
+	}
+	// cobra-level failure (unknown flag, bad flag value): ccx prints errors
+	// to stdout with the "ccx: " prefix like every command body does
+	fmt.Fprintf(stdout, "ccx: %v\n", err)
+
+	return 1
+}
+
+// runFunc is a command body: argv-style args (args[0] is the command name).
+type runFunc func(args []string, stdout io.Writer) int
+
+// bodyCmd wraps a command body into a cobra command. Positional-argument
+// counting stays in the body (its messages are part of the pinned behavior),
+// so cobra accepts any arguments.
+func bodyCmd(stdout io.Writer, use, short string, run runFunc) *cobra.Command {
+	name := use
+	for i, r := range use {
+		if r == ' ' {
+			name = use[:i]
+
+			break
+		}
+	}
+
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			return toErr(run(append([]string{name}, args...), stdout))
+		},
+	}
+}
+
+func toErr(code int) error {
+	if code == 0 {
+		return nil
+	}
+
+	return exitError{code: code}
+}
+
+func newRootCmd(stdout io.Writer) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "ccx [provider [model]]",
+		Short: "ccx — switching LLM providers for Claude Code",
+		Long: "ccx — switching LLM providers for Claude Code.\n\n" +
+			"Without arguments: interactive menu (provider → model).\n" +
+			"`ccx <provider> [model]` is a shortcut for `ccx use <provider> [model]`.",
+		Version: Version,
+		// an unknown first argument is not an error: it is a provider key
+		// (`ccx zai`, `ccx zai glm-5.3` — bash parity)
+		Args:          cobra.ArbitraryArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return toErr(runMenu(nil, stdout))
+			}
+
+			return toErr(runUse(append([]string{"use"}, args...), stdout))
+		},
+	}
+	root.SetOut(stdout)
+	root.SetErr(stdout)
+	root.SetVersionTemplate("ccx {{.Version}}\n")
+
+	use := bodyCmd(stdout, "use <provider> [model]", "switch to a provider (and model)", runUse)
+	list := bodyCmd(stdout, "list", "providers and models", runList)
+	status := bodyCmd(stdout, "status", "active provider/model, daemon state", runStatus)
+	edit := bodyCmd(stdout, "edit", "open providers.json in $EDITOR", runEdit)
+	stop := bodyCmd(stdout, "stop", "stop the daemon", runStop)
+	auth := bodyCmd(stdout, "auth [provider]", "login flow (copilot/codex); no argument — auth state", runAuth)
+	version := bodyCmd(stdout, "version", "binary version", func(_ []string, out io.Writer) int {
+		fmt.Fprintf(out, "ccx %s\n", Version)
+
+		return 0
+	})
+
+	root.AddCommand(use, list, status, newInitCmd(stdout), edit, newServeCmd(), stop, auth, version)
+
+	return root
 }

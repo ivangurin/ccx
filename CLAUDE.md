@@ -64,7 +64,10 @@ next load — best-effort rewrite via SaveProviders).
 ```
 cmd/ccx/main.go                        entry point: main() → cli.Execute
 internal/
-  cli/                                  stdlib command dispatcher (use/list/status/init/serve/...)
+  cli/                                  cobra command tree (use/list/status/init/serve/...);
+                                         Execute(args, stdout) int is the stable seam — bodies
+                                         runXxx(argv, stdout) int keep bash-ccx exit codes and
+                                         hint texts, cobra owns parsing/help/completion
   app/                                  app.Run(): serve mode: config→logger→lock→route(Build)→http
                                          spawn.go: detached daemon launch (Setsid, pidfile,
                                          --provider/--port args)
@@ -212,6 +215,24 @@ internal/
   timings only — never bodies or credentials); stream breaks record
   502+error, count_tokens records nothing; passthrough token counts stay
   zero by design (SSE is never parsed there).
+
+### CLI invariants (cobra)
+
+- **Provider shortcut rides on root Args**: an unknown first argument
+  reaches the root RunE (which forwards it to `use`) only because root has
+  an Args validator set (`cobra.ArbitraryArgs`) — without one cobra answers
+  "unknown command" itself (verified live).
+- **Cobra built-ins shadow provider keys**: a provider named `completion`
+  or `help` cannot be switched via the shortcut — cobra's built-in
+  subcommands win (verified live: `ccx completion zsh` prints the script);
+  `ccx use completion` still works.
+- **Exit codes and hint texts live in the bodies**: RunE wraps the body's
+  int into `exitError{code}` (SilenceUsage/Errors on; Execute prints
+  cobra-level failures itself as `ccx: <err>` to stdout) — the ported
+  bash-ccx tests pin those texts through `cli.Execute`.
+- zsh does not word-split an unquoted `$var` — manual multi-word CLI checks
+  need explicit arguments or `${=var}` (verified live: a loop over
+  "serve --provider x …" tested the shortcut path instead of serve).
 
 ## Testing
 

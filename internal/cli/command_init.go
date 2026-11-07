@@ -6,7 +6,30 @@ import (
 	"io"
 
 	"github.com/ivangurin/ccx/internal/config"
+	"github.com/spf13/cobra"
 )
+
+// newInitCmd — ccx init [--force] as a cobra command (the flag is bound by
+// pflag; the body still takes argv-style args).
+func newInitCmd(stdout io.Writer) *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "create providers.json (import from settings/env)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			args := []string{"init"}
+			if force {
+				args = append(args, "--force")
+			}
+
+			return toErr(runInit(args, stdout))
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "regenerate providers.json (the current file is replaced)")
+
+	return cmd
+}
 
 // runInit — ccx init [--force]: create providers.json from the environment.
 func runInit(args []string, stdout io.Writer) int {

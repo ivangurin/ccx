@@ -12,6 +12,7 @@ tool (
 require (
 	github.com/caarlos0/env/v7 v7.1.0
 	github.com/go-chi/chi/v5 v5.3.2
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
@@ -188,7 +189,6 @@ require (
 	github.com/sourcegraph/go-diff v0.9.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/ssgreg/nlreturn/v2 v2.2.1 // indirect
