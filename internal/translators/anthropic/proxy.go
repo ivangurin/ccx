@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -90,26 +91,73 @@ func relay(w http.ResponseWriter, resp *http.Response) {
 	}
 }
 
+// maxProxyBody bounds the buffered request body (same bound as the copilot
+// translator): buffering enables the one rectifying retry on 400s.
+const maxProxyBody = 64 * 1024 * 1024
+
 func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxProxyBody))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
+
+		return
+	}
 	// read deadlines: a hung gateway (nothing ever sent) would otherwise
 	// leave the client request open forever — see readguard
 	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
 	defer guard.Stop()
-	req, err := t.upstreamRequest(gctx, r, r.Body)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-
-		return
-	}
-	resp, err := t.http.Do(req) //nolint:gosec // base_url from the owner config
+	resp, err := t.upstream(gctx, r, body)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, guard.Err(err).Error())
 
 		return
 	}
+	if resp.StatusCode == http.StatusBadRequest {
+		resp = t.rectifyRetry(gctx, r, body, resp)
+	}
 	defer func() { _ = resp.Body.Close() }()
 	resp.Body = guard.Body(resp.Body)
 	relay(w, resp)
+}
+
+// upstream performs one upstream roundtrip with the buffered body.
+func (t *Translator) upstream(ctx context.Context, r *http.Request, body []byte) (*http.Response, error) {
+	req, err := t.upstreamRequest(ctx, r, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	return t.http.Do(req) //nolint:gosec // base_url from the owner config
+}
+
+// rectifyRetry consumes a 400 response, and when the error text names a
+// fixable thinking-contract violation, retries ONCE with the fixed body.
+// The original response's body is re-armed, so the caller can relay either
+// outcome unchanged.
+func (t *Translator) rectifyRetry(ctx context.Context, r *http.Request, body []byte, resp *http.Response) *http.Response {
+	errText, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(errText))
+
+	fixed, ok := rectifyBody(body, string(errText))
+	if !ok {
+		return resp
+	}
+	_ = resp.Body.Close()
+	retried, err := t.upstream(ctx, r, fixed)
+	if err != nil {
+		// the retry failing to even connect is a plain 502 — the original
+		// upstream answered, so this error is the user's best signal
+		errResp := &http.Response{
+			StatusCode: http.StatusBadGateway,
+			Body:       io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"api_error","message":"rectified retry failed"}}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+		}
+
+		return errResp
+	}
+
+	return retried
 }
 
 // ServeMessages: POST /v1/messages (forward with body and SSE as is).
