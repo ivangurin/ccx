@@ -130,6 +130,16 @@ internal/
   needs no translation — the upstream `base_url` + credential are written
   straight into settings.json (bash-ccx semantics), and the unused daemon is
   stopped best-effort.
+- **Codex login is allow-list-gated**: auth.openai.com accepts only the
+  registered callback URIs `http://localhost:1455/auth/callback` (fallback
+  `:1457`; a busy port gets a `GET /cancel` nudge first) and authorize only
+  at `/oauth/authorize` with the codex CLI's exact parameter set
+  (`originator=codex_cli_rs`, `codex_cli_simplified_flow`, connectors
+  scopes). Any deviation lets the browser login succeed but the issuer never
+  redirects — a silent hang until the 15-min budget (verified live). The
+  reference is codex-rs `login/server.rs`: read it, don't pattern from
+  memory; the flow is verifiable only in a real browser (Cloudflare blocks
+  curl on auth.openai.com).
 - **Managed keys**: only `ANTHROPIC_*` keys and profile env keys are edited;
   user variables (API_TIMEOUT_MS, MCP tokens) are preserved.
 - **Byte-precise settings.json edits**: only the env block and the model pin
