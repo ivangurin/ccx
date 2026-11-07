@@ -1,0 +1,81 @@
+package copilot
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
+)
+
+// QuotaInfo is the subscription's billing state: the plan and the premium
+// interaction pool (what the gateway bills per user-initiated turn).
+type QuotaInfo struct {
+	CopilotPlan         string
+	PremiumInteractions *PremiumQuota // nil when the account has no pool reported
+}
+
+// PremiumQuota is the premium interaction pool state.
+type PremiumQuota struct {
+	Entitlement int    `json:"entitlement"`
+	Remaining   int    `json:"remaining"`
+	ResetDate   string `json:"reset_date"`
+}
+
+// Quota fetches the account's plan and premium interaction pool. The daemon's
+// quota marking keeps the burn rate at ~one interaction per user message —
+// this is the number that makes the claim checkable.
+func (c *Client) Quota(ctx context.Context) (*QuotaInfo, error) {
+	store, err := c.loadStore()
+	if err != nil {
+		return nil, errors.New("copilot: not authenticated — ccx auth copilot")
+	}
+	quotaURL, err := internalUserURL(c.exURL)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, quotaURL, nil) //nolint:gosec // derived from the configured API base
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+store.UserAccessToken)
+	req.Header.Set("Accept", "application/json")
+	masquerade(req)
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("copilot: quota: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, errors.New("copilot: quota: user token invalid — ccx auth copilot")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("copilot: quota: status %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var payload struct {
+		CopilotPlan         string        `json:"copilot_plan"`
+		PremiumInteractions *PremiumQuota `json:"premium_interactions"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, errors.New("copilot: quota: unexpected response")
+	}
+
+	return &QuotaInfo{CopilotPlan: payload.CopilotPlan, PremiumInteractions: payload.PremiumInteractions}, nil
+}
+
+// internalUserURL rewrites the token-exchange URL to the account endpoint on
+// the same host (tests override the exchange base and get the override).
+func internalUserURL(exchangeURL string) (string, error) {
+	u, err := url.Parse(exchangeURL)
+	if err != nil {
+		return "", fmt.Errorf("copilot: quota: bad API base: %w", err)
+	}
+	u.Path = "/copilot_internal/user"
+
+	return u.String(), nil
+}
