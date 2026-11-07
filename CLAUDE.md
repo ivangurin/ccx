@@ -46,11 +46,10 @@ restart with new launch params). Data ownership: ccx owns its data root
 daemon.lock/pid, the per-provider credential stores auth/<key>.json; of
 Claude Code's `~/.claude` only
 `settings.json` is touched (edited in place, never moved; `CCX_SETTINGS`
-redirects it). Pre-rename data in `~/.claude` (providers.json,
-ccms-state.json) is copied into `~/.ccx` once at
-startup (`cmd/ccx/migrate.go` → `config.MigrateLegacyData`); sources stay in
-place, new files win, disposable history (backups/logs) is not migrated.
-providers.json is unversioned, flat — the map sits under the `providers`
+redirects it). The pre-rename one-time data move from `~/.claude` is gone
+(2026-11-07): fresh installs start from `ccx init`; old-world data, if any,
+must be copied by hand. providers.json is unversioned, flat — the map sits
+under the `providers`
 key, connection fields `base_url`/`api_key`/… sit directly in the provider
 entry, `protocol` decides which of them are meaningful; the client
 masquerade — UA, editor versions, integration id, originator, prefill — is
@@ -61,9 +60,7 @@ next load — best-effort rewrite via SaveProviders).
 ### Layer structure
 
 ```
-cmd/ccx/main.go                        entry point: main() → migrateLegacy() → cli.Execute
-  migrate.go                           one-time ~/.claude → ~/.ccx data move (process boundary:
-                                         never inside cli.Execute — its tests run unsandboxed)
+cmd/ccx/main.go                        entry point: main() → cli.Execute
 internal/
   cli/                                  stdlib command dispatcher (use/list/status/init/serve/...)
   app/                                  app.Run(): serve mode: config→logger→lock→route(Build)→http
@@ -73,7 +70,6 @@ internal/
                                          Home=~/.ccx; settings.json default stays in ~/.claude
                                          providers.go: ResolveDaemonPort (flag > CCX_PORT >
                                          daemon.port > 4567)
-                                         legacy.go: MigrateLegacyData (old-world copy, new wins)
                                          init.go: ccx init — import from settings/env.json + templates
   models/                               DTOs: anthropic(+sse), openai, codex, profile, providers,
                                          settings, state, admin
