@@ -26,7 +26,7 @@ func runMenu(_ []string, stdout io.Writer) int {
 		return 0
 	}
 	if providers.Providers.Len() == 0 {
-		fmt.Fprintln(stdout, "No profiles — ccx init or ccx edit")
+		fmt.Fprintln(stdout, "No providers — ccx init or ccx edit")
 
 		return 0
 	}
@@ -42,7 +42,7 @@ func runMenu(_ []string, stdout io.Writer) int {
 	profile := providers.Providers.Get(profileKey)
 	if len(profile.Models) == 0 {
 		// the chain stopped at the provider: its model level was never built
-		fmt.Fprintf(stdout, "ccx: profile %s has no models — ccx edit\n", profileKey)
+		fmt.Fprintf(stdout, "ccx: provider %s has no models — ccx edit\n", profileKey)
 
 		return 1
 	}

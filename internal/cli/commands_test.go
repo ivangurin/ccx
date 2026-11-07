@@ -132,7 +132,7 @@ func TestCommandStatus_NoState(t *testing.T) {
 	code := cli.Execute([]string{cmdStatus}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "No active profile")
+	require.Contains(t, out.String(), "No active provider")
 }
 
 func TestCommandStatus_UnknownProfileInState(t *testing.T) {

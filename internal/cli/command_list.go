@@ -8,7 +8,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-// runList — ccx list: profiles and models in file order.
+// runList — ccx list: providers and models in file order.
 func runList(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -22,7 +22,7 @@ func runList(_ []string, stdout io.Writer) int {
 	}
 
 	if providers.Providers.Len() == 0 {
-		fmt.Fprintln(stdout, "No profiles — add them to providers.json or run ccx init")
+		fmt.Fprintln(stdout, "No providers — add them to providers.json or run ccx init")
 
 		return 0
 	}

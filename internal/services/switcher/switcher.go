@@ -67,16 +67,16 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	}
 	profile := providers.Providers.Get(profileKey)
 	if profile == nil {
-		return "", fmt.Errorf("ccx: unknown profile: %s (see ccx list)", profileKey)
+		return "", fmt.Errorf("ccx: unknown provider: %s (see ccx list)", profileKey)
 	}
 
 	model, ok := profile.ResolveModel(modelArg)
 	if !ok {
 		if modelArg == "" {
-			return "", fmt.Errorf("ccx: profile %s has no default model — specify one: ccx %s <model>", profileKey, profileKey)
+			return "", fmt.Errorf("ccx: provider %s has no default model — specify one: ccx %s <model>", profileKey, profileKey)
 		}
 
-		return "", fmt.Errorf("ccx: model %s not found in profile %s (see ccx list)", modelArg, profileKey)
+		return "", fmt.Errorf("ccx: model %s not found in provider %s (see ccx list)", modelArg, profileKey)
 	}
 
 	// An anthropic passthrough goes direct: the upstream speaks the native
@@ -89,7 +89,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	// Invariant: the restarted daemon is ready BEFORE the settings.json edit.
 	port := config.ResolveDaemonPort(s.cfg, 0)
 	if err := s.daemon.Restart(ctx, profileKey, port); err != nil {
-		return "", fmt.Errorf("ccx: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous profile", err)
+		return "", fmt.Errorf("ccx: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous provider", err)
 	}
 
 	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model); err != nil {
@@ -113,7 +113,7 @@ func (s *Switcher) applyDirect(
 ) (string, error) {
 	env, err := directEnv(profile, model)
 	if err != nil {
-		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous profile", err)
+		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous provider", err)
 	}
 
 	if err := s.writeSettings(providers, env, model); err != nil {
@@ -138,12 +138,10 @@ func (s *Switcher) applyDirect(
 // deterministic output), plus the profile extras and model pinning.
 func directEnv(profile *models.Profile, model string) (map[string]string, error) {
 	if profile.BaseURL == "" {
-		return nil, fmt.Errorf("ccx: profile %s has no base_url — add it to providers.json", profile.Name)
+		return nil, fmt.Errorf("ccx: provider %s has no base_url — add it to providers.json", profile.Name)
 	}
 	env := map[string]string{}
-	for k, v := range profile.Env {
-		env[k] = v
-	}
+	maps.Copy(env, profile.Env)
 	env["ANTHROPIC_BASE_URL"] = profile.BaseURL
 	if profile.AuthToken != "" {
 		env["ANTHROPIC_AUTH_TOKEN"] = profile.AuthToken
@@ -173,9 +171,7 @@ func directEnv(profile *models.Profile, model string) (map[string]string, error)
 // background tasks stay on the selected one).
 func daemonEnv(profile *models.Profile, model string, port int) map[string]string {
 	env := map[string]string{}
-	for k, v := range profile.Env {
-		env[k] = v
-	}
+	maps.Copy(env, profile.Env)
 	env["ANTHROPIC_BASE_URL"] = baseURL(port)
 	switch {
 	case profile.AuthToken != "":

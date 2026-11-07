@@ -9,10 +9,10 @@ import (
 	"github.com/ivangurin/ccx/internal/services/switcher"
 )
 
-// runUse — ccx use <profile> [model] (alias: ccx <profile> [model]).
+// runUse — ccx use <provider> [model] (alias: ccx <provider> [model]).
 func runUse(args []string, stdout io.Writer) int {
 	if len(args) < 2 || args[1] == "" {
-		fmt.Fprintln(stdout, "ccx: specify a profile: ccx use <profile> [model] (see ccx list)")
+		fmt.Fprintln(stdout, "ccx: specify a provider: ccx use <provider> [model] (see ccx list)")
 
 		return 1
 	}

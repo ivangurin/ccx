@@ -284,7 +284,7 @@ func TestApply_UnknownProfile(t *testing.T) {
 	before := readSettings(t, sp.Config.SettingsPath())
 
 	_, err := sw.Apply(context.Background(), "nope", "")
-	require.ErrorContains(t, err, "unknown profile")
+	require.ErrorContains(t, err, "unknown provider")
 	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
 }
 

@@ -64,7 +64,7 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 		providers.Providers.Set("zai", zai)
 	} else {
 		providers.Providers.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Env: map[string]string{}})
-		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — profile is empty, fill it in via ccx edit")
+		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — provider is empty, fill it in via ccx edit")
 	}
 
 	if work := profileFromEnvJSON(filepath.Join(cfg.Home, "env.json")); work != nil {

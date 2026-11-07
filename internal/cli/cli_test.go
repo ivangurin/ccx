@@ -51,8 +51,8 @@ func TestExecute_UnknownCommand(t *testing.T) {
 	code := cli.Execute([]string{"definitely-not-a-command"}, &out)
 
 	require.NotEqual(t, 0, code)
-	// a non-command is treated as a profile (bash parity): profile not found
-	require.Contains(t, out.String(), "unknown profile")
+	// a non-command is treated as a provider (bash parity): provider not found
+	require.Contains(t, out.String(), "unknown provider")
 }
 
 func TestExecute_HelpFlag(t *testing.T) {

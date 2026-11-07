@@ -25,7 +25,7 @@ func TestCommandUse_UnknownProfileFails(t *testing.T) {
 	code := cli.Execute([]string{cmdUse, "ghost"}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "unknown profile")
+	require.Contains(t, out.String(), "unknown provider")
 }
 
 func TestCommandUse_MissingProfileArg(t *testing.T) {
@@ -35,7 +35,7 @@ func TestCommandUse_MissingProfileArg(t *testing.T) {
 	code := cli.Execute([]string{cmdUse}, &out)
 
 	require.NotEqual(t, 0, code)
-	require.Contains(t, out.String(), "specify a profile")
+	require.Contains(t, out.String(), "specify a provider")
 }
 
 func TestCommandUse_NoDefaultModel(t *testing.T) {

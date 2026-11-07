@@ -15,10 +15,10 @@ var Version = "dev"
 const usage = `ccx — switching LLM providers for Claude Code
 
 Usage:
-  ccx                    interactive menu: profile → model
-  ccx use <profile> [model]
-  ccx list               profiles and models
-  ccx status             active profile/model, daemon state
+  ccx                    interactive menu: provider → model
+  ccx use <provider> [model]
+  ccx list               providers and models
+  ccx status             active provider/model, daemon state
   ccx init [--force]     create providers.json (import from settings/env)
   ccx edit               open providers.json in $EDITOR
   ccx serve [--daemon] --provider <key> [--port N]
@@ -61,7 +61,7 @@ func Execute(args []string, stdout io.Writer) int {
 	case "auth":
 		return runAuth(args, stdout)
 	default:
-		// not a command — likely a profile: ccx zai / ccx zai glm-5.3 (bash parity)
+		// not a command — likely a provider: ccx zai / ccx zai glm-5.3 (bash parity)
 		if !strings.HasPrefix(args[0], "-") {
 			useArgs := append([]string{"use", args[0]}, args[1:]...)
 
