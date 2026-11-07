@@ -89,3 +89,39 @@ func TestToolResultWithoutAnyAssistantIsOrphan(t *testing.T) {
 	require.Equal(t, tRoleUser, chat.Messages[0].Role)
 	require.Equal(t, "resumed session", chat.Messages[0].Content)
 }
+
+// Parallel results split across consecutive user messages (a real client
+// shape) both stay tool messages — the pairing survives until a message
+// that is not a tool result arrives.
+func TestSplitParallelToolResultsStayToolMessages(t *testing.T) {
+	req := chatBody(
+		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t1","name":"a","input":{}},{"type":"tool_use","id":"t2","name":"b","input":{}}]`)},
+		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"}]`)},
+		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t2","content":"two"}]`)},
+	)
+	chat := openai.BuildChatRequest(req, "max_tokens")
+
+	require.Len(t, chat.Messages, 3)
+	require.Equal(t, "tool", chat.Messages[1].Role)
+	require.Equal(t, "t1", chat.Messages[1].ToolCallID)
+	require.Equal(t, "tool", chat.Messages[2].Role)
+	require.Equal(t, "t2", chat.Messages[2].ToolCallID)
+}
+
+// A system hook inserted between the assistant's calls and the results does
+// not break the pairing either.
+func TestSystemBetweenCallsAndResultsKeepsPairing(t *testing.T) {
+	req := chatBody(
+		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t1","name":"a","input":{}}]`)},
+		models.Message{Role: "system", Content: json.RawMessage(`"hook-context"`)},
+		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"}]`)},
+	)
+	chat := openai.BuildChatRequest(req, "max_tokens")
+
+	// [assistant+call, system hook, tool result] — the hook rides along,
+	// the result stays a tool message
+	require.Len(t, chat.Messages, 3)
+	require.Equal(t, "system", chat.Messages[1].Role)
+	require.Equal(t, "tool", chat.Messages[2].Role)
+	require.Equal(t, "t1", chat.Messages[2].ToolCallID)
+}

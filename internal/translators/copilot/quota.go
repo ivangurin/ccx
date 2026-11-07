@@ -19,8 +19,9 @@ type quotaClass struct {
 const (
 	initiatorUser  = "user"
 	initiatorAgent = "agent"
-	// the same string doubles as the message role and the block type
-	blockTypeText = "text"
+	// the same strings double as message roles and block types
+	blockTypeText       = "text"
+	blockTypeToolResult = "tool_result"
 )
 
 // classifyQuota decides the billing class from the request shape. Only the
@@ -53,7 +54,7 @@ func classifyQuota(m map[string]any) quotaClass {
 // block (mixed shapes count — see classifyQuota).
 func carriesToolResult(msg map[string]any) bool {
 	for _, b := range asSlice(msg["content"]) {
-		if blk := asMap(b); blk != nil && blk["type"] == "tool_result" {
+		if blk := asMap(b); blk != nil && blk["type"] == blockTypeToolResult {
 			return true
 		}
 	}

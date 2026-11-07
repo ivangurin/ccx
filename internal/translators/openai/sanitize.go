@@ -7,30 +7,54 @@ import (
 )
 
 // sanitizeOrphans heals orphan tool_results before conversion: a tool_result
-// whose tool_use is not in the immediately preceding assistant message (a
-// compacted/truncated history, a resumed session) becomes a text block — a
-// chat tool message with a dangling tool_call_id is a guaranteed 400 on
-// strict upstreams, while the text still carries the content to the model.
+// whose tool_use is not among the pending assistant calls (a compacted/
+// truncated history, a resumed session) becomes a text block — a chat tool
+// message with a dangling tool_call_id is a guaranteed 400 on strict
+// upstreams, while the text still carries the content to the model.
 // An orphan with no extractable text is dropped (an empty user turn is noise).
+//
+// The pairing survives messages that cannot start a new turn: consecutive
+// tool-result-only user messages (parallel results split across messages)
+// and system hooks the client inserts mid-exchange. A user message that is
+// NOT tool-result-only ends the turn and clears the pairing.
 func sanitizeOrphans(req *models.MessagesRequest) {
-	prevIDs := map[string]bool{}
-	prevWasAssistant := false
+	pendingIDs := map[string]bool{}
 	for i := range req.Messages {
 		msg := &req.Messages[i]
-		if msg.Role == roleAssistant {
-			prevIDs = toolUseIDs(msg)
-			prevWasAssistant = true
-
-			continue
+		switch {
+		case msg.Role == roleAssistant:
+			pendingIDs = toolUseIDs(msg)
+		case msg.Role == "user" && isToolResultOnly(msg):
+			msg.Content = sanitizeContent(msg.Content, pendingIDs)
+			// pairing stays: the next split result may answer the same calls
+		case msg.Role == "user":
+			msg.Content = sanitizeContent(msg.Content, pendingIDs)
+			pendingIDs = map[string]bool{}
+		default:
+			// system and unknown roles ride between calls and results —
+			// the pairing survives them
 		}
-		if !prevWasAssistant {
-			prevIDs = map[string]bool{}
-		}
-		if msg.Role == "user" {
-			msg.Content = sanitizeContent(msg.Content, prevIDs)
-		}
-		prevIDs, prevWasAssistant = map[string]bool{}, false
 	}
+}
+
+// isToolResultOnly: the message content is a non-empty array of tool_result
+// blocks (a string content is not — the user typed it).
+func isToolResultOnly(msg *models.Message) bool {
+	var plain string
+	if json.Unmarshal(msg.Content, &plain) == nil {
+		return false
+	}
+	var blocks []models.ContentBlock
+	if json.Unmarshal(msg.Content, &blocks) != nil || len(blocks) == 0 {
+		return false
+	}
+	for _, b := range blocks {
+		if b.Type != "tool_result" {
+			return false
+		}
+	}
+
+	return true
 }
 
 // toolUseIDs collects the tool_use ids of one assistant message.

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // Deterministic request/interaction ids: the gateway aggregates requests
@@ -22,20 +23,29 @@ func quotaIDs(sessionID string, m map[string]any) (requestID, interactionID stri
 		return randomUUID(), randomUUID()
 	}
 
-	return deterministicUUID(sessionID + "\x00" + lastUserText(m)), deterministicUUID(sessionID)
+	return deterministicUUID(sessionID + "\x00" + lastUserTurnSeed(m)), deterministicUUID(sessionID)
 }
 
-// lastUserText is the text of the last user message (string or text blocks)
-// — the identity of the logical turn.
-func lastUserText(m map[string]any) string {
+// lastUserTurnSeed identifies the logical turn: the last user message's text
+// AND the tool_use ids its tool_results answer. Text alone collapses on
+// pure tool continuations (no loose text — the merged shape), ids alone
+// collapse on typed follow-ups; together a distinct turn is a distinct seed
+// and a retried turn keeps its seed.
+func lastUserTurnSeed(m map[string]any) string {
 	messages := asSlice(m["messages"])
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := asMap(messages[i])
 		if msg == nil || msg["role"] != initiatorUser {
 			continue
 		}
+		var ids []string
+		for _, raw := range asSlice(msg["content"]) {
+			if blk := asMap(raw); blk != nil && blk["type"] == blockTypeToolResult {
+				ids = append(ids, asString(blk["tool_use_id"]))
+			}
+		}
 
-		return messageText(msg)
+		return messageText(msg) + "\x1f" + strings.Join(ids, "\x1f")
 	}
 
 	return ""

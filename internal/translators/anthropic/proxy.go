@@ -95,13 +95,25 @@ func relay(w http.ResponseWriter, resp *http.Response) {
 }
 
 // maxProxyBody bounds the buffered request body (same bound as the copilot
-// translator): buffering enables the one rectifying retry on 400s.
-const maxProxyBody = 64 * 1024 * 1024
+// translator): buffering enables the one rectifying retry on 400s. A var so
+// tests can shrink it; a body over the bound is refused loudly — a silent
+// truncation would ship broken JSON upstream and surface as a baffling
+// provider 400.
+var maxProxyBody int64 = 64 * 1024 * 1024
+
+// SetMaxProxyBodyForTest shrinks the body bound (tests restore nothing —
+// each test sets its own).
+func SetMaxProxyBodyForTest(n int64) { maxProxyBody = n }
 
 func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxProxyBody))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxProxyBody+1))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
+
+		return
+	}
+	if int64(len(body)) > maxProxyBody {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds the passthrough bound")
 
 		return
 	}

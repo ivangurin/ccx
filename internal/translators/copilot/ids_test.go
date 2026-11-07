@@ -56,3 +56,20 @@ func TestQuotaIDs_NoSessionRandom(t *testing.T) {
 	require.Len(t, r1, 36)
 	require.Len(t, i2, 36)
 }
+
+// Distinct tool continuations of one session (different calls, no loose
+// text — the shape after the merge) MUST get distinct request ids: the
+// gateway aggregates by request id, and two different turns sharing one id
+// would collapse into a single interaction.
+func TestQuotaIDs_DistinctContinuationsDistinctRequestIDs(t *testing.T) {
+	turn1 := `{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"one"}]}]}`
+	turn2 := `{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"read","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"two"}]}]}`
+
+	r1, _ := quotaIDs("sess-1", body(t, turn1))
+	r2, _ := quotaIDs("sess-1", body(t, turn2))
+	require.NotEqual(t, r1, r2)
+
+	// the same turn retried stays the same id
+	r1again, _ := quotaIDs("sess-1", body(t, turn1))
+	require.Equal(t, r1, r1again)
+}

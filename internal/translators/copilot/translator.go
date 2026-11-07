@@ -131,6 +131,9 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	// works on the raw shape).
 	sid := sessionid.FromRequest(r, metadataRaw(body))
 	cls := classifyQuota(body)
+	// ids derive from the PRE-merge shape: the merge absorbs loose text into
+	// tool_results and would erase the text part of the turn seed
+	preMerge := body
 	body = mergeToolResults(body)
 	var req models.MessagesRequest
 	remarshaled, err := json.Marshal(body)
@@ -180,7 +183,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	upReq.Header = t.quotaHeaders(t.headers(token), cls, sid, body)
+	upReq.Header = t.quotaHeaders(t.headers(token), cls, sid, preMerge)
 	resp, err := t.http.Do(upReq)
 	if err != nil {
 		entry.Status, entry.Error = http.StatusBadGateway, guard.Err(err).Error()

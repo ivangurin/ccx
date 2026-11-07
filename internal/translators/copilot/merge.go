@@ -66,7 +66,7 @@ func absorbText(msg map[string]any) (map[string]any, bool) {
 			continue
 		}
 		switch blk["type"] {
-		case "tool_result":
+		case blockTypeToolResult:
 			kept = append(kept, raw)
 			lastResult = len(kept) - 1
 		case blockTypeText:
@@ -117,7 +117,7 @@ func isToolResultOnly(msg map[string]any) bool {
 		return false
 	}
 	for _, raw := range blocks {
-		if blk := asMap(raw); blk == nil || blk["type"] != "tool_result" {
+		if blk := asMap(raw); blk == nil || blk["type"] != blockTypeToolResult {
 			return false
 		}
 	}
