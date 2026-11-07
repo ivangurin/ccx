@@ -58,8 +58,9 @@ const (
 // callbackResult is what the one-shot callback server delivers: either an
 // authorization code or the OAuth error the issuer reported.
 type callbackResult struct {
-	code  string
-	oauth string // the ?error= parameter, non-empty on a denied/failed login
+	code      string
+	oauth     string // the ?error= parameter, non-empty on a denied/failed login
+	oauthDesc string // ?error_description= — the actionable reason (entitlement, workspace…)
 }
 
 // Login runs the ChatGPT OAuth flow and writes the tokens into authPath.
@@ -123,6 +124,10 @@ func loginWithBase(ctx context.Context, authorizeBase, tokenURL, authPath string
 		return fmt.Errorf("codex: login: interrupted: %w", ctx.Err())
 	case res := <-result:
 		if res.oauth != "" {
+			if res.oauthDesc != "" {
+				return fmt.Errorf("codex: login: %s: %s", res.oauth, res.oauthDesc)
+			}
+
 			return fmt.Errorf("codex: login: %s", res.oauth)
 		}
 		tokens, err := exchangeCode(ctx, tokenURL, res.code, redirectURI, verifier)
@@ -133,6 +138,7 @@ func loginWithBase(ctx context.Context, authorizeBase, tokenURL, authPath string
 		auth := Auth{
 			AccessToken:  tokens.AccessToken,
 			RefreshToken: tokens.RefreshToken,
+			IDToken:      tokens.IDToken,
 			AccountID:    accountID,
 		}
 		if err := SaveAuth(authPath, auth); err != nil {
@@ -143,49 +149,55 @@ func loginWithBase(ctx context.Context, authorizeBase, tokenURL, authPath string
 	}
 }
 
-// callbackHandler answers the one-shot callback: /cancel unblocks a parked
-// login (checked FIRST — the cancel request carries no state by design),
-// then the callback validates the state, surfaces an issuer-reported error,
-// and delivers the code.
+// callbackHandler answers the one-shot callback server. /cancel (checked
+// FIRST — the nudge from a next login carries no state by design) unblocks
+// a parked login; only loginCallbackPath participates in the OAuth
+// exchange — anything else is a 404 and the login keeps waiting. A state
+// mismatch answers the browser 400 WITHOUT ending the login (codex-rs
+// behavior: a stale tab from an earlier login or a local prober must not
+// kill the fresh 15-minute wait — the login's own callback is still
+// coming). A valid-state callback carries either the issuer's error or the
+// code; a valid state without a code is terminal too — nothing further
+// arrives for this login, and waiting would hang until the context budget.
 func callbackHandler(expectedState string, result chan<- callbackResult) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == loginCancelPath {
-			deliverResult(w, result, callbackResult{oauth: "cancelled"}, "login cancelled")
+			deliverResult(w, result, http.StatusOK, callbackResult{oauth: "cancelled"}, "login cancelled")
+
+			return
+		}
+		if r.URL.Path != loginCallbackPath {
+			w.WriteHeader(http.StatusNotFound)
 
 			return
 		}
 		q := r.URL.Query()
-		if oauthErr := q.Get("error"); oauthErr != "" {
-			deliverResult(w, result, callbackResult{oauth: oauthErr}, "login failed — return to the terminal")
-
-			return
-		}
 		if q.Get("state") != expectedState {
-			// A forged/mismatched callback: answer the browser, and hand the
-			// login an error — staying silent would hang it until the context
-			// budget ran out.
-			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte("<html><body><p>state mismatch — return to the terminal</p></body></html>"))
-			select {
-			case result <- callbackResult{oauth: "state mismatch"}:
-			default:
-			}
-
-			return
-		}
-		code := q.Get("code")
-		if code == "" {
 			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("<html><body><p>state mismatch</p></body></html>"))
 
 			return
 		}
-		deliverResult(w, result, callbackResult{code: code}, "login complete — return to the terminal")
+		if oauthErr := q.Get("error"); oauthErr != "" {
+			res := callbackResult{oauth: oauthErr, oauthDesc: q.Get("error_description")}
+			deliverResult(w, result, http.StatusOK, res, "login failed — return to the terminal")
+
+			return
+		}
+		if q.Get("code") == "" {
+			res := callbackResult{oauth: "missing authorization code"}
+			deliverResult(w, result, http.StatusBadRequest, res, "login incomplete — return to the terminal")
+
+			return
+		}
+		deliverResult(w, result, http.StatusOK, callbackResult{code: q.Get("code")}, "login complete — return to the terminal")
 	})
 }
 
 // deliverResult answers the browser and wakes the waiting login.
-func deliverResult(w http.ResponseWriter, result chan<- callbackResult, res callbackResult, page string) {
+func deliverResult(w http.ResponseWriter, result chan<- callbackResult, status int, res callbackResult, page string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
 	_, _ = w.Write([]byte("<html><body><p>" + page + "</p></body></html>"))
 	select {
 	case result <- res:
@@ -256,7 +268,12 @@ func exchangeCode(ctx context.Context, tokenURL, code, redirectURI, verifier str
 		return nil, fmt.Errorf("codex: login: token exchange: status %d", resp.StatusCode)
 	}
 	var pair tokenPair
-	if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil || pair.AccessToken == "" {
+	// the codex CLI requires all three fields; ccx keeps id_token optional
+	// (best-effort account derivation by spec), but a login without a
+	// refresh token must fail HERE — stored "successfully", it surfaces
+	// hours later as "access expired, no refresh token" and forces a full
+	// browser redo
+	if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil || pair.AccessToken == "" || pair.RefreshToken == "" {
 		return nil, errors.New("codex: login: token exchange: unexpected response")
 	}
 

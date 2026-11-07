@@ -132,3 +132,12 @@ func TestCommandAuth_ExtraArgs(t *testing.T) {
 	require.Equal(t, 1, code)
 	require.Contains(t, out.String(), "usage")
 }
+
+// The opener process is reaped in the background (Start + goroutine Wait):
+// a Start error must propagate; a healthy opener (true swallows the URL
+// argument) launches clean. The reap itself is unobservable from Go — the
+// wiring is what these pin.
+func TestLaunchOpener(t *testing.T) {
+	require.Error(t, launchOpener("/nonexistent-opener-xyz", "https://example.com"))
+	require.NoError(t, launchOpener("/usr/bin/true", "https://example.com"))
+}

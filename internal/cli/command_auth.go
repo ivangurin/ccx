@@ -165,5 +165,20 @@ func openBrowser(url string) error {
 		opener = "open"
 	}
 
-	return exec.Command(opener, url).Start() //nolint:gosec // fixed opener, argument is a URL
+	return launchOpener(opener, url)
+}
+
+// launchOpener starts the opener and reaps it in the background: `open`
+// exits right after handing off to the browser, and an unreaped child would
+// sit as a zombie for the login's whole 15-minute wait. A blocking Wait
+// would tie the login to the opener's lifetime — the goroutine keeps the
+// login independent.
+func launchOpener(opener, url string) error {
+	cmd := exec.Command(opener, url) //nolint:gosec // fixed opener, argument is a URL
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+
+	return nil
 }

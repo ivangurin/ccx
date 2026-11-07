@@ -157,7 +157,9 @@ involved.
   every request, and the daemon forwards it upstream unchanged, holding no
   secret of its own. `copilot` and `codex` own their credentials
   (`~/.ccx/auth/<key>.json`, written by `ccx auth <key>`), so any placeholder
-  bearer works from Claude Code's side.
+  bearer works from Claude Code's side. The codex store stays
+  `auth.json`-compatible: a hand-made symlink of `auth/<key>.json` onto the
+  codex CLI's own `~/.codex/auth.json` keeps both tools reading one login.
 - **Model pinning.** A switch pins the chosen model: `model`,
   `availableModels=[m]`, `enforceAvailableModels` and all
   `ANTHROPIC_DEFAULT_*_MODEL` values point at it — background tasks stay on

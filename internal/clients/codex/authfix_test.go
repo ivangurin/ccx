@@ -158,3 +158,22 @@ func TestSaveAuth_ReloginReplacesAccountID(t *testing.T) {
 	require.NoError(t, jsonfile.ReadJSON(path, &f))
 	require.Equal(t, "acc-B", f.Tokens.AccountID)
 }
+
+// The fresh login's id_token replaces the stored one (same caller-wins
+// policy as account_id): the store may be a hand-made symlink onto the codex
+// CLI's auth.json, and a foreign reader deriving the account from a STALE
+// id_token paired with fresh tokens gets the wrong account's claims.
+func TestSaveAuth_ReloginReplacesIDToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	require.NoError(t, os.WriteFile(path, []byte(liveAuthJSON), 0o600)) //nolint:gosec // test sandbox
+
+	require.NoError(t, codex.SaveAuth(path, codex.Auth{AccessToken: "B-A", RefreshToken: "B-R", IDToken: "new-idt"}))
+
+	var f struct {
+		Tokens struct {
+			IDToken string `json:"id_token"`
+		} `json:"tokens"`
+	}
+	require.NoError(t, jsonfile.ReadJSON(path, &f))
+	require.Equal(t, "new-idt", f.Tokens.IDToken)
+}

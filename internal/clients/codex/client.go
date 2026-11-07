@@ -48,6 +48,7 @@ const (
 type Auth struct {
 	AccessToken  string
 	RefreshToken string
+	IDToken      string    // tokens.id_token — persisted by the login (a foreign reader of a symlinked store derives the account from it)
 	AccountID    string    // tokens.account_id of the live file
 	LastRefresh  time.Time // tokens.last_refresh — the generation clock
 }
@@ -154,6 +155,12 @@ func saveAuthLocked(path string, auth Auth) error {
 	// derivation still preserves a foreign value)
 	if auth.AccountID != "" {
 		f.Tokens.AccountID = auth.AccountID
+	}
+	// same policy for the id_token itself: the login holds the fresh one —
+	// a stale id_token paired with new tokens misleads a foreign reader of
+	// a symlinked store (an empty value still preserves a foreign one)
+	if auth.IDToken != "" {
+		f.Tokens.IDToken = auth.IDToken
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	f.Tokens.LastRefresh = now

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,9 @@ type loginFixture struct {
 	exchangeForm url.Values
 	exchangeHit  bool
 	tokenSrv     *httptest.Server
+	// occupyDefaultPort: the test itself binds 1455 before startLogin (the
+	// fallback-port test) — the port guard then checks only 1457.
+	occupyDefaultPort bool
 }
 
 // newLoginFixture builds the fake token endpoint. handleExchange decides
@@ -80,10 +84,34 @@ func (lf *loginFixture) authorizeBase() string {
 	return lf.tokenSrv.URL + "/oauth/authorize"
 }
 
+// skipIfLoginPortsBusy guards the registered callback ports: a live
+// `ccx auth` / `codex login` on this machine must not be /cancel-nudged (or
+// flake the suite) — a test that will bind 1455/1457 skips when one is
+// already held. Defaults to both ports; pass a subset when the test holds
+// one itself.
+func skipIfLoginPortsBusy(t *testing.T, ports ...int) {
+	t.Helper()
+	if len(ports) == 0 {
+		ports = []int{loginPort, loginFallbackPort}
+	}
+	for _, port := range ports {
+		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			t.Skipf("callback port %d busy — a live login may be in progress", port)
+		}
+		_ = ln.Close()
+	}
+}
+
 // startLogin runs loginWithBase in the background and returns once
 // openBrowser captured the authorize URL.
 func (lf *loginFixture) startLogin(t *testing.T) chan error {
 	t.Helper()
+	if lf.occupyDefaultPort {
+		skipIfLoginPortsBusy(t, loginFallbackPort)
+	} else {
+		skipIfLoginPortsBusy(t)
+	}
 	errs := make(chan error, 1)
 	go func() {
 		errs <- loginWithBase(context.Background(), lf.authorizeBase(), lf.tokenSrv.URL, lf.authPath,
@@ -147,6 +175,7 @@ func TestLogin_HappyPath(t *testing.T) {
 	require.Len(t, lf.exchangeForm.Get("code_verifier"), 43)
 	require.Equal(t, lf.authorizeURL.Query().Get("redirect_uri"), lf.exchangeForm.Get("redirect_uri"))
 
+	wantIDToken := jwtWithAccountID(t, "acct-1")
 	var f struct {
 		AuthMode    string `json:"auth_mode"`
 		LastRefresh string `json:"last_refresh"`
@@ -154,6 +183,7 @@ func TestLogin_HappyPath(t *testing.T) {
 			AccessToken  string `json:"access_token"`
 			RefreshToken string `json:"refresh_token"`
 			AccountID    string `json:"account_id"`
+			IDToken      string `json:"id_token"`
 		} `json:"tokens"`
 	}
 	require.NoError(t, jsonfile.ReadJSON(lf.authPath, &f))
@@ -161,6 +191,7 @@ func TestLogin_HappyPath(t *testing.T) {
 	require.Equal(t, "AT", f.Tokens.AccessToken)
 	require.Equal(t, "RT", f.Tokens.RefreshToken)
 	require.Equal(t, "acct-1", f.Tokens.AccountID)
+	require.Equal(t, wantIDToken, f.Tokens.IDToken) // the fresh login's id_token is persisted
 	require.NotEmpty(t, f.LastRefresh)
 }
 
@@ -239,6 +270,7 @@ func TestLogin_FallbackPortWhenDefaultBusy(t *testing.T) {
 		func(w http.ResponseWriter, _ url.Values) {
 			_, _ = w.Write([]byte(`{"access_token":"AT","refresh_token":"RT"}`))
 		})
+	lf.occupyDefaultPort = true
 	errs := lf.startLogin(t)
 
 	require.Equal(t, "http://localhost:1457/auth/callback", lf.authorizeURL.Query().Get("redirect_uri"))
@@ -263,16 +295,52 @@ func TestLogin_CancelEndpoint(t *testing.T) {
 	require.False(t, storeExists(lf.authPath))
 }
 
-func TestLogin_StateMismatch(t *testing.T) {
+// A forged/mismatched callback must NOT end the login (codex-rs behavior):
+// the browser gets a 400, the login keeps waiting for its own callback — a
+// stale tab from an earlier login or a local prober must not kill a fresh
+// 15-minute wait.
+func TestLogin_StateMismatchKeepsWaiting(t *testing.T) {
 	lf := newLoginFixture(t, filepath.Join(t.TempDir(), "auth", "cx.json"),
-		func(w http.ResponseWriter, _ url.Values) { _, _ = w.Write([]byte(`{}`)) })
+		func(w http.ResponseWriter, _ url.Values) {
+			_, _ = w.Write([]byte(`{"access_token":"AT","refresh_token":"RT"}`))
+		})
 	errs := lf.startLogin(t)
 
-	lf.hitCallback(t, http.StatusUnauthorized, url.Values{codeParam: {authCode}, stateParam: {"forged"}})
+	lf.hitCallback(t, http.StatusBadRequest, url.Values{codeParam: {authCode}, stateParam: {"forged"}})
 
-	require.ErrorContains(t, <-errs, "state")
-	require.False(t, storeExists(lf.authPath))
-	require.False(t, lf.exchangeHit)
+	select {
+	case err := <-errs:
+		t.Fatalf("login aborted on a forged callback: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	// the login still completes on its own valid callback
+	lf.hitCallback(t, http.StatusOK, url.Values{codeParam: {authCode}, stateParam: {lf.state()}})
+	require.NoError(t, <-errs)
+	require.True(t, lf.exchangeHit)
+}
+
+// Only /auth/callback participates in the exchange: any other path is a 404
+// and the login keeps waiting (a stray localhost request must not kill it).
+func TestLogin_ForeignPathGets404(t *testing.T) {
+	lf := newLoginFixture(t, filepath.Join(t.TempDir(), "auth", "cx.json"),
+		func(w http.ResponseWriter, _ url.Values) {
+			_, _ = w.Write([]byte(`{"access_token":"AT","refresh_token":"RT"}`))
+		})
+	errs := lf.startLogin(t)
+
+	base := strings.TrimSuffix(lf.authorizeURL.Query().Get("redirect_uri"), loginCallbackPath)
+	resp, err := http.Get(base + "/favicon.ico") //nolint:gosec // local test server
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	select {
+	case err := <-errs:
+		t.Fatalf("login aborted on a foreign path: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	lf.hitCallback(t, http.StatusOK, url.Values{codeParam: {authCode}, stateParam: {lf.state()}})
+	require.NoError(t, <-errs)
 }
 
 func TestLogin_CallbackErrorParam(t *testing.T) {
@@ -280,9 +348,37 @@ func TestLogin_CallbackErrorParam(t *testing.T) {
 		func(w http.ResponseWriter, _ url.Values) { _, _ = w.Write([]byte(`{}`)) })
 	errs := lf.startLogin(t)
 
-	lf.hitCallback(t, http.StatusOK, url.Values{"error": {"access_denied"}, stateParam: {lf.state()}})
+	// error_description carries the actionable reason (e.g.
+	// missing_codex_entitlement) — it must reach the user, not just the code
+	lf.hitCallback(t, http.StatusOK, url.Values{
+		"error":             {"access_denied"},
+		"error_description": {"missing_codex_entitlement"},
+		stateParam:          {lf.state()},
+	})
 
-	require.ErrorContains(t, <-errs, "access_denied")
+	err := <-errs
+	require.ErrorContains(t, err, "access_denied")
+	require.ErrorContains(t, err, "missing_codex_entitlement")
+	require.False(t, storeExists(lf.authPath))
+	require.False(t, lf.exchangeHit)
+}
+
+// A valid-state callback without a code is terminal: the login must exit
+// with an error immediately, not hang until its context budget (codex-rs
+// exits with "Missing authorization code" for the same case).
+func TestLogin_CallbackWithoutCodeFails(t *testing.T) {
+	lf := newLoginFixture(t, filepath.Join(t.TempDir(), "auth", "cx.json"),
+		func(w http.ResponseWriter, _ url.Values) { _, _ = w.Write([]byte(`{}`)) })
+	errs := lf.startLogin(t)
+
+	lf.hitCallback(t, http.StatusBadRequest, url.Values{stateParam: {lf.state()}})
+
+	select {
+	case err := <-errs:
+		require.ErrorContains(t, err, "missing authorization code")
+	case <-time.After(2 * time.Second):
+		t.Fatal("login hangs on a codeless callback")
+	}
 	require.False(t, storeExists(lf.authPath))
 	require.False(t, lf.exchangeHit)
 }
@@ -298,7 +394,25 @@ func TestLogin_TokenEndpointError(t *testing.T) {
 	require.False(t, storeExists(lf.authPath))
 }
 
+// A token response without refresh_token must fail the login HERE: storing
+// it "successfully" surfaces hours later as "access expired, no refresh
+// token" and forces a full browser redo. (id_token stays optional — the
+// account derivation is best-effort by spec.)
+func TestLogin_TokenEndpointMissingRefreshToken(t *testing.T) {
+	lf := newLoginFixture(t, filepath.Join(t.TempDir(), "auth", "cx.json"),
+		func(w http.ResponseWriter, _ url.Values) {
+			_, _ = w.Write([]byte(`{"access_token":"AT"}`))
+		})
+	errs := lf.startLogin(t)
+
+	lf.hitCallback(t, http.StatusOK, url.Values{codeParam: {authCode}, stateParam: {lf.state()}})
+
+	require.ErrorContains(t, <-errs, "unexpected response")
+	require.False(t, storeExists(lf.authPath))
+}
+
 func TestLogin_ContextCancelled(t *testing.T) {
+	skipIfLoginPortsBusy(t)
 	lf := newLoginFixture(t, filepath.Join(t.TempDir(), "auth", "cx.json"),
 		func(w http.ResponseWriter, _ url.Values) { _, _ = w.Write([]byte(`{}`)) })
 

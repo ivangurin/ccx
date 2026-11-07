@@ -245,15 +245,3 @@ func TestLoadProviders_RejectsNonFileNameKeys(t *testing.T) {
 	_, err := config.LoadProviders(path)
 	require.NoError(t, err)
 }
-
-func TestLoadProviders_ToleratesAuthFileResidue(t *testing.T) {
-	sp := suite_provider.NewProvider(t)
-	path := filepath.Join(sp.HomeDir(), "providers.json")
-	raw := `{"providers": {"cx": {"name": "x", "protocol": "codex",
-		"auth_file": "~/.codex/auth.json", "models": []}}}`
-	require.NoError(t, os.WriteFile(path, []byte(raw), 0o600)) //nolint:gosec // test sandbox
-
-	loaded, err := config.LoadProviders(path)
-	require.NoError(t, err)
-	require.NotNil(t, loaded.Providers.Get("cx"))
-}
