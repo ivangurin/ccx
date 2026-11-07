@@ -43,7 +43,9 @@ CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
 the Anthropic API to the launched provider's translator; switching = daemon
 restart with new launch params). Data ownership: ccx owns its data root
 `~/.ccx` (`CCX_HOME`) — providers.json, state.json, backups/, logs/,
-daemon.lock/pid, the per-provider credential stores auth/<key>.json; of
+daemon.lock/pid, switch.lock (the switcher's flock; was the hidden
+bash-ccx `.ccx.lock`, renamed the same day as state.json), the
+per-provider credential stores auth/<key>.json; of
 Claude Code's `~/.claude` only
 `settings.json` is touched (edited in place, never moved; `CCX_SETTINGS`
 redirects it). The pre-rename one-time data move from `~/.claude` is gone

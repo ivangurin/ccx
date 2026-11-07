@@ -58,8 +58,13 @@ func (s *Switcher) Apply(ctx context.Context, profileKey, modelArg string) (stri
 	return s.applyLocked(ctx, profileKey, modelArg)
 }
 
+// lockPath is the switcher's flock file. It pairs with the daemon's
+// daemon.lock: a visible <what-it-guards>.lock inside ~/.ccx. The bash-ccx
+// name .ccx.lock (a hidden file with the tool's prefix) died with the rename
+// of the data root — inside its own home the prefix says nothing; the old
+// file stays on disk unread (the clean-break precedent).
 func lockPath(cfg *config.Config) string {
-	return cfg.Home + "/.ccx.lock"
+	return cfg.Home + "/switch.lock"
 }
 
 func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string) (string, error) {

@@ -171,6 +171,10 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, "copilot-code-large", st.Model)
 	require.NotEmpty(t, st.Updated)
 
+	// the switch lock is taken at <Home>/switch.lock (a visible sibling of
+	// daemon.lock, not the hidden bash-ccx .ccx.lock)
+	require.FileExists(t, filepath.Join(sp.HomeDir(), "switch.lock"))
+
 	// the daemon stays up on the daemon path (no stop)
 	require.Equal(t, 0, d.stopN)
 }
