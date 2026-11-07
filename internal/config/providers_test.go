@@ -89,6 +89,8 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("CCX_PROVIDERS", "/tmp/custom-providers.json")
 	t.Setenv("CCX_SETTINGS", "/tmp/custom-settings.json")
 	t.Setenv("CCX_STATE", "/tmp/custom-state.json")
+	// CCX_BACKUP_DIR/CCX_LOG_DIR are gone: the dirs are pinned to
+	// <CCX_HOME>/backups and <CCX_HOME>/logs — the env vars are ignored
 	t.Setenv("CCX_BACKUP_DIR", "/tmp/custom-backups")
 	t.Setenv("CCX_LOG_DIR", "/tmp/custom-logs")
 	cfg, err := config.NewFromEnv()
@@ -96,8 +98,8 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, "/tmp/custom-providers.json", cfg.ProvidersPath())
 	require.Equal(t, "/tmp/custom-settings.json", cfg.SettingsPath())
 	require.Equal(t, "/tmp/custom-state.json", cfg.StatePath())
-	require.Equal(t, "/tmp/custom-backups", cfg.BackupDir())
-	require.Equal(t, "/tmp/custom-logs", cfg.LogDir())
+	require.Equal(t, filepath.Join(cfg.Home, "backups"), cfg.BackupDir())
+	require.Equal(t, filepath.Join(cfg.Home, "logs"), cfg.LogDir())
 }
 
 func TestSettingsPath_DefaultLivesInClaudeDir(t *testing.T) {

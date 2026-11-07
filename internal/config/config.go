@@ -38,12 +38,12 @@ type Config struct {
 	LockTimeout        time.Duration `env:"CCX_LOCK_TIMEOUT"`
 	DaemonStartTimeout time.Duration `env:"CCX_DAEMON_START_TIMEOUT"`
 
-	// targeted path overrides (CCX_PROVIDERS/... parity with the bash version)
+	// targeted path overrides (CCX_PROVIDERS/... parity with the bash
+	// version). backups/ and logs/ have none: they are pinned to <Home>
+	// — CCX_HOME already moves the whole data root.
 	ProvidersFile string `env:"CCX_PROVIDERS"`
 	SettingsFile  string `env:"CCX_SETTINGS"`
 	StateFile     string `env:"CCX_STATE"`
-	BackupDirPath string `env:"CCX_BACKUP_DIR"`
-	LogDirPath    string `env:"CCX_LOG_DIR"`
 }
 
 // NewFromEnv reads CCX_* variables, applies defaults, and validates.

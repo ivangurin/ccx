@@ -46,21 +46,15 @@ func (c *Config) StatePath() string {
 	return filepath.Join(c.Home, "ccx-state.json")
 }
 
-// BackupDir is the settings.json backup directory (CCX_BACKUP_DIR overrides it).
+// BackupDir is the settings.json backup directory, pinned to <Home>/backups
+// (there is no env override: CCX_HOME already moves the whole data root).
 func (c *Config) BackupDir() string {
-	if c.BackupDirPath != "" {
-		return c.BackupDirPath
-	}
-
 	return filepath.Join(c.Home, "backups")
 }
 
-// LogDir is the daemon log directory (CCX_LOG_DIR overrides it).
+// LogDir is the daemon log directory, pinned to <Home>/logs (there is no
+// env override: CCX_HOME already moves the whole data root).
 func (c *Config) LogDir() string {
-	if c.LogDirPath != "" {
-		return c.LogDirPath
-	}
-
 	return filepath.Join(c.Home, "logs")
 }
 
