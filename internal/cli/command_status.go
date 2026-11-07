@@ -54,9 +54,11 @@ func runStatus(_ []string, stdout io.Writer) int {
 	return 0
 }
 
-// printCopilotQuota prints the plan and the premium interaction pool from
-// the ACTIVE provider's own credential store; a fetch failure is a warning
-// line, never a failed status.
+// printCopilotQuota prints the plan and the AI-credit pool from the ACTIVE
+// provider's own credential store; a fetch failure is a warning line, never
+// a failed status. The panel says "ai credits" — the unit the gateway
+// meters since the 2026-06 usage-based billing switch (the API still names
+// the field premium_interactions).
 func printCopilotQuota(cfg *config.Config, providerKey string, stdout io.Writer) {
 	q, err := copilotQuota(cfg.AuthStorePath(providerKey))
 	if err != nil {
@@ -66,13 +68,13 @@ func printCopilotQuota(cfg *config.Config, providerKey string, stdout io.Writer)
 	}
 	fmt.Fprintf(stdout, "Copilot quota:  plan %s\n", q.CopilotPlan)
 	if q.PremiumInteractions == nil {
-		fmt.Fprintln(stdout, "  premium interactions: no premium pool reported")
+		fmt.Fprintln(stdout, "  ai credits: no pool reported")
 
 		return
 	}
 	p := q.PremiumInteractions
 	if p.Unlimited {
-		fmt.Fprintln(stdout, "  premium interactions: unlimited")
+		fmt.Fprintln(stdout, "  ai credits: unlimited")
 
 		return
 	}
@@ -80,6 +82,6 @@ func printCopilotQuota(cfg *config.Config, providerKey string, stdout io.Writer)
 	if reset == "" {
 		reset = "unknown"
 	}
-	fmt.Fprintf(stdout, "  premium interactions: %d/%d remaining · resets %s\n",
+	fmt.Fprintf(stdout, "  ai credits: %d/%d remaining · resets %s\n",
 		p.Remaining, p.Entitlement, reset)
 }

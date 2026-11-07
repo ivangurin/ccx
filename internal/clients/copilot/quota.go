@@ -11,8 +11,10 @@ import (
 	"time"
 )
 
-// QuotaInfo is the subscription's billing state: the plan and the premium
-// interaction pool (what the gateway bills per user-initiated turn).
+// QuotaInfo is the subscription's billing state: the plan and the metered
+// pool — AI credits under the 2026-06 usage-based billing (token-metered);
+// the API still names the field premium_interactions, so the Go names
+// follow the wire, not the billing unit.
 type QuotaInfo struct {
 	CopilotPlan         string
 	PremiumInteractions *PremiumQuota // nil when the account has no pool reported

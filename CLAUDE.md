@@ -172,11 +172,18 @@ internal/
   first body byte IS the finished generation, so the first-token patience
   must not cap it. A watchdog cancels the request context (client bodies
   expose no net.Conn for SetReadDeadline); timeouts surface as named errors.
-- **Copilot quota marking**: the gateway bills one premium interaction per
-  user-initiated turn — tool continuations, compaction, subagent and
-  prefill-continuation turns are marked `x-initiator: agent` (compact
-  detection matches machine-generated signals only; a user typing
-  "Pending Tasks:" still bills). Request/interaction ids derive
+- **Copilot quota marking**: under the LEGACY premium-request billing the
+  gateway billed one premium interaction per user-initiated turn — tool
+  continuations, compaction, subagent and prefill-continuation turns are
+  marked `x-initiator: agent` (compact detection matches machine-generated
+  signals only; a user typing "Pending Tasks:" still bills). The marking
+  stays: legacy annual plans still bill per request. But monthly accounts
+  moved to AI credits (2026-06-01, token-metered at API list rates incl.
+  cached tokens, 1 credit = $0.01 — no per-request charge, no initiator
+  exemption): a 22-request/1.26M-token agent session burned ~118 credits
+  with correct marking (verified live 2026-11-07, usage log vs
+  credits_used) — under credits the marking cannot reduce cost, only token
+  count can. Request/interaction ids derive
   deterministically from session+turn so client retries aggregate into one
   interaction, computed from the PRE-merge body (the tool_result merge
   absorbs the text the turn seed needs). `ccx status` shows the quota panel

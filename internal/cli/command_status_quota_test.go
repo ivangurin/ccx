@@ -48,8 +48,7 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	require.Equal(t, sp.Config.AuthStorePath("work"), gotStore)
 	require.Contains(t, out.String(), "Copilot quota")
 	require.Contains(t, out.String(), "INDIVIDUAL")
-	require.Contains(t, out.String(), "37/300")
-	require.Contains(t, out.String(), "2026-12-01")
+	require.Contains(t, out.String(), "ai credits: 37/300 remaining · resets 2026-12-01")
 }
 
 func TestStatus_NoQuotaForOtherProtocols(t *testing.T) {
@@ -105,7 +104,7 @@ func TestStatus_QuotaUnlimited(t *testing.T) {
 	var out bytes.Buffer
 	require.Equal(t, 0, runStatus(nil, &out))
 
-	require.Contains(t, out.String(), "premium interactions: unlimited")
+	require.Contains(t, out.String(), "ai credits: unlimited")
 	require.NotContains(t, out.String(), "0/0")
 }
 
@@ -128,5 +127,5 @@ func TestStatus_QuotaWithoutPool(t *testing.T) {
 	require.Equal(t, 0, runStatus(nil, &out))
 
 	require.Contains(t, out.String(), "BUSINESS")
-	require.Contains(t, out.String(), "no premium pool reported")
+	require.Contains(t, out.String(), "ai credits: no pool reported")
 }
