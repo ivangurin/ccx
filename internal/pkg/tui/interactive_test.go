@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +26,31 @@ func newSession(out *bytes.Buffer) *session {
 	s.push(Stage{Header: "providers", Items: []Item{{Label: "p1"}, {Label: "p2"}}})
 
 	return s
+}
+
+// A Cyrillic keystroke arrives as several bytes in one Read; appending only
+// the first byte corrupted the query into invalid UTF-8 mojibake that never
+// matched anything. The whole chunk is the rune.
+func TestHandleKey_MultiByteRuneAppendedWhole(t *testing.T) {
+	s := newSession(&bytes.Buffer{})
+
+	done, _, _ := s.handleKey([]byte("ф"), nil)
+
+	require.False(t, done)
+	require.Equal(t, "ф", s.top().query)
+	require.True(t, utf8.ValidString(s.top().query))
+}
+
+// Backspace must drop the whole last rune, not one byte — a byte-sized pop
+// leaves half a rune behind and the same mojibake match failure.
+func TestHandleKey_BackspaceRemovesWholeRune(t *testing.T) {
+	s := newSession(&bytes.Buffer{})
+	s.top().query = "пр"
+
+	done, _, _ := s.handleKey([]byte{127}, nil)
+
+	require.False(t, done)
+	require.Equal(t, "п", s.top().query)
 }
 
 func TestSession_EnterDescendsInPlace(t *testing.T) {

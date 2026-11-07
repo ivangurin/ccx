@@ -50,6 +50,27 @@ func TestBuildResponsesRequest(t *testing.T) {
 	require.Equal(t, "bash", out.Tools[0].Name)
 }
 
+// Non-stream mode is answered 501 — and MUST be rejected before the upstream
+// call: firing a full ChatGPT-subscription generation only to discard its
+// body burns latency and quota for nothing.
+func TestServeMessages_NonStreamRejectedBeforeUpstream(t *testing.T) {
+	hits := 0
+	up := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		hits++
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	reqBody := `{"model":"gpt-6.1-codex","max_tokens":10,"stream":false,"messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(reqBody))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusNotImplemented, rec.Code)
+	require.Equal(t, 0, hits)
+}
+
 func TestServeMessages_Stream(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

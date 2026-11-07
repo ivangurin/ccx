@@ -95,6 +95,11 @@ func (c *StreamConverter) feedChoice(choice struct {
 	for _, call := range d.ToolCalls {
 		anthropicIdx, open := c.toolBlocks[call.Index]
 		if !open {
+			// Anthropic blocks are contiguous: the lazy text/thinking blocks
+			// (sentinels −1/−2) stop HERE — leaving them open made a later
+			// text delta land below the tool block and reordered the content
+			events = c.closeSentinel(events, -1)
+			events = c.closeSentinel(events, -2)
 			anthropicIdx = c.nextIndex
 			c.toolBlocks[call.Index] = anthropicIdx
 			events = append(events, blockStart(anthropicIdx, models.AnthropicBlock{
@@ -108,6 +113,18 @@ func (c *StreamConverter) feedChoice(choice struct {
 	}
 	if choice.FinishReason != nil && *choice.FinishReason != "" {
 		c.stopReason = stopReason(*choice.FinishReason)
+	}
+
+	return events
+}
+
+// closeSentinel stops the open sentinel block (thinking −1 / text −2), if
+// any. Tool blocks close them on open (contiguity, see feedChoice); a
+// sentinel opened after a tool block is a fresh, correctly ordered block.
+func (c *StreamConverter) closeSentinel(events []models.AnthropicEvent, key int) []models.AnthropicEvent {
+	if idx, open := c.toolBlocks[key]; open {
+		events = append(events, blockStop(idx))
+		delete(c.toolBlocks, key)
 	}
 
 	return events

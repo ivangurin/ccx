@@ -17,6 +17,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/translators/relay"
 )
 
 // role/type constants (goconst).
@@ -289,26 +290,34 @@ func deref(s *string) string {
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, err.Error())
+
+		return
+	}
+	if !req.Stream {
+		// the non-stream mode of Responses is not decoded (Claude Code always
+		// streams) — reject BEFORE the upstream call: firing a full
+		// generation only to discard its body burns latency and quota
+		relay.WriteErr(w, http.StatusNotImplemented, "codex: non-stream mode is not supported")
 
 		return
 	}
 	body, err := json.Marshal(BuildResponsesRequest(&req))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
 	reqdump.Write("codex-req", body)
 	auth, err := t.auths.Token(r.Context())
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, err.Error())
 
 		return
 	}
 	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, t.base+"/responses", bytes.NewReader(body)) //nolint:gosec // base is a constant/test
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
@@ -323,20 +332,13 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := t.http.Do(upReq)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, err.Error())
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		relayError(w, resp)
-
-		return
-	}
-	if !req.Stream {
-		// the non-stream mode of Responses is not decoded here: Claude Code
-		// always streams; return a stub error
-		writeErr(w, http.StatusNotImplemented, "codex: non-stream mode is not supported")
 
 		return
 	}
@@ -406,7 +408,7 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 			}
 			// break/empty stream before a single event — a plain 502 JSON response
 			if writer == nil {
-				writeErr(w, http.StatusBadGateway, "codex: empty upstream stream")
+				relay.WriteErr(w, http.StatusBadGateway, "codex: empty upstream stream")
 
 				return
 			}
@@ -501,7 +503,7 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 		}
 	}
 	if writer == nil {
-		writeErr(w, http.StatusBadGateway, "codex: empty upstream stream")
+		relay.WriteErr(w, http.StatusBadGateway, "codex: empty upstream stream")
 
 		return
 	}
@@ -522,7 +524,7 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -532,23 +534,14 @@ func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, `{"input_tokens":%d}`, len(raw)/4)
 }
 
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // %q escapes
-}
-
+// relayError relays an upstream failure with a reqdump of the rejected body —
+// codex-specific debugging: the paired codex-req dump shows what triggered it.
+// The envelope logic is the shared relay.UpstreamError (body re-armed after
+// the dump read it).
 func relayError(w http.ResponseWriter, resp *http.Response) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	// the rejected upstream payload is the primary debugging artifact (the
-	// paired codex-req dump shows what triggered it) — keep it under CCX_DUMP_DIR
 	reqdump.Write(fmt.Sprintf("codex-resp-%d", resp.StatusCode), body)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	if json.Valid(body) {
-		_, _ = w.Write(body)
+	resp.Body = io.NopCloser(strings.NewReader(string(body)))
 
-		return
-	}
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"upstream %d"}}`, resp.StatusCode)
+	relay.UpstreamError(w, resp)
 }

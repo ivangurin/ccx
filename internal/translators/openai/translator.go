@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
+	"github.com/ivangurin/ccx/internal/translators/relay"
 )
 
 // Translator: Anthropic → OpenAI chat/completions.
@@ -108,7 +108,7 @@ func serialize(chat *models.ChatRequest, field string) ([]byte, error) {
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 
 		return
 	}
@@ -118,20 +118,20 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := serialize(BuildChatRequest(&req, field), field)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
 	resp, err := t.do(r, body)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, err.Error())
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		relayUpstreamError(w, resp)
+		relay.UpstreamError(w, resp)
 
 		return
 	}
@@ -146,7 +146,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string) {
 	var chat models.ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		writeErr(w, http.StatusBadGateway, "invalid upstream response: "+err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, "invalid upstream response: "+err.Error())
 
 		return
 	}
@@ -162,7 +162,7 @@ func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	var req models.MessagesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
@@ -177,23 +177,4 @@ func estimateTokens(req *models.MessagesRequest) int {
 	total := len(raw)
 
 	return total / 4
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // msg is escaped by %q
-}
-
-// relayUpstreamError copies the upstream error in the Anthropic format.
-func relayUpstreamError(w http.ResponseWriter, resp *http.Response) {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	if json.Valid(body) {
-		_, _ = w.Write(body) // the error is already JSON — pass it through as is
-
-		return
-	}
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"upstream %d"}}`, resp.StatusCode)
 }

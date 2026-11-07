@@ -133,7 +133,38 @@ func TestBuild_ToolsMapping(t *testing.T) {
 	require.Equal(t, "bash", out.Tools[0].Function.Name)
 	require.Equal(t, "shell", out.Tools[0].Function.Description)
 	require.JSONEq(t, `{"type":"object"}`, string(out.Tools[0].Function.Parameters))
-	require.JSONEq(t, `{"type":"auto"}`, string(out.ToolChoice))
+	require.JSONEq(t, `"auto"`, string(out.ToolChoice))
+}
+
+// Anthropic tool_choice shapes are invalid for chat/completions: passthrough
+// earned a 400 on every forced-tool-use turn. any → "required", a named tool
+// → the forced-function object, auto → the string form, unknown → dropped.
+func TestBuild_ToolChoice_MapsAnthropicShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"any", `{"type": "any"}`, `"required"`},
+		{"tool", `{"type": "tool", "name": "bash"}`, `{"type":"function","function":{"name":"bash"}}`},
+		{"auto", `{"type": "auto"}`, `"auto"`},
+		{"unknown dropped", `{"type": "weird"}`, ``},
+	}
+	for _, tc := range cases { //nolint:paralleltest // table shares nothing
+		t.Run(tc.name, func(t *testing.T) {
+			out := openai.BuildChatRequest(req(t, `{
+				"model": "gpt", "max_tokens": 1,
+				"messages": [{"role": "user", "content": "x"}],
+				"tool_choice": `+tc.raw+`
+			}`), "max_tokens")
+			if tc.want == "" {
+				require.Empty(t, string(out.ToolChoice))
+
+				return
+			}
+			require.JSONEq(t, tc.want, string(out.ToolChoice))
+		})
+	}
 }
 
 func TestBuild_MaxTokensField(t *testing.T) {

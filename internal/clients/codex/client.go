@@ -1,7 +1,10 @@
 // Package codex accesses the ChatGPT subscription via the Responses API:
 // login reuses the codex CLI (~/.codex/auth.json), the access token is
-// refreshed lazily with refresh-token rotation (written immediately, flock —
-// against the concurrent codex CLI).
+// refreshed lazily with refresh-token rotation (written immediately, under a
+// sidecar flock <auth.json>.lock: refresh rotation invalidates the old token,
+// so two concurrent ccx writers — the daemon + a CLI command — must never
+// refresh in parallel; the codex CLI itself does not take the lock, against
+// it the write stays last-writer-wins).
 package codex
 
 import (
@@ -17,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/pkg/flock"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
@@ -79,8 +83,23 @@ func LoadAuth(path string) (Auth, error) {
 // tokens.access/refresh/last_refresh — auth_mode, id_token, account_id and
 // other codex CLI fields survive the refresh untouched (invariant: the file
 // belongs to someone else, we are guests). If the file is missing, it
-// creates a minimal one.
+// creates a minimal one. The whole read-modify-write runs under the sidecar
+// flock — see the package doc.
 func SaveAuth(path string, auth Auth) error {
+	lock, err := flock.LockWait(path+".lock", authLockTimeout)
+	if err != nil {
+		return fmt.Errorf("codex: auth lock: %w", err)
+	}
+	defer func() { _ = lock.Unlock() }()
+
+	return saveAuthLocked(path, auth)
+}
+
+// authLockTimeout bounds the wait for a concurrent ccx writer (a refresh
+// carries a network call; anything slower than this is stuck, not busy).
+const authLockTimeout = 15 * time.Second
+
+func saveAuthLocked(path string, auth Auth) error {
 	var f authFile
 	_ = jsonfile.ReadJSON(path, &f) // missing file is fine — we will create it
 	f.Tokens.AccessToken = auth.AccessToken
@@ -134,9 +153,19 @@ func NewWithBase(authPath, authURL string) *Client {
 }
 
 // Token returns a valid access token (lazy refresh with refresh rotation).
+// The load→refresh→save span runs under the sidecar flock (the c.mu mutex
+// only serializes goroutines of THIS process; the daemon and a CLI command
+// are separate processes — without the flock both read the same refresh
+// token and the rotation burns the loser's).
 func (c *Client) Token(ctx context.Context) (Auth, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	lock, err := flock.LockWait(c.authPath+".lock", authLockTimeout)
+	if err != nil {
+		return Auth{}, fmt.Errorf("codex: auth lock: %w", err)
+	}
+	defer func() { _ = lock.Unlock() }()
 
 	auth, err := LoadAuth(c.authPath)
 	if err != nil {
@@ -179,7 +208,7 @@ func (c *Client) Token(ctx context.Context) (Auth, error) {
 	if payload.RefreshToken != "" {
 		auth.RefreshToken = payload.RefreshToken // rotation
 	}
-	if err := SaveAuth(c.authPath, auth); err != nil {
+	if err := saveAuthLocked(c.authPath, auth); err != nil {
 		return Auth{}, fmt.Errorf("codex: save auth.json: %w", err)
 	}
 

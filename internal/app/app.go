@@ -55,12 +55,13 @@ func New(cfg *config.Config, log *slog.Logger) *App {
 // A double start is prevented by flock daemon.lock; the lock is retried for
 // a few seconds first — a restarting daemon may still hold it during its
 // graceful shutdown (the spawner waits for the port to close, not the exit).
+// A lock that is still held after the retry is an ERROR, not a quiet exit:
+// runServe turns it into a non-zero exit so scripts never mistake a failed
+// start for a healthy daemon.
 func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 	lock, err := a.acquireLock()
 	if err != nil {
-		a.log.Info("daemon already running — exiting", "err", err)
-
-		return nil
+		return fmt.Errorf("app: daemon.lock is held — another daemon is already running: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
 
@@ -71,7 +72,9 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 
 	port := opts.Port
 	if port == 0 {
-		port = a.fallbackPort()
+		// the single port-resolution chain (CCX_PORT > daemon.port > 4567) —
+		// a local copy here used to drift from the CLI's resolution
+		port = config.ResolveDaemonPort(a.cfg, 0)
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
@@ -127,13 +130,24 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 	return cl.Close(closeCtx)
 }
 
+// lockRetry is the acquireLock retry window (a var: tests shorten it — the
+// default makes a lock-held test wait out the full 5s).
+var lockRetry = 5 * time.Second
+
+// SetLockRetryForTest overrides the lock retry window; ResetLockRetryForTest
+// restores it.
+func SetLockRetryForTest(d time.Duration) { lockRetry = d }
+
+// ResetLockRetryForTest restores the default lock retry window.
+func ResetLockRetryForTest() { lockRetry = 5 * time.Second }
+
 // acquireLock takes daemon.lock with a bounded retry: the previous daemon may
 // hold it for a moment while its graceful shutdown drains in-flight requests.
 func (a *App) acquireLock() (*flock.Lock, error) {
 	// a fresh install may not have the ccx home yet — the lock lives there
 	_ = os.MkdirAll(a.cfg.Home, 0o750)
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(lockRetry)
 	for {
 		lock, err := flock.TryLock(a.daemonLockPath())
 		if err == nil {
@@ -144,19 +158,6 @@ func (a *App) acquireLock() (*flock.Lock, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-// fallbackPort resolves the listen port when ServeOptions.Port is unset:
-// CCX_PORT > providers.json daemon.port > 4567.
-func (a *App) fallbackPort() int {
-	if a.cfg.DaemonPort != 0 {
-		return a.cfg.DaemonPort
-	}
-	if providers, err := config.LoadProviders(a.cfg.ProvidersPath()); err == nil && providers.DaemonPort() != 0 {
-		return providers.DaemonPort()
-	}
-
-	return config.DefaultDaemonPort
 }
 
 func (a *App) daemonLockPath() string {

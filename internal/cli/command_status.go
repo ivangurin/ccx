@@ -18,9 +18,9 @@ func runStatus(_ []string, stdout io.Writer) int {
 
 		return 1
 	}
-	providers := loadProvidersOrHint(cfg, stdout)
+	providers, code := loadProvidersOrHint(cfg, stdout)
 	if providers == nil {
-		return 0
+		return code
 	}
 
 	var state models.State

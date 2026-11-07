@@ -178,6 +178,21 @@ func TestCommand_MissingProvidersInitHint(t *testing.T) {
 	require.Contains(t, out.String(), "ccx init")
 }
 
+// A corrupt providers.json must surface its real error and exit non-zero —
+// the "not found — run ccx init" hint here sends the user straight to
+// `ccx init --force`, which replaces the file and destroys their credentials.
+func TestCommandList_CorruptProvidersFails(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(`{"providers":`), 0o600))
+
+	var out bytes.Buffer
+	code := cli.Execute([]string{cmdList}, &out)
+
+	require.Equal(t, 1, code)
+	require.Contains(t, out.String(), "providers.json")
+	require.NotContains(t, out.String(), "ccx init")
+}
+
 func TestServe_RequiresProvider(t *testing.T) {
 	suite_provider.NewProvider(t) // sandbox: a broken config must not matter
 
@@ -205,4 +220,17 @@ func TestServe_FlagParsing_Debug(t *testing.T) {
 func TestServe_FlagParsing_UnknownFlagFails(t *testing.T) {
 	_, err := cli.ParseServeForTest([]string{"--provider", "work", "--nonsense"})
 	require.Error(t, err)
+}
+
+// --port gets the same bounds as the env knob (Config.Validate bounds
+// CCX_PORT to 0..65535): a bad value must fail with a clear message, not an
+// opaque net.Listen bind error after the logger and lock are already up.
+func TestServe_FlagParsing_PortOutOfRangeFails(t *testing.T) {
+	for _, bad := range []string{"70000", "-1", "65536"} { //nolint:paralleltest // table shares nothing
+		_, err := cli.ParseServeForTest([]string{"--provider", "work", "--port", bad})
+		require.Error(t, err, "port %s must be rejected", bad)
+	}
+	opts, err := cli.ParseServeForTest([]string{"--provider", "work", "--port", "0"})
+	require.NoError(t, err)
+	require.Equal(t, 0, opts.Port) // 0 = resolve (CCX_PORT > daemon.port > 4567)
 }

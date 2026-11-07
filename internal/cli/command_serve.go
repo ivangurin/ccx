@@ -71,6 +71,12 @@ func parseServeArgs(args []string) (app.ServeOptions, error) {
 	if *provider == "" {
 		return app.ServeOptions{}, errors.New("serve requires --provider <key>")
 	}
+	// the env knob (CCX_PORT) is range-checked in Config.Validate; the flag
+	// gets the same bounds — otherwise the failure is an opaque net.Listen
+	// bind error after the logger and lock are already up
+	if *port < 0 || *port > 65535 {
+		return app.ServeOptions{}, fmt.Errorf("invalid --port %d: must be within 0-65535 (0 = resolve)", *port)
+	}
 	_ = daemon // spawn semantics only; behavior does not change in-process
 
 	return app.ServeOptions{Provider: *provider, Port: *port, Debug: *debug}, nil

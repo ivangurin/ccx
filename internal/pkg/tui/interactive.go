@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -73,10 +74,18 @@ func (s *session) handleKey(key []byte, next NextStage) (done bool, path []int, 
 		s.arrow(key[2])
 	case key[0] == 127 || key[0] == 8:
 		if top := s.top(); top.query != "" {
-			top.query = top.query[:len(top.query)-1]
+			// drop the whole last rune, not a byte: multi-byte UTF-8 input
+			// (Cyrillic labels) must not decay into invalid halves
+			_, size := utf8.DecodeLastRuneInString(top.query)
+			top.query = top.query[:len(top.query)-size]
 		}
 	case key[0] >= 32:
-		s.top().query += string(key[0])
+		// the whole read chunk is printable runes (escape sequences were
+		// matched above); appending a single byte corrupted multi-byte UTF-8
+		// input — the filter then never matched the typed label
+		if utf8.Valid(key) {
+			s.top().query += string(key)
+		}
 	}
 
 	return false, nil, nil

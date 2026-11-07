@@ -5,7 +5,10 @@
 // live gateway.
 package prefill
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Instruction is the continuation instruction text (1:1 with the bridge).
 
@@ -48,7 +51,7 @@ func Rewrite(body map[string]any) (map[string]any, string) {
 	texts, kinds := prefillContent(last["content"])
 	note := "prefill:" + strings.Join(kinds, "+")
 	if len(systemTail) > 0 {
-		note += "+sys-tail:" + itoa(len(systemTail))
+		note += "+sys-tail:" + strconv.Itoa(len(systemTail))
 	}
 
 	payload := Instruction
@@ -80,7 +83,7 @@ func rewriteNonAssistantFinal(body map[string]any, msgs []map[string]any, k int,
 		fresh := copyBody(body)
 		fresh["messages"] = appendMaps(msgs[:k-1], nil, mergeIntoUser(msgs[k-1], sysTexts))
 
-		return fresh, "sys-tail-merged:" + itoa(len(tail))
+		return fresh, "sys-tail-merged:" + strconv.Itoa(len(tail))
 	}
 	if k == 0 && len(sysTexts) > 0 {
 		// messages are only system: put everything into one user message
@@ -89,7 +92,7 @@ func rewriteNonAssistantFinal(body map[string]any, msgs []map[string]any, k int,
 			map[string]any{"role": "user", "content": strings.Join(sysTexts, "\n\n")},
 		}
 
-		return fresh, "sys-only:" + itoa(len(tail))
+		return fresh, "sys-only:" + strconv.Itoa(len(tail))
 	}
 
 	return body, "no-prefill"
@@ -233,17 +236,4 @@ func copyMap(m map[string]any) map[string]any {
 	}
 
 	return fresh
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	digits := ""
-	for n > 0 {
-		digits = string(rune('0'+n%10)) + digits
-		n /= 10
-	}
-
-	return digits
 }

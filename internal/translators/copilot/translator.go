@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/ivangurin/ccx/internal/translators/openai"
 	"github.com/ivangurin/ccx/internal/translators/prefill"
+	"github.com/ivangurin/ccx/internal/translators/relay"
 )
 
 // CopilotAPIBase is the Copilot gateway endpoint.
@@ -84,13 +84,13 @@ func (t *Translator) headers(token string) http.Header {
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 64*1024*1024))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, err.Error())
 
 		return
 	}
 	var body map[string]any
 	if err := json.Unmarshal(raw, &body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
 
 		return
 	}
@@ -98,17 +98,14 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	// final assistant message without it (copilot-bridge.py precedent).
 	body, _ = prefill.Rewrite(body)
 	var req models.MessagesRequest
-	if rawMsgs, ok := body["messages"]; ok {
-		body["messages"] = rawMsgs // retyping after prefill
-	}
 	remarshaled, err := json.Marshal(body)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
 	if err := json.Unmarshal(remarshaled, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		relay.WriteErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
 
 		return
 	}
@@ -116,33 +113,33 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	chat := openai.BuildChatRequest(&req, "max_tokens")
 	payload, err := json.Marshal(chat) //nolint:errchkjson // RawMessage is valid by construction
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
 
 	token, err := t.tokens.Token(r.Context())
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "copilot token unavailable: "+err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, "copilot token unavailable: "+err.Error())
 
 		return
 	}
 	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, t.base+"/chat/completions", bytes.NewReader(payload)) //nolint:gosec // base is a constant/test
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
 	upReq.Header = t.headers(token)
 	resp, err := t.http.Do(upReq)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, err.Error())
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		relayUpstreamError(w, resp)
+		relay.UpstreamError(w, resp)
 
 		return
 	}
@@ -157,7 +154,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string) {
 	var chat models.ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		writeErr(w, http.StatusBadGateway, "invalid response: "+err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, "invalid response: "+err.Error())
 
 		return
 	}
@@ -172,23 +169,4 @@ func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model
 // ServeCountTokens: local estimation.
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
 	openai.New(&models.Profile{Protocol: models.ProtocolOpenAI}).ServeCountTokens(w, r)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":%q}}`, msg) //nolint:gosec // %q escapes
-}
-
-// relayUpstreamError copies an upstream error.
-func relayUpstreamError(w http.ResponseWriter, resp *http.Response) {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	if json.Valid(body) {
-		_, _ = w.Write(body)
-
-		return
-	}
-	_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"upstream %d"}}`, resp.StatusCode)
 }

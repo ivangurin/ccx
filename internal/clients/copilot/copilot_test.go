@@ -59,6 +59,23 @@ func newClient(t *testing.T, gh *httptest.Server, storePath string) *copilot.Cli
 	return copilot.NewWithBase(gh.URL, gh.URL, gh.URL, storePath)
 }
 
+// RFC 8628 §3.5: a slow_down response MUST increase the polling interval by
+// 5 seconds (adopting the advertised interval alone kept the poll at the
+// rate the server had just rejected — repeated slow_down until expiry).
+// authorization_pending adopts the server's interval when present.
+func TestPollIntervalAdvance(t *testing.T) {
+	// slow_down with no new value: current + 5s
+	require.Equal(t, 10*time.Second, copilot.PollIntervalAdvanceForTest(5*time.Second, "slow_down", 0))
+	// slow_down repeating the current interval: still +5s
+	require.Equal(t, 10*time.Second, copilot.PollIntervalAdvanceForTest(5*time.Second, "slow_down", 5))
+	// slow_down advertising a larger interval: max(current, advertised) + 5s
+	require.Equal(t, 13*time.Second, copilot.PollIntervalAdvanceForTest(5*time.Second, "slow_down", 8))
+	// pending adopts the advertised interval
+	require.Equal(t, 3*time.Second, copilot.PollIntervalAdvanceForTest(5*time.Second, "authorization_pending", 3))
+	// pending without a value keeps the current interval
+	require.Equal(t, 5*time.Second, copilot.PollIntervalAdvanceForTest(5*time.Second, "authorization_pending", 0))
+}
+
 func TestDeviceFlow_Auth(t *testing.T) {
 	gh := httptest.NewServer((&fakeGitHub{}).handler(t))
 	t.Cleanup(gh.Close)

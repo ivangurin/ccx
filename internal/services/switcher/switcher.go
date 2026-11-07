@@ -11,7 +11,9 @@ package switcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"slices"
 	"strings"
@@ -63,7 +65,14 @@ func lockPath(cfg *config.Config) string {
 func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string) (string, error) {
 	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
 	if err != nil {
-		return "", fmt.Errorf("ccx: providers.json unavailable (%v) — run ccx init first", err)
+		// the init hint is only for a missing file: suggesting ccx init on a
+		// corrupt one steers the user to --force, which replaces the file
+		// and destroys their credentials — surface the real error instead
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", errors.New("ccx: providers.json not found — run ccx init first")
+		}
+
+		return "", fmt.Errorf("ccx: providers.json is unreadable: %w", err)
 	}
 	profile := providers.Providers.Get(profileKey)
 	if profile == nil {

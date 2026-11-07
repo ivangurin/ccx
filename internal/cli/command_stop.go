@@ -1,16 +1,22 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/services/switcher"
 )
 
-// runStop — ccx stop: POST /admin/stop (graceful shutdown of the daemon;
-// the surface is localhost-only, no token).
+// runStop — ccx stop: graceful /admin/stop with the switcher's shutdown
+// ladder (port wait → SIGTERM/SIGKILL escalation by the pidfile — a hung SSE
+// stream can hold the graceful drain forever). Reusing HTTPDaemon.Stop keeps
+// one implementation of the ladder; a daemon that survives it fails the
+// command: exit 0 "still responding" told scripts the port was free while
+// the next spawn then lost the lock race.
 func runStop(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -26,26 +32,12 @@ func runStop(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
-	req, _ := http.NewRequest(http.MethodPost, base+"/admin/stop", nil) //nolint:gosec // local address
-	req.Header.Set("X-Ccx", "1")                                        // the admin marker (browser drive-by defense)
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
-	if err != nil {
-		fmt.Fprintf(stdout, "ccx: failed to stop the daemon: %v\n", err)
+	if err := switcher.NewHTTPDaemon(cfg).Stop(context.Background()); err != nil {
+		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
 		return 1
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// wait for the port to actually close (otherwise "stopped" while the process is alive)
-	for range 50 {
-		if !alive(base) {
-			fmt.Fprintln(stdout, "Daemon stopped.")
-
-			return 0
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	fmt.Fprintf(stdout, "ccx: daemon is still responding (log: %s)\n", cfg.LogDir()+"/daemon.log")
+	fmt.Fprintln(stdout, "Daemon stopped.")
 
 	return 0
 }

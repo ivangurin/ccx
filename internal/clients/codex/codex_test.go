@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -114,6 +115,51 @@ func TestClient_Token_NotLoggedIn(t *testing.T) {
 	client := codex.New(filepath.Join(t.TempDir(), "auth.json"))
 	_, err := client.Token(context.Background())
 	require.ErrorIs(t, err, codex.ErrNotLoggedIn)
+}
+
+// Two Client instances (the daemon + a CLI invocation are separate processes
+// with separate in-process mutexes) must not refresh concurrently: refresh
+// rotation invalidates the old token, so the loser's refresh 400s and the
+// user re-logs-in. The sidecar flock serializes them — the second client
+// re-reads the already-rotated file and skips the refresh entirely.
+func TestClient_Token_ConcurrentClientsSerialize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	writeAuth(t, path, pastJWT(t), "rt-1")
+
+	var mu sync.Mutex
+	used := map[string]bool{}
+	refreshes := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		mu.Lock()
+		defer mu.Unlock()
+		refreshes++
+		rt := r.FormValue("refresh_token")
+		// widen the load→refresh→save race window for both clients
+		time.Sleep(150 * time.Millisecond)
+		if used[rt] { // rotation: a second use of the same token is fatal
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+
+			return
+		}
+		used[rt] = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"` + futureJWT(t) + `","refresh_token":"rt-2"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c1 := codex.NewWithBase(path, srv.URL)
+	c2 := codex.NewWithBase(path, srv.URL)
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Go(func() { _, err1 = c1.Token(context.Background()) })
+	wg.Go(func() { _, err2 = c2.Token(context.Background()) })
+	wg.Wait()
+
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	require.Equal(t, 1, refreshes) // the loser must not have refreshed at all
 }
 
 func TestSaveAuth_PreservesPermissions(t *testing.T) {

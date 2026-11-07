@@ -117,6 +117,46 @@ func TestStream_ReasoningToThinking(t *testing.T) {
 	require.True(t, thinkingDelta, "thinking_delta not received")
 }
 
+// Text arriving after a tool_use block must open a NEW text block (and the
+// earlier text block must have been stopped when the tool block opened):
+// reusing the still-open block 0 emits a delta below the open block 1 —
+// out-of-order block lifecycle for strict clients, and the reconstructed
+// content merges the post-tool text into the pre-tool block, reordering what
+// the model actually said.
+func TestStream_TextAfterToolOpensNewTextBlock(t *testing.T) {
+	events := feed(t, []*models.ChatChunk{
+		chunk(models.ChatChunkDelta{Content: "before"}, nil),
+		chunk(models.ChatChunkDelta{ToolCalls: []models.ChatToolCall{{
+			Index: 0, ID: "call_1", Type: "function",
+			Function: models.ChatFunction{Name: "bash", Arguments: `{"cmd":"ls"}`},
+		}}}, nil),
+		chunk(models.ChatChunkDelta{Content: "after"}, nil),
+		chunk(models.ChatChunkDelta{}, strp("tool_calls")),
+	})
+
+	require.Equal(t, []string{
+		"message_start",
+		"content_block_start", evDeltaBlock, // text "before" → block 0
+		"content_block_stop",                // block 0 stops before the tool block opens
+		"content_block_start",               // tool_use → block 1
+		evDeltaBlock,                        // input_json_delta → block 1
+		"content_block_start", evDeltaBlock, // text "after" → a NEW block 2
+		"content_block_stop", "content_block_stop", // finish closes 1 and 2
+		"message_delta", "message_stop",
+	}, names(events))
+
+	// the post-tool text targets the new block (2), not the old one (0)
+	for _, e := range events {
+		if e.Type == evDeltaBlock && e.Delta != nil && e.Delta.Type == "text_delta" && e.Delta.Text == "after" {
+			require.NotNil(t, e.Index)
+			require.Equal(t, 2, *e.Index)
+
+			return
+		}
+	}
+	t.Fatal(`no text_delta "after" found`)
+}
+
 func TestStream_UsageFromFinalChunk(t *testing.T) {
 	c := chunk(models.ChatChunkDelta{}, strp("stop"))
 	c.Usage = &models.Usage{InputTokens: 7, OutputTokens: 3}

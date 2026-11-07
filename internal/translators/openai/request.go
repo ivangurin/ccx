@@ -50,7 +50,7 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 		})
 	}
 	if len(req.ToolChoice) > 0 {
-		out.ToolChoice = req.ToolChoice
+		out.ToolChoice = mapToolChoice(req.ToolChoice)
 	}
 
 	if sys := systemText(req.System); sys != "" {
@@ -61,6 +61,38 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 	}
 
 	return out
+}
+
+// mapToolChoice translates Anthropic tool_choice into the chat/completions
+// shape: the Anthropic forms are invalid upstream ("any", a named tool) and
+// passthrough failed every forced-tool-use turn with a 400. Unknown/empty
+// shapes are dropped — no tool_choice beats an invalid one.
+func mapToolChoice(raw json.RawMessage) json.RawMessage {
+	var tc struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &tc); err != nil || tc.Type == "" {
+		return nil
+	}
+	switch tc.Type {
+	case "auto":
+		return json.RawMessage(`"auto"`)
+	case "any": // "some tool, any tool" → OpenAI's required
+		return json.RawMessage(`"required"`)
+	case "tool":
+		if tc.Name == "" {
+			return nil
+		}
+		name, err := json.Marshal(tc.Name)
+		if err != nil {
+			return nil
+		}
+
+		return json.RawMessage(`{"type":"function","function":{"name":` + string(name) + `}}`)
+	default:
+		return nil
+	}
 }
 
 // systemText extracts the system (a string or text blocks).
