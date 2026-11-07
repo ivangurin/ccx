@@ -12,11 +12,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/readguard"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/billing"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 	"github.com/ivangurin/ccx/internal/translators/sessionid"
@@ -25,6 +27,7 @@ import (
 // role/type constants (goconst).
 const (
 	evError        = "error"
+	evMessageDelta = "message_delta"
 	typeToolUse    = "tool_use"
 	typeText       = "text"
 	typeMessage    = "message"
@@ -305,6 +308,16 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	started := time.Now()
+	entry := usagelog.Entry{
+		Ts:       started,
+		Provider: t.profile.Name, Protocol: string(t.Protocol()),
+		Model: req.Model, Stream: req.Stream, Status: http.StatusOK,
+	}
+	defer func() {
+		entry.LatencyMS = time.Since(started).Milliseconds()
+		usagelog.Record(entry)
+	}()
 	out := BuildResponsesRequest(&req)
 	// the upstream is ALWAYS streamed — the subscription backend contract is
 	// stream-only; a non-streaming client is served by aggregation (below)
@@ -324,6 +337,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	reqdump.Write("codex-req", body)
 	auth, err := t.auths.Token(r.Context())
 	if err != nil {
+		entry.Status, entry.Error = http.StatusBadGateway, err.Error()
 		relay.WriteErr(w, http.StatusBadGateway, err.Error())
 
 		return
@@ -355,23 +369,25 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := t.http.Do(upReq)
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
+		entry.Status, entry.Error = http.StatusBadGateway, guard.Err(err).Error()
+		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		entry.Status = resp.StatusCode
 		relayError(w, resp)
 
 		return
 	}
 	resp.Body = guard.Body(resp.Body)
 	if req.Stream {
-		t.serveStream(w, resp, req.Model)
+		t.serveStream(w, resp, req.Model, &entry)
 
 		return
 	}
-	t.serveAggregate(w, resp, req.Model)
+	t.serveAggregate(w, resp, req.Model, &entry)
 }
 
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {

@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/readguard"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/ivangurin/ccx/internal/translators/openai"
 	"github.com/ivangurin/ccx/internal/translators/prefill"
@@ -142,6 +144,16 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	started := time.Now()
+	entry := usagelog.Entry{
+		Ts:       started,
+		Provider: t.profile.Name, Protocol: string(t.Protocol()),
+		Model: req.Model, Stream: req.Stream, Status: http.StatusOK,
+	}
+	defer func() {
+		entry.LatencyMS = time.Since(started).Milliseconds()
+		usagelog.Record(entry)
+	}()
 
 	chat := openai.BuildChatRequest(&req, "max_tokens")
 	payload, err := json.Marshal(chat) //nolint:errchkjson // RawMessage is valid by construction
@@ -153,7 +165,8 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 	token, err := t.tokens.Token(r.Context())
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, "copilot token unavailable: "+err.Error())
+		entry.Status, entry.Error = http.StatusBadGateway, "copilot token unavailable: "+err.Error()
+		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
@@ -170,32 +183,39 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	upReq.Header = t.quotaHeaders(t.headers(token), cls, sid, body)
 	resp, err := t.http.Do(upReq)
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
+		entry.Status, entry.Error = http.StatusBadGateway, guard.Err(err).Error()
+		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		entry.Status = resp.StatusCode
 		relay.UpstreamError(w, resp)
 
 		return
 	}
 	resp.Body = guard.Body(resp.Body)
 	if req.Stream {
-		chatstream.ServeChatStream(w, resp, req.Model)
+		chatstream.ServeChatStream(w, resp, req.Model, func(ttft time.Duration, usage models.Usage) {
+			entry.TTFTMS = ttft.Milliseconds()
+			entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
+		})
 
 		return
 	}
-	t.serveJSON(w, resp, req.Model)
+	t.serveJSON(w, resp, req.Model, &entry)
 }
 
-func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string) {
+func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
 	var chat models.ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, "invalid response: "+err.Error())
+		entry.Status, entry.Error = http.StatusBadGateway, "invalid response: "+err.Error()
+		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
+	entry.InputTokens, entry.OutputTokens = chat.Usage.InputTokens, chat.Usage.OutputTokens
 	out := openai.BuildMessagesResponse(&chat, model)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
@@ -15,17 +16,24 @@ import (
 //     (an empty-stream error is returned as 502 JSON, not an empty SSE);
 //   - [DONE] is mandatory: EOF without it = upstream break → SSE error + finale
 //     without masquerading as a normal completion;
-//   - message_stop is strictly {"type":"message_stop"}.
+//   - message_stop is strictly {"type":"message_stop"};
+//   - onFinish (nil-safe) fires only on the clean path with the final usage
+//     and the time to first token — the two numbers only the relay sees.
 //
 //nolint:gocognit // relay: lazy writer + break handling, splitting would obscure
-func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string) {
+func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string, onFinish func(ttft time.Duration, usage models.Usage)) {
 	reader := sse.NewReader(resp.Body)
 	conv := NewStreamConverter(model)
+	started := time.Now()
+	var ttft time.Duration
 
 	var writer *sse.Writer
 	emit := func(ev models.AnthropicEvent) {
 		if writer == nil {
 			writer = sse.NewWriter(w)
+		}
+		if ttft == 0 {
+			ttft = time.Since(started)
 		}
 		writer.Event(ev.Type, ev)
 	}
@@ -69,6 +77,9 @@ func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string) {
 		emit(out)
 	}
 	writer.Close()
+	if onFinish != nil {
+		onFinish(ttft, conv.finalUsage())
+	}
 }
 
 func writeStreamError(w http.ResponseWriter, status int, msg string) {

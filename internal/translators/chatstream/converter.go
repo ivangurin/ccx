@@ -130,6 +130,15 @@ func (c *StreamConverter) closeSentinel(events []models.AnthropicEvent, key int)
 	return events
 }
 
+// finalUsage is the usage the stream carried (zero when none arrived).
+func (c *StreamConverter) finalUsage() models.Usage {
+	if c.usage != nil {
+		return *c.usage
+	}
+
+	return models.Usage{}
+}
+
 // Finish closes open blocks (in opening order — determinism) and completes the
 // message; message_stop strictly without a payload.
 func (c *StreamConverter) Finish() []models.AnthropicEvent {

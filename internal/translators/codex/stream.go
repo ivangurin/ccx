@@ -5,9 +5,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 )
 
@@ -40,21 +42,34 @@ type streamEvent struct {
 }
 
 // serveStream relays the upstream Responses SSE to the client as Anthropic
-// SSE (lazy writer: an empty stream is a 502 JSON, not an empty SSE).
-func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, model string) {
+// SSE (lazy writer: an empty stream is a 502 JSON, not an empty SSE). The
+// usage entry picks up TTFT (first emitted event) and the terminal usage.
+func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
 	var writer *sse.Writer
+	relayStarted := time.Now()
+	var ttft time.Duration
+	var usage models.Usage
 	started := t.streamEvents(resp, model, func(ev models.AnthropicEvent) {
 		if writer == nil {
 			writer = sse.NewWriter(w)
 		}
+		if ttft == 0 {
+			ttft = time.Since(relayStarted)
+		}
+		if ev.Type == evMessageDelta && ev.Usage != nil {
+			usage = *ev.Usage
+		}
 		writer.Event(ev.Type, ev)
 	})
 	if !started {
+		entry.Status, entry.Error = http.StatusBadGateway, "codex: empty upstream stream"
 		relay.WriteErr(w, http.StatusBadGateway, "codex: empty upstream stream")
 
 		return
 	}
 	writer.Close()
+	entry.TTFTMS = ttft.Milliseconds()
+	entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
 }
 
 // streamEvents converts the upstream Responses SSE into Anthropic events via
@@ -199,8 +214,8 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 		emit(models.AnthropicEvent{Type: "content_block_stop", Index: &idx})
 	}
 	emit(models.AnthropicEvent{
-		Type:  "message_delta",
-		Delta: &models.AnthropicDelta{Type: "message_delta", StopReason: stopReason},
+		Type:  evMessageDelta,
+		Delta: &models.AnthropicDelta{Type: evMessageDelta, StopReason: stopReason},
 		Usage: &usage,
 	})
 	emit(models.AnthropicEvent{Type: "message_stop"})

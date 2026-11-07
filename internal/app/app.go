@@ -20,6 +20,7 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/closer"
 	"github.com/ivangurin/ccx/internal/pkg/flock"
 	"github.com/ivangurin/ccx/internal/pkg/httpserver"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/services/router"
 )
 
@@ -64,6 +65,11 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 		return fmt.Errorf("app: daemon.lock is held — another daemon is already running: %w", err)
 	}
 	defer func() { _ = lock.Unlock() }()
+
+	// per-request usage log into <LogDir>/usage-YYYY-MM-DD.jsonl (counts and
+	// timings only; Noop outside serve mode, tests swap it)
+	_ = os.MkdirAll(a.cfg.LogDir(), 0o750)
+	usagelog.Default = usagelog.NewFileRecorder(a.cfg.LogDir())
 
 	svc, err := router.Build(ctx, a.cfg, a.log, opts.Provider)
 	if err != nil {

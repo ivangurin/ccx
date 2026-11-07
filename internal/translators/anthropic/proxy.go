@@ -3,12 +3,15 @@ package anthropic
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/pkg/readguard"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 )
 
 // hopHeaders are hop-by-hop headers, not forwarded by the proxy (RFC 7230).
@@ -102,13 +105,28 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	// usage record: model/stream from the buffered body; token counts stay
+	// zero — passthrough never parses SSE by design, and sniffing every
+	// relayed byte for counts was rejected (byte-precise is the point)
+	entry := usagelog.Entry{
+		Ts:       time.Now(),
+		Provider: t.profile.Name, Protocol: string(t.Protocol()),
+		Model: bodyModel(body), Stream: bodyStream(body),
+		Status: http.StatusOK,
+	}
+	started := time.Now()
+	defer func() {
+		entry.LatencyMS = time.Since(started).Milliseconds()
+		usagelog.Record(entry)
+	}()
 	// read deadlines: a hung gateway (nothing ever sent) would otherwise
 	// leave the client request open forever — see readguard
 	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
 	defer guard.Stop()
 	resp, err := t.upstream(gctx, r, body)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, guard.Err(err).Error())
+		entry.Status, entry.Error = http.StatusBadGateway, guard.Err(err).Error()
+		writeError(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
@@ -117,7 +135,31 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	resp.Body = guard.Body(resp.Body)
+	entry.Status = resp.StatusCode
 	relay(w, resp)
+}
+
+// bodyModel/bodyStream read the two identity fields without a full decode.
+func bodyModel(body []byte) string {
+	var probe struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(body, &probe) == nil {
+		return probe.Model
+	}
+
+	return ""
+}
+
+func bodyStream(body []byte) bool {
+	var probe struct {
+		Stream bool `json:"stream"`
+	}
+	if json.Unmarshal(body, &probe) == nil {
+		return probe.Stream
+	}
+
+	return false
 }
 
 // upstream performs one upstream roundtrip with the buffered body.

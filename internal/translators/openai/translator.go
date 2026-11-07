@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/readguard"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 )
@@ -113,6 +115,17 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	started := time.Now()
+	entry := usagelog.Entry{
+		Ts:       started,
+		Provider: t.profile.Name, Protocol: string(t.Protocol()),
+		Model: req.Model, Stream: req.Stream, Status: http.StatusOK,
+	}
+	defer func() {
+		entry.LatencyMS = time.Since(started).Milliseconds()
+		usagelog.Record(entry)
+	}()
+
 	field := t.profile.MaxTokensField
 	if field == "" {
 		field = "max_tokens"
@@ -129,33 +142,40 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	defer guard.Stop()
 	resp, err := t.do(gctx, r, body)
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
+		entry.Status, entry.Error = http.StatusBadGateway, guard.Err(err).Error()
+		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		entry.Status = resp.StatusCode
 		relay.UpstreamError(w, resp)
 
 		return
 	}
 	resp.Body = guard.Body(resp.Body)
 	if req.Stream {
-		chatstream.ServeChatStream(w, resp, req.Model)
+		chatstream.ServeChatStream(w, resp, req.Model, func(ttft time.Duration, usage models.Usage) {
+			entry.TTFTMS = ttft.Milliseconds()
+			entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
+		})
 
 		return
 	}
-	t.serveJSON(w, resp, req.Model)
+	t.serveJSON(w, resp, req.Model, &entry)
 }
 
-func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string) {
+func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
 	var chat models.ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, "invalid upstream response: "+err.Error())
+		entry.Status, entry.Error = http.StatusBadGateway, "invalid upstream response: "+err.Error()
+		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
 
 		return
 	}
+	entry.InputTokens, entry.OutputTokens = chat.Usage.InputTokens, chat.Usage.OutputTokens
 	out := BuildMessagesResponse(&chat, model)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

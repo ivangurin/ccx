@@ -6,18 +6,20 @@ import (
 	"strings"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 )
 
 // serveAggregate answers a NON-streaming client request from a streaming
 // upstream (the backend contract is stream-only): the Responses SSE is
 // converted to Anthropic events and folded into one MessagesResponse.
-func (t *Translator) serveAggregate(w http.ResponseWriter, resp *http.Response, model string) {
+func (t *Translator) serveAggregate(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
 	var events []models.AnthropicEvent
 	started := t.streamEvents(resp, model, func(ev models.AnthropicEvent) {
 		events = append(events, ev)
 	})
 	if !started {
+		entry.Status, entry.Error = http.StatusBadGateway, "codex: empty upstream stream"
 		relay.WriteErr(w, http.StatusBadGateway, "codex: empty upstream stream")
 
 		return
@@ -25,10 +27,12 @@ func (t *Translator) serveAggregate(w http.ResponseWriter, resp *http.Response, 
 	out, errMsg := eventsToMessage(events, model)
 	if errMsg != "" {
 		// a failed stream must not masquerade as a complete message
+		entry.Status, entry.Error = http.StatusBadGateway, "codex: "+errMsg
 		relay.WriteErr(w, http.StatusBadGateway, "codex: "+errMsg)
 
 		return
 	}
+	entry.InputTokens, entry.OutputTokens = out.Usage.InputTokens, out.Usage.OutputTokens
 	data, err := json.Marshal(out) //nolint:errchkjson // assembled from typed events
 	if err != nil {
 		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
@@ -87,7 +91,7 @@ func (f *folder) apply(ev models.AnthropicEvent) {
 		f.startBlock(ev)
 	case "content_block_delta":
 		f.applyDelta(ev)
-	case "message_delta":
+	case evMessageDelta:
 		f.applyMessageDelta(ev)
 	default:
 		// message_start/stop, content_block_stop — nothing to fold
