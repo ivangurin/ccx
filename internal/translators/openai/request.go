@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/translators/billing"
 )
 
 // block/role types (goconst).
@@ -53,7 +54,7 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 		out.ToolChoice = mapToolChoice(req.ToolChoice)
 	}
 
-	if sys := systemText(req.System); sys != "" {
+	if sys := billing.Strip(systemText(req.System)); sys != "" {
 		out.Messages = append(out.Messages, models.ChatMessage{Role: "system", Content: sys})
 	}
 	for _, msg := range req.Messages {

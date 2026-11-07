@@ -138,7 +138,7 @@ func TestServeMessages_Headers(t *testing.T) {
 	require.Equal(t, "acct-1", hdrs.Get("Chatgpt-Account-Id"))
 	// the CLI mimicry is a constant, not profile config
 	require.Equal(t, "codex_cli_rs", hdrs.Get("Originator"))
-	require.Equal(t, "codex_cli_rs/1.0.0", hdrs.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs/0.159.0", hdrs.Get("User-Agent"))
 }
 
 func jsonUnmarshal(raw string, v any) error {

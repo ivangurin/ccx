@@ -18,7 +18,9 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/readguard"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/translators/billing"
 	"github.com/ivangurin/ccx/internal/translators/relay"
+	"github.com/ivangurin/ccx/internal/translators/sessionid"
 )
 
 // role/type constants (goconst).
@@ -32,10 +34,14 @@ const (
 )
 
 // codex CLI mimicry (was config: CodexDefaults) — the subscription backend
-// expects the codex CLI client, no reason to keep it per-profile.
+// expects the codex CLI client, no reason to keep it per-profile. The version
+// rides both the Version header and the UA: the backend gates model
+// availability by client version, so a stale one locks newer models out of
+// the catalog even when the subscription covers them.
 const (
 	codexOriginator = "codex_cli_rs"
-	codexUserAgent  = "codex_cli_rs/1.0.0"
+	codexVersion    = "0.159.0"
+	codexUserAgent  = codexOriginator + "/" + codexVersion
 )
 
 // ResponsesItem is an element of the Responses API input[].
@@ -71,6 +77,10 @@ type ResponsesRequest struct {
 	Tools           []ResponsesTool `json:"tools,omitempty"`
 	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
+	// PromptCacheKey groups a conversation's requests on the backend side:
+	// same conversation → same cache. Set from the client session when one
+	// is resolvable; empty stays absent (omitempty).
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 	// Store stays false and serializes explicitly (no omitempty): the
 	// ChatGPT backend answers anything else with "Store must be set to
 	// false" — Codex CLI always sends store:false.
@@ -162,7 +172,8 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 		parts := append([]string{instructions}, systemMsgs...)
 		instructions = strings.Join(parts, "\n\n")
 	}
-	out.Instructions = instructions
+	// the client's local billing line must not reach the instructions
+	out.Instructions = billing.Strip(instructions)
 
 	return out
 }
@@ -303,7 +314,14 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	body, err := json.Marshal(BuildResponsesRequest(&req))
+	out := BuildResponsesRequest(&req)
+	// the conversation handle rides as the backend cache key and the codex
+	// client session headers — absent when no session is resolvable
+	sid := sessionid.FromRequest(r, req.Metadata)
+	if sid != "" {
+		out.PromptCacheKey = sid
+	}
+	body, err := json.Marshal(out)
 	if err != nil {
 		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
@@ -334,6 +352,12 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	// CLI mimicry is a constant: the backend expects the codex CLI client.
 	upReq.Header.Set("Originator", codexOriginator)
 	upReq.Header.Set("User-Agent", codexUserAgent)
+	upReq.Header.Set("Version", codexVersion)
+	if sid != "" {
+		upReq.Header.Set("Session-Id", sid)
+		upReq.Header.Set("X-Client-Request-Id", sid)
+		upReq.Header.Set("X-Codex-Window-Id", sid+":0")
+	}
 
 	resp, err := t.http.Do(upReq)
 	if err != nil {
