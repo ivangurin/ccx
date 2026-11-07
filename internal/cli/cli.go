@@ -21,7 +21,7 @@ Usage:
   ccx status             active provider/model, daemon state
   ccx init [--force]     create providers.json (import from settings/env)
   ccx edit               open providers.json in $EDITOR
-  ccx serve [--daemon] --provider <key> [--port N]
+  ccx serve [--daemon] [--debug] --provider <key> [--port N]
                           daemon (foreground; spawned by ccx use)
   ccx stop               the daemon
   ccx auth copilot       GitHub OAuth device flow

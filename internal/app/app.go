@@ -32,6 +32,10 @@ type ServeOptions struct {
 	Provider string
 	// Port is the listen port; 0 = resolve (CCX_PORT > daemon.port > 4567).
 	Port int
+	// Debug switches the daemon logger to debug/dev and tees it into
+	// <LogDir>/debug-<launch time>.log (wired in cli; Run itself ignores it —
+	// like --daemon, a spawn/CLI-semantics flag).
+	Debug bool
 }
 
 // App — the daemon.

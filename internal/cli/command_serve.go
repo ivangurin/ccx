@@ -9,16 +9,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/app"
 	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/pkg/logger"
 )
 
-// runServe — ccx serve [--daemon] --provider <key> [--port N]: run the daemon
-// (foreground for debugging; --daemon is SpawnDetached's internal mode, output
-// already goes to daemon.log). The route comes from --provider — there is no
-// in-daemon switching anymore.
+// runServe — ccx serve [--daemon] [--debug] --provider <key> [--port N]:
+// run the daemon (foreground for debugging; --daemon is SpawnDetached's
+// internal mode, output already goes to daemon.log; --debug = debug/dev
+// logging teed into <LogDir>/debug-<launch time>.log). The route comes from
+// --provider — there is no in-daemon switching anymore.
 func runServe(args []string, stdout io.Writer) int {
 	opts, err := parseServeArgs(args[1:])
 	if err != nil {
@@ -33,12 +34,13 @@ func runServe(args []string, stdout io.Writer) int {
 
 		return 1
 	}
-	log, err := logger.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
+	log, closeLog, err := buildServeLogger(cfg, opts, os.Stderr, time.Now())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ccx: %v\n", err)
 
 		return 1
 	}
+	defer closeLog()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -59,6 +61,7 @@ func parseServeArgs(args []string) (app.ServeOptions, error) {
 	provider := fs.String("provider", "", "providers.json key to proxy (required)")
 	port := fs.Int("port", 0, "listen port (default: CCX_PORT > daemon.port > 4567)")
 	daemon := fs.Bool("daemon", false, "spawned mode (output to daemon.log)")
+	debug := fs.Bool("debug", false, "debug logging: level=debug, dev format, tee into <CCX_HOME>/logs/debug-<launch time>.log")
 	if err := fs.Parse(args); err != nil {
 		return app.ServeOptions{}, err
 	}
@@ -70,7 +73,7 @@ func parseServeArgs(args []string) (app.ServeOptions, error) {
 	}
 	_ = daemon // spawn semantics only; behavior does not change in-process
 
-	return app.ServeOptions{Provider: *provider, Port: *port}, nil
+	return app.ServeOptions{Provider: *provider, Port: *port, Debug: *debug}, nil
 }
 
 // ParseServeForTest exports parseServeArgs for flag-parsing tests.

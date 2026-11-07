@@ -209,7 +209,7 @@ edited in place, never moved or reformatted.
 | `ccx status` | active provider/model |
 | `ccx init [--force]` | create providers.json (import from settings/env) |
 | `ccx edit` | open providers.json in `$EDITOR` |
-| `ccx serve [--daemon] --provider <key> [--port N]` | run the daemon in the foreground |
+| `ccx serve [--daemon] [--debug] --provider <key> [--port N]` | run the daemon in the foreground (`--debug`: debug-level logging teed into `~/.ccx/logs/debug-<launch time>.log`) |
 | `ccx stop` | stop the daemon |
 | `ccx auth copilot` | GitHub OAuth device flow |
 | `ccx auth codex` | check codex CLI login |

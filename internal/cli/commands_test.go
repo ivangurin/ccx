@@ -193,6 +193,13 @@ func TestServe_FlagParsing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "work", opts.Provider)
 	require.Equal(t, 4600, opts.Port)
+	require.False(t, opts.Debug)
+}
+
+func TestServe_FlagParsing_Debug(t *testing.T) {
+	opts, err := cli.ParseServeForTest([]string{"--provider", "work", "--debug"})
+	require.NoError(t, err)
+	require.True(t, opts.Debug)
 }
 
 func TestServe_FlagParsing_UnknownFlagFails(t *testing.T) {
