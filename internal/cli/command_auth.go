@@ -4,44 +4,111 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
+	"os/exec"
+	"runtime"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/clients/codex"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
 )
 
-// runAuth — ccx auth copilot: GitHub device flow, interactive.
-func runAuth(args []string, stdout io.Writer) int {
-	if len(args) < 2 {
-		fmt.Fprintln(stdout, "ccx: specify a provider: ccx auth copilot")
+// copilotAuthClient is the device-flow slice of the copilot client the auth
+// command needs (a test seam — see newCopilotAuthClient).
+type copilotAuthClient interface {
+	StartDeviceFlow(ctx context.Context) (*copilot_client.DeviceFlowResult, error)
+	PollDeviceFlow(ctx context.Context, deviceCode string) (string, error)
+}
 
-		return 1
-	}
+// newCopilotAuthClient builds the device-flow client over a store path
+// (var for tests — the same seam pattern as copilotQuota in command_status).
+var newCopilotAuthClient = func(store string) copilotAuthClient {
+	return copilot_client.New(store)
+}
+
+// codexLogin runs the ChatGPT OAuth login into an auth store (var for
+// tests; the default is the codex client's Login).
+var codexLogin = codex.Login
+
+// runAuth — ccx auth: the login flow of the named provider (copilot device
+// flow, codex OAuth PKCE); without arguments it lists every provider's auth
+// state. Credentials live per provider: <CCX_HOME>/auth/<key>.json.
+func runAuth(args []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
 		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
 		return 1
 	}
+	if len(args) > 2 {
+		fmt.Fprintln(stdout, "ccx: usage: ccx auth [provider]")
 
-	switch args[1] {
-	case "copilot":
-		return authCopilot(cfg, stdout)
-	case "codex":
-		fmt.Fprintln(stdout, "codex uses the codex CLI login (codex login); ccx reads ~/.codex/auth.json automatically")
+		return 1
+	}
 
-		return 0
+	providers, code := loadProvidersOrHint(cfg, stdout)
+	if providers == nil {
+		return code
+	}
+
+	if len(args) == 1 {
+		return listAuthState(cfg, providers, stdout)
+	}
+
+	key := args[1]
+	profile := providers.Providers.Get(key)
+	if profile == nil {
+		fmt.Fprintf(stdout, "ccx: unknown provider %q\n", key)
+
+		return 1
+	}
+
+	switch profile.Protocol {
+	case models.ProtocolCopilot:
+		return authCopilot(cfg, key, stdout)
+	case models.ProtocolCodex:
+		return authCodex(cfg, key, stdout)
 	default:
-		fmt.Fprintf(stdout, "ccx: unknown provider %q (copilot | codex)\n", args[1])
+		fmt.Fprintf(stdout, "ccx: provider %s (protocol %s) does not support auth\n", key, profile.Protocol)
 
 		return 1
 	}
 }
 
-func authCopilot(cfg *config.Config, stdout io.Writer) int {
-	store := filepath.Join(cfg.Home, "copilot-auth.json")
-	client := copilot_client.New(store)
+// listAuthState — one line per provider: authorized / not authorized for
+// the OAuth protocols, "auth not supported" for the rest. A local file
+// probe only — no network in a listing.
+func listAuthState(cfg *config.Config, providers *models.Providers, stdout io.Writer) int {
+	for _, key := range providers.Providers.Keys {
+		profile := providers.Providers.Get(key)
+		state := "auth not supported"
+		switch profile.Protocol {
+		case models.ProtocolCopilot:
+			if copilot_client.Authenticated(cfg.AuthStorePath(key)) {
+				state = "authorized"
+			} else {
+				state = "not authorized"
+			}
+		case models.ProtocolCodex:
+			if codex.Authenticated(cfg.AuthStorePath(key)) {
+				state = "authorized"
+			} else {
+				state = "not authorized"
+			}
+		default:
+			// state stays "auth not supported"
+		}
+		fmt.Fprintf(stdout, "  %s (%s) — %s\n", key, profile.Protocol, state)
+	}
+
+	return 0
+}
+
+// authCopilot — the GitHub OAuth device flow into the provider's store.
+func authCopilot(cfg *config.Config, key string, stdout io.Writer) int {
+	store := cfg.AuthStorePath(key)
+	client := newCopilotAuthClient(store)
 
 	res, err := client.StartDeviceFlow(context.Background())
 	if err != nil {
@@ -64,4 +131,39 @@ func authCopilot(cfg *config.Config, stdout io.Writer) int {
 	fmt.Fprintf(stdout, "Done: tokens saved to %s\n", store)
 
 	return 0
+}
+
+// authCodex — the ChatGPT OAuth login into the provider's store.
+func authCodex(cfg *config.Config, key string, stdout io.Writer) int {
+	store := cfg.AuthStorePath(key)
+	browserOpener := func(url string) error {
+		// always printed: the exec below may fail (SSH, no opener) — the URL
+		// stays on screen for a manual open
+		fmt.Fprintln(stdout, "Open in browser: "+url)
+
+		return openBrowser(url)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	if err := codexLogin(ctx, store, browserOpener); err != nil {
+		fmt.Fprintf(stdout, "ccx: %v\n", err)
+
+		return 1
+	}
+	fmt.Fprintf(stdout, "Done: login saved to %s\n", store)
+
+	return 0
+}
+
+// openBrowser opens the URL in the desktop browser (darwin `open`, the
+// XDG world's `xdg-open`).
+func openBrowser(url string) error {
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
+
+	return exec.Command(opener, url).Start() //nolint:gosec // fixed opener, argument is a URL
 }

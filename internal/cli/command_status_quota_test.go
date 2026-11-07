@@ -29,8 +29,10 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
+	var gotStore string
 	old := copilotQuota
-	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+	copilotQuota = func(store string) (*copilot.QuotaInfo, error) {
+		gotStore = store
 		return &copilot.QuotaInfo{
 			CopilotPlan: "INDIVIDUAL",
 			PremiumInteractions: &copilot.PremiumQuota{
@@ -43,6 +45,7 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	var out bytes.Buffer
 	require.Equal(t, 0, runStatus(nil, &out))
 
+	require.Equal(t, sp.Config.AuthStorePath("work"), gotStore)
 	require.Contains(t, out.String(), "Copilot quota")
 	require.Contains(t, out.String(), "INDIVIDUAL")
 	require.Contains(t, out.String(), "37/300")

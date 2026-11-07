@@ -36,11 +36,11 @@ func MigrateLegacyData(cfg *Config, legacyDir string) error {
 		}
 	}
 
-	// the copilot token store has no env override: its old home was the
-	// ~/.claude/ccms subdir, now it lives directly in the ccx home
-	src := filepath.Join(legacyDir, "ccms", "copilot-auth.json")
+	// The old flat copilot store (~/.claude/ccms/copilot-auth.json) is NOT
+	// migrated: credentials are per-provider now (<home>/auth/<key>.json,
+	// written by ccx auth <key>) and the flat file has no reader.
 
-	return copyIfAbsent(src, filepath.Join(cfg.Home, "copilot-auth.json"))
+	return nil
 }
 
 // copyIfAbsent copies src to dst unless dst already exists; a missing src is

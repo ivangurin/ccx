@@ -43,10 +43,11 @@ CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
 the Anthropic API to the launched provider's translator; switching = daemon
 restart with new launch params). Data ownership: ccx owns its data root
 `~/.ccx` (`CCX_HOME`) — providers.json, ccx-state.json, backups/, logs/,
-daemon.lock/pid, the copilot token store; of Claude Code's `~/.claude` only
+daemon.lock/pid, the per-provider credential stores auth/<key>.json; of
+Claude Code's `~/.claude` only
 `settings.json` is touched (edited in place, never moved; `CCX_SETTINGS`
 redirects it). Pre-rename data in `~/.claude` (providers.json,
-ccms-state.json, ccms/copilot-auth.json) is copied into `~/.ccx` once at
+ccms-state.json) is copied into `~/.ccx` once at
 startup (`cmd/ccx/migrate.go` → `config.MigrateLegacyData`); sources stay in
 place, new files win, disposable history (backups/logs) is not migrated.
 providers.json is unversioned, flat — the map sits under the `providers`
@@ -101,7 +102,8 @@ internal/
   clients/
     openai/                             chat/completions, configurable UA
     copilot/                            GitHub device flow + copilot-token + store
-    codex/                              ~/.codex/auth.json (flock) + refresh
+    codex/                              per-provider auth store (flock,
+                                         generations) + refresh + OAuth login
   pkg/
     closer/                             LIFO resource shutdown
     logger/                             slog wrapper (dev/json)
@@ -180,8 +182,9 @@ curl -s http://127.0.0.1:4570/v1/messages -H "Authorization: Bearer $TOKEN" \
 
 Credentials per protocol: openai is pass-through (send the profile token);
 copilot/codex own theirs (any placeholder bearer works). Prerequisites:
-codex needs `~/.codex/auth.json`; copilot needs a cached token
-(`ccx auth copilot` device flow) — without it the daemon exits at startup
+each translated provider needs its own login — `ccx auth <key>`
+(copilot: GitHub device flow; codex: ChatGPT OAuth PKCE into
+`~/.ccx/auth/<key>.json`) — without it the daemon exits at startup
 with `copilot: not authenticated`. Protocol quirks: the codex upstream is
 stream-only (non-stream client requests are served by upstream stream +
 aggregation) and must send `store:false`; corporate OpenAI-compatible

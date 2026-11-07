@@ -32,11 +32,12 @@ func TestMigrateLegacyData_CopiesPreRenameData(t *testing.T) {
 
 	require.NoError(t, config.MigrateLegacyData(sp.Config, legacy))
 
-	// providers.json lands verbatim, state is renamed ccms-state → ccx-state,
-	// the copilot store moves out of the old ccms/ subdir
+	// providers.json lands verbatim, state is renamed ccms-state → ccx-state;
+	// the old flat copilot store is NOT migrated — credentials are
+	// per-provider now (<home>/auth/<key>.json), the flat file has no reader
 	require.FileExists(t, filepath.Join(sp.HomeDir(), "providers.json"))
 	require.FileExists(t, filepath.Join(sp.HomeDir(), "ccx-state.json"))
-	require.FileExists(t, filepath.Join(sp.HomeDir(), "copilot-auth.json"))
+	require.NoFileExists(t, filepath.Join(sp.HomeDir(), "copilot-auth.json"))
 
 	data, err := os.ReadFile(filepath.Join(sp.HomeDir(), "ccx-state.json"))
 	require.NoError(t, err)
@@ -69,8 +70,6 @@ func TestMigrateLegacyData_NewDataWinsAndOverridesSkip(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"copilot"`)
 	require.NoFileExists(t, filepath.Join(sp.HomeDir(), "providers.json"))
-	// files outside the opt-out still migrate
-	require.FileExists(t, filepath.Join(sp.HomeDir(), "copilot-auth.json"))
 }
 
 func TestMigrateLegacyData_EmptyLegacyWorldIsNoop(t *testing.T) {

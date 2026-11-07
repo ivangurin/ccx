@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
@@ -46,7 +45,7 @@ func runStatus(_ []string, stdout io.Writer) int {
 	} else {
 		fmt.Fprintf(stdout, "Active provider: %s (%s) · %s\n", state.Profile, prof.Name, prof.Protocol)
 		if prof.Protocol == models.ProtocolCopilot {
-			printCopilotQuota(cfg, stdout)
+			printCopilotQuota(cfg, state.Profile, stdout)
 		}
 	}
 	fmt.Fprintf(stdout, "Model:          %s\n", state.Model)
@@ -55,10 +54,11 @@ func runStatus(_ []string, stdout io.Writer) int {
 	return 0
 }
 
-// printCopilotQuota prints the plan and the premium interaction pool; a
-// fetch failure is a warning line, never a failed status.
-func printCopilotQuota(cfg *config.Config, stdout io.Writer) {
-	q, err := copilotQuota(filepath.Join(cfg.Home, "copilot-auth.json"))
+// printCopilotQuota prints the plan and the premium interaction pool from
+// the ACTIVE provider's own credential store; a fetch failure is a warning
+// line, never a failed status.
+func printCopilotQuota(cfg *config.Config, providerKey string, stdout io.Writer) {
+	q, err := copilotQuota(cfg.AuthStorePath(providerKey))
 	if err != nil {
 		fmt.Fprintf(stdout, "Copilot quota:  unavailable (%v)\n", err)
 

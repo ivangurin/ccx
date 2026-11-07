@@ -116,7 +116,7 @@ func TestClient_RejectionWithUnchangedFileIsAnError(t *testing.T) {
 	client := codex.NewWithBase(path, srv.URL)
 	_, err := client.Token(context.Background())
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "login")
+	require.Contains(t, err.Error(), "run ccx auth")
 	require.Equal(t, 1, hits)
 }
 

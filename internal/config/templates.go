@@ -56,8 +56,8 @@ func builtinCodexProfile() *models.Profile {
 	return &models.Profile{
 		Name:     "ChatGPT Codex (subscription)",
 		Protocol: models.ProtocolCodex,
-		AuthFile: "~/.codex/auth.json", // spelled out in the file: it documents where the login lives
-		Env:      map[string]string{},
+		// login: ccx auth codex — credentials live in <CCX_HOME>/auth/codex.json
+		Env: map[string]string{},
 		Models: []models.Model{
 			{ID: "gpt-6.1-codex", Label: "GPT-6.1 Codex", Default: true},
 			{ID: "gpt-6.1-terra", Label: "GPT-6.1 Terra"},

@@ -99,7 +99,6 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 
 	// the flat layout: connection fields sit directly in the profile
 	require.Equal(t, "https://api.openai.com/v1", p.Providers.Get(profOpenAI).BaseURL)
-	require.Equal(t, "~/.codex/auth.json", p.Providers.Get("codex").AuthFile)
 	require.Empty(t, res.Warnings)
 }
 

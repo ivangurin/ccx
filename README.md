@@ -47,10 +47,24 @@ into a single binary with nothing else to run or babysit.
 <details>
 <summary>Provider notes</summary>
 
-- **copilot** — authenticate once with `ccx auth copilot` (GitHub OAuth device
+- **copilot** — authenticate once with `ccx auth <key>` (GitHub OAuth device
   flow); ccx caches and refreshes the token after that.
-- **codex** — needs a codex CLI login (`~/.codex/auth.json`; `ccx auth codex`
-  checks it). Streaming only, and it always sends `store: false`.
+- **codex** — authenticate once with `ccx auth <key>` (ChatGPT OAuth: the
+  browser opens auth.openai.com, ccx catches the callback). Streaming only,
+  and it always sends `store: false`.
+- Auth is per-provider: credentials live in `~/.ccx/auth/<key>.json`, and
+  `ccx auth` with no argument lists every provider's auth state. Two
+  accounts of one protocol is just two providers:
+
+  ```json
+  "providers": {
+    "gh-personal": {"name": "GitHub Copilot (personal)", "protocol": "copilot", "models": [...]},
+    "gh-work":     {"name": "GitHub Copilot (work)",     "protocol": "copilot", "models": [...]}
+  }
+  ```
+
+  `ccx auth gh-personal` and `ccx auth gh-work` each run their own GitHub
+  login into their own store.
 - **openai** — works with api.openai.com and corporate OpenAI-compatible
   gateways; your token is pass-through (see above). Gateways that block Go's
   default User-Agent are handled — ccx masquerades as a regular client.
@@ -141,9 +155,9 @@ involved.
 - **Who holds which credential:** for `openai` the token is pass-through —
   settings.json gets the provider's own token, Claude Code sends it with
   every request, and the daemon forwards it upstream unchanged, holding no
-  secret of its own. `copilot` and `codex` own their credentials (the cached
-  Copilot token and `~/.codex/auth.json`), so any placeholder bearer works
-  from Claude Code's side.
+  secret of its own. `copilot` and `codex` own their credentials
+  (`~/.ccx/auth/<key>.json`, written by `ccx auth <key>`), so any placeholder
+  bearer works from Claude Code's side.
 - **Model pinning.** A switch pins the chosen model: `model`,
   `availableModels=[m]`, `enforceAvailableModels` and all
   `ANTHROPIC_DEFAULT_*_MODEL` values point at it — background tasks stay on
@@ -211,8 +225,7 @@ edited in place, never moved or reformatted.
 | `ccx edit` | open providers.json in `$EDITOR` |
 | `ccx serve [--daemon] [--debug] --provider <key> [--port N]` | run the daemon in the foreground (`--debug`: debug-level logging teed into `~/.ccx/logs/debug-<launch time>.log`) |
 | `ccx stop` | stop the daemon |
-| `ccx auth copilot` | GitHub OAuth device flow |
-| `ccx auth codex` | check codex CLI login |
+| `ccx auth [provider]` | login flow for the provider's protocol (copilot device flow / codex OAuth); no argument — auth state of every provider |
 | `ccx version` / `ccx help` | version / help |
 
 ## Development

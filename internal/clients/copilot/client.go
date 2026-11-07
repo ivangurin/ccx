@@ -1,7 +1,7 @@
 // Package copilot implements the GitHub OAuth device flow and exchange for a
-// copilot-token. Tokens are stored in <CCX_HOME>/copilot-auth.json (600;
-// ~./ccx by default); exchange is lazy — driven by expires_at (no background
-// goroutines, per the "lazy refresh" plan).
+// copilot-token. Tokens are stored per provider in
+// <CCX_HOME>/auth/<key>.json (0600); exchange is lazy — driven by expires_at
+// (no background goroutines, per the "lazy refresh" plan).
 package copilot
 
 import (
@@ -19,8 +19,8 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// ErrNotAuthenticated means the device is not authenticated (run ccx auth copilot).
-var ErrNotAuthenticated = errors.New("copilot: not authenticated — run ccx auth copilot")
+// ErrNotAuthenticated means the device is not authenticated (run ccx auth <provider>).
+var ErrNotAuthenticated = errors.New("copilot: not authenticated — run ccx auth <provider>")
 
 // GitHubBase is the OAuth entry point (overridden by tests).
 const GitHubBase = "https://github.com"
@@ -62,7 +62,7 @@ type Client struct {
 	expiry time.Time
 }
 
-// New creates a client (store is the copilot-auth.json path). The device
+// New creates a client (store is the provider's auth store path). The device
 // flow (code + token polling) lives on github.com; only the copilot-token
 // exchange is api.github.com — wiring tokenURL to APIBase made every poll
 // hit api.github.com/login/oauth/access_token (404, JSON body) and loop
@@ -223,6 +223,17 @@ func (c *Client) saveUserToken(token string) error {
 	return jsonfile.WriteAtomicJSON(c.store, authStore{UserAccessToken: token}, 0o600)
 }
 
+// Authenticated reports whether the store at storePath holds a user login
+// (the ccx auth listing probe — no network, just the file).
+func Authenticated(storePath string) bool {
+	var s authStore
+	if err := jsonfile.ReadJSON(storePath, &s); err != nil {
+		return false
+	}
+
+	return s.UserAccessToken != ""
+}
+
 func (c *Client) loadStore() (authStore, error) {
 	var s authStore
 	if err := jsonfile.ReadJSON(c.store, &s); err != nil {
@@ -285,7 +296,7 @@ func (c *Client) exchange(ctx context.Context, userToken string) (string, time.T
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
-		return "", time.Time{}, errors.New("copilot: user token invalid (401) — ccx auth copilot")
+		return "", time.Time{}, errors.New("copilot: user token invalid (401) — run ccx auth <provider>")
 	}
 	if resp.StatusCode != http.StatusOK {
 		// The body names the real reason (verified live: trade_restricted_country,

@@ -210,3 +210,50 @@ func TestSaveLoad_RoundTripKeepsPort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 4600, loaded.DaemonPort())
 }
+
+func TestAuthStorePath_JoinsAuthDir(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+
+	require.Equal(t,
+		filepath.Join(sp.HomeDir(), "auth", "gh-work.json"),
+		sp.Config.AuthStorePath("gh-work"))
+}
+
+func TestLoadProviders_RejectsNonFileNameKeys(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	path := filepath.Join(sp.HomeDir(), "providers.json")
+
+	// jsonKey: the JSON-encoded form ("\\" is a JSON escape — a raw `\b`
+	// would decode to a backspace char, not a backslash).
+	for _, tc := range []struct{ key, jsonKey string }{
+		{"", ``},
+		{"a/b", `a/b`},
+		{`a\b`, `a\\b`},
+		{"..", `..`},
+		{".", `.`},
+	} {
+		raw := `{"providers": {"` + tc.jsonKey + `": {"name": "x", "protocol": "copilot", "models": []}}}`
+		require.NoError(t, os.WriteFile(path, []byte(raw), 0o600)) //nolint:gosec // test sandbox
+
+		_, err := config.LoadProviders(path)
+		require.Error(t, err, "key %q must be rejected", tc.key)
+		require.Contains(t, err.Error(), "provider key")
+	}
+
+	raw := `{"providers": {"gh-work": {"name": "x", "protocol": "copilot", "models": []}}}`
+	require.NoError(t, os.WriteFile(path, []byte(raw), 0o600)) //nolint:gosec // test sandbox
+	_, err := config.LoadProviders(path)
+	require.NoError(t, err)
+}
+
+func TestLoadProviders_ToleratesAuthFileResidue(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	path := filepath.Join(sp.HomeDir(), "providers.json")
+	raw := `{"providers": {"cx": {"name": "x", "protocol": "codex",
+		"auth_file": "~/.codex/auth.json", "models": []}}}`
+	require.NoError(t, os.WriteFile(path, []byte(raw), 0o600)) //nolint:gosec // test sandbox
+
+	loaded, err := config.LoadProviders(path)
+	require.NoError(t, err)
+	require.NotNil(t, loaded.Providers.Get("cx"))
+}

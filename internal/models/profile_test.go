@@ -61,7 +61,6 @@ func TestProfile_FlatJSONRoundTrip(t *testing.T) {
 		BaseURL:        "https://gw/v1",
 		APIKey:         "k",
 		MaxTokensField: "max_completion_tokens",
-		AuthFile:       "~/.codex/auth.json",
 		Headers:        map[string]string{"X-Org": "acme"},
 		Env:            map[string]string{"A": "1"},
 		Models:         []models.Model{{ID: "m", Default: true}},

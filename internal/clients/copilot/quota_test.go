@@ -73,7 +73,7 @@ func TestQuota_NoPremiumField(t *testing.T) {
 func TestQuota_NotAuthenticated(t *testing.T) {
 	c := New(filepath.Join(t.TempDir(), "copilot-auth.json"))
 	_, err := c.Quota(context.Background())
-	require.ErrorContains(t, err, "auth copilot")
+	require.ErrorContains(t, err, "run ccx auth <provider>")
 }
 
 func TestQuota_UnauthorizedSurfacesHint(t *testing.T) {
@@ -91,5 +91,14 @@ func TestQuota_UnauthorizedSurfacesHint(t *testing.T) {
 
 	c := NewWithBase(GitHubBase, GitHubBase, srv2.URL+"/copkit/token", store)
 	_, err := c.Quota(context.Background())
-	require.ErrorContains(t, err, "auth copilot")
+	require.ErrorContains(t, err, "run ccx auth <provider>")
+}
+
+// The quota errors must point at the per-provider auth command (no store /
+// stale token both send the user to `ccx auth <key>`).
+func TestQuota_AuthErrorsPointAtProviderAuth(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := New(filepath.Join(dir, "missing.json")).Quota(context.Background())
+	require.ErrorContains(t, err, "run ccx auth <provider>")
 }

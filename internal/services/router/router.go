@@ -12,9 +12,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/ivangurin/ccx/internal/clients/codex"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
@@ -51,7 +48,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKe
 		return nil, fmt.Errorf("router: unknown provider: %s", providerKey)
 	}
 
-	tr, err := buildTranslator(cfg, profile)
+	tr, err := buildTranslator(cfg, providerKey, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +67,10 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKe
 	}, nil
 }
 
-// buildTranslator — the protocol → translator registry.
-func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.Translator, error) {
+// buildTranslator — the protocol → translator registry. OAuth protocols
+// (copilot, codex) draw their credentials from the provider's own store:
+// <CCX_HOME>/auth/<key>.json (written by ccx auth <key>).
+func buildTranslator(cfg *config.Config, providerKey string, profile *models.Profile) (translators.Translator, error) {
 	switch profile.Protocol {
 	case models.ProtocolAnthropic:
 		if profile.BaseURL == "" {
@@ -86,16 +85,9 @@ func buildTranslator(cfg *config.Config, profile *models.Profile) (translators.T
 
 		return openai.New(profile), nil
 	case models.ProtocolCopilot:
-		store := filepath.Join(cfg.Home, "copilot-auth.json")
-
-		return copilot.New(profile, copilot_client.New(store)), nil
+		return copilot.New(profile, copilot_client.New(cfg.AuthStorePath(providerKey))), nil
 	case models.ProtocolCodex:
-		authPath := codex.DefaultAuthPath()
-		if profile.AuthFile != "" {
-			authPath = expandHome(profile.AuthFile)
-		}
-
-		return codex_tr.New(profile, codex.New(authPath)), nil
+		return codex_tr.New(profile, codex.New(cfg.AuthStorePath(providerKey))), nil
 	default:
 		return nil, fmt.Errorf("router: unknown protocol %q", profile.Protocol)
 	}
@@ -169,15 +161,4 @@ func (s *Service) Models() []models.Model {
 // Close quenches the translator.
 func (s *Service) Close(ctx context.Context) error {
 	return s.translator.Close(ctx)
-}
-
-// expandHome — expand ~ in config paths (codex auth_file).
-func expandHome(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(path, "~"), "/"))
-		}
-	}
-
-	return path
 }

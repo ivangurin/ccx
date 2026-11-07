@@ -24,8 +24,7 @@ Usage:
   ccx serve [--daemon] [--debug] --provider <key> [--port N]
                           daemon (foreground; spawned by ccx use)
   ccx stop               the daemon
-  ccx auth copilot       GitHub OAuth device flow
-  ccx auth codex         check codex CLI login
+  ccx auth [provider]    login flow (copilot/codex); no argument — auth state
   ccx version            binary version
   ccx help               this help
 `

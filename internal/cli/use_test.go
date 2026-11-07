@@ -194,23 +194,20 @@ func TestCommandStop_CleanShutdown(t *testing.T) {
 }
 
 func TestCommandAuth_UnknownProvider(t *testing.T) {
-	suite_provider.NewProvider(t)
+	// a providers.json must exist: without one the init hint answers first
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{}
+	p.Providers.Set("zai", &models.Profile{
+		Name: "z.ai", Protocol: models.ProtocolAnthropic, BaseURL: "https://x",
+		Models: []models.Model{{ID: "m", Default: true}},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	var out bytes.Buffer
 
 	code := cli.Execute([]string{"auth", "unknown"}, &out)
 
 	require.NotEqual(t, 0, code)
 	require.Contains(t, out.String(), "unknown provider")
-}
-
-func TestCommandAuth_CodexHint(t *testing.T) {
-	suite_provider.NewProvider(t)
-	var out bytes.Buffer
-
-	code := cli.Execute([]string{"auth", "codex"}, &out)
-
-	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "codex login")
 }
 
 func TestCommandMenu_FallbackSelectsAndFailsOnDaemon(t *testing.T) {

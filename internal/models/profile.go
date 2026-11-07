@@ -52,9 +52,6 @@ type Profile struct {
 	// openai: map reasoning_content deltas to thinking blocks (reserved).
 	ReasoningToThinking bool `json:"reasoning_to_thinking,omitempty"`
 
-	// codex: auth.json location (default ~/.codex/auth.json).
-	AuthFile string `json:"auth_file,omitempty"`
-
 	Env    map[string]string `json:"env,omitempty"`
 	Models []Model           `json:"models"`
 }

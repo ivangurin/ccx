@@ -1,14 +1,16 @@
 // Package codex accesses the ChatGPT subscription via the Responses API:
-// login reuses the codex CLI (~/.codex/auth.json), the access token is
-// refreshed lazily with refresh-token rotation. Two levels of coexistence:
-// ccx writers (the daemon + a CLI command) serialize on a sidecar flock
-// <auth.json>.lock; the codex CLI itself ignores that lock, so against it
-// the file is governed by GENERATIONS — tokens.last_refresh (RFC3339Nano,
-// the token ACQUISITION moment, not the write moment) orders generations: a
-// refresh rejection (our refresh token was rotated away underneath us)
-// adopts a strictly newer on-disk generation instead of erroring, and a
-// save is compare-and-swap — a strictly newer foreign generation on disk is
-// never clobbered by ours.
+// login is ccx's own ChatGPT OAuth flow (login.go) writing the provider's
+// auth store, and the access token is refreshed lazily with refresh-token
+// rotation. The store is ccx-owned, but TWO ccx processes can touch the
+// same file (the daemon's refresh and a concurrent ccx auth), so writers
+// serialize on a sidecar flock <auth.json>.lock and the file is governed by
+// GENERATIONS — tokens.last_refresh (RFC3339Nano, the token ACQUISITION
+// moment, not the write moment) orders generations: a refresh rejection
+// (our refresh token was rotated away underneath us) adopts a strictly
+// newer on-disk generation instead of erroring, and a save is
+// compare-and-swap — a strictly newer foreign generation on disk is never
+// clobbered by ours. The format stays auth.json-compatible: a hand-made
+// symlink of the store onto the codex CLI's own file keeps working.
 package codex
 
 import (
@@ -19,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,8 +29,8 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// ErrNotLoggedIn means ~/.codex/auth.json is missing/empty (codex login needed).
-var ErrNotLoggedIn = errors.New("codex: codex login not performed (no ~/.codex/auth.json)")
+// ErrNotLoggedIn means the provider's auth store is missing/empty (ccx auth needed).
+var ErrNotLoggedIn = errors.New("codex: not authenticated — run ccx auth <provider>")
 
 // errRefreshRejected marks a 400/401 from the token endpoint — the refresh
 // token was refused (rotated away, expired or revoked), which is the adopt
@@ -43,7 +44,7 @@ const (
 	APIBase  = "https://chatgpt.com/backend-api/codex"
 )
 
-// Auth is the slice of ~/.codex/auth.json we need.
+// Auth is the slice of the auth store we need.
 type Auth struct {
 	AccessToken  string
 	RefreshToken string
@@ -65,14 +66,15 @@ type authFile struct {
 	} `json:"tokens"`
 }
 
-// DefaultAuthPath is ~/.codex/auth.json.
-func DefaultAuthPath() string {
-	home, _ := os.UserHomeDir()
+// Authenticated reports whether the auth store at path holds a login (the
+// ccx auth listing probe — no network, just the file).
+func Authenticated(path string) bool {
+	_, err := LoadAuth(path)
 
-	return home + "/.codex/auth.json"
+	return err == nil
 }
 
-// LoadAuth reads the codex CLI login.
+// LoadAuth reads the stored login.
 func LoadAuth(path string) (Auth, error) {
 	var f authFile
 	if err := jsonfile.ReadJSON(path, &f); err != nil {
@@ -111,12 +113,13 @@ func newerGeneration(disk, loaded time.Time) bool {
 	return disk.After(loaded)
 }
 
-// SaveAuth is read-modify-write: it reads the existing file and patches ONLY
-// tokens.access/refresh/last_refresh — auth_mode, id_token, account_id and
-// other codex CLI fields survive untouched (invariant: the file belongs to
-// someone else, we are guests). If the file is missing, it creates a minimal
-// one. The whole read-modify-write runs under the sidecar flock — see the
-// package doc.
+// SaveAuth is read-modify-write: it reads the existing file and patches
+// tokens.access/refresh/last_refresh plus (when the caller derived one)
+// account_id — auth_mode, id_token and other auth.json fields survive
+// untouched (the file may be a hand-made symlink to a foreign auth.json, so
+// the RMW keeps it byte-compatible with its other readers). If the file is
+// missing, it creates a minimal one. The whole read-modify-write runs under
+// the sidecar flock — see the package doc.
 //
 // This is the SEEDING path (writing tokens obtained elsewhere into the
 // file). Refresh results must go through Token → saveAuthCAS: this write is
@@ -139,9 +142,17 @@ const authLockTimeout = 15 * time.Second
 func saveAuthLocked(path string, auth Auth) error {
 	var f authFile
 	_ = jsonfile.ReadJSON(path, &f) // missing file is fine — we will create it
+	// seed only: an existing auth_mode is someone else's truth and stays
+	if f.AuthMode == "" {
+		f.AuthMode = "chatgpt"
+	}
 	f.Tokens.AccessToken = auth.AccessToken
 	f.Tokens.RefreshToken = auth.RefreshToken
-	if f.Tokens.AccountID == "" {
+	// caller-wins: the only production caller is the login, which derives
+	// the id from the FRESH login's id_token — keeping a stored one would
+	// send the old account's header with the new account's token (an empty
+	// derivation still preserves a foreign value)
+	if auth.AccountID != "" {
 		f.Tokens.AccountID = auth.AccountID
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -206,7 +217,7 @@ type Client struct {
 	mu       sync.Mutex
 }
 
-// New is a client over ~/.codex/auth.json.
+// New is a client over a provider's auth store path.
 func New(authPath string) *Client {
 	return NewWithBase(authPath, AuthBase+"/oauth/token")
 }
@@ -240,7 +251,7 @@ func (c *Client) Token(ctx context.Context) (Auth, error) {
 		return auth, nil
 	}
 	if auth.RefreshToken == "" {
-		return Auth{}, errors.New("codex: access expired, no refresh token — codex login")
+		return Auth{}, errors.New("codex: access expired, no refresh token — run ccx auth <provider>")
 	}
 
 	access, rotated, err := c.refresh(ctx, auth.RefreshToken)
@@ -266,20 +277,20 @@ func (c *Client) Token(ctx context.Context) (Auth, error) {
 func (c *Client) adoptNewerGeneration(ctx context.Context, loaded Auth) (Auth, error) {
 	disk, err := LoadAuth(c.authPath)
 	if err != nil {
-		return Auth{}, fmt.Errorf("codex: refresh rejected and re-read failed — codex login: %w", err)
+		return Auth{}, fmt.Errorf("codex: refresh rejected and re-read failed — run ccx auth <provider>: %w", err)
 	}
 	if disk.RefreshToken == loaded.RefreshToken || !newerGeneration(disk.LastRefresh, loaded.LastRefresh) {
-		return Auth{}, errors.New("codex: refresh rejected — codex login may be needed")
+		return Auth{}, errors.New("codex: refresh rejected — run ccx auth <provider>")
 	}
 	if TokenValid(disk.AccessToken, time.Now()) {
 		return disk, nil
 	}
 	if disk.RefreshToken == "" {
-		return Auth{}, errors.New("codex: adopted generation has no refresh token — codex login")
+		return Auth{}, errors.New("codex: adopted generation has no refresh token — run ccx auth <provider>")
 	}
 	access, rotated, err := c.refresh(ctx, disk.RefreshToken)
 	if err != nil {
-		return Auth{}, fmt.Errorf("codex: adoptive refresh failed — codex login: %w", err)
+		return Auth{}, fmt.Errorf("codex: adoptive refresh failed — run ccx auth <provider>: %w", err)
 	}
 
 	return c.saveRefreshed(disk, access, rotated)
@@ -327,7 +338,7 @@ func (c *Client) refresh(ctx context.Context, refreshToken string) (access, rota
 		return "", "", fmt.Errorf("codex: refresh: status %d: %w", resp.StatusCode, errRefreshRejected)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("codex: refresh: status %d — codex login may be needed", resp.StatusCode)
+		return "", "", fmt.Errorf("codex: refresh: status %d — run ccx auth <provider>", resp.StatusCode)
 	}
 	var payload struct {
 		AccessToken  string `json:"access_token"`

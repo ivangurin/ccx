@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccx/internal/services/router"
 	"github.com/stretchr/testify/require"
@@ -97,7 +99,7 @@ func TestBuild_OpenAIProfileReady(t *testing.T) {
 	require.Equal(t, models.ProtocolOpenAI, protocol)
 }
 
-// without ccx auth copilot the translator is not ready — Build fails, the
+// without ccx auth <key> the translator is not ready — Build fails, the
 // daemon exits at startup instead of serving a dead route.
 func TestBuild_CopilotWithoutAuth_NotReady(t *testing.T) {
 	sp := newFixture(t)
@@ -197,11 +199,9 @@ func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
 	}
 }
 
-// A codex profile with auth_file "~/…" — the ~ is expanded to the (sandboxed)
-// HOME, and a valid login makes the route ready.
-func TestBuild_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+// A codex provider's credentials live in ITS store under <home>/auth/ — a
+// valid login there makes the route ready.
+func TestBuild_CodexProfile_PersonalStore(t *testing.T) {
 	sp := newFixture(t)
 
 	// fake codex login: an access token with a future exp (TokenValid reads the JWT payload)
@@ -209,12 +209,14 @@ func TestBuild_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
 	require.NoError(t, err)
 	jwt := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`)) + "." +
 		base64.RawURLEncoding.EncodeToString(payload) + ".sig"
-	authPath := filepath.Join(home, "custom-auth.json")
-	require.NoError(t, os.WriteFile(authPath, []byte(`{"tokens": {"access_token": "`+jwt+`", "refresh_token": "r"}}`), 0o600)) //nolint:gosec // test sandbox
+	// SaveAuth writes the real auth.json shape (tokens nesting, auth_mode)
+	require.NoError(t, codex.SaveAuth(sp.Config.AuthStorePath("cx"), codex.Auth{
+		AccessToken: jwt, RefreshToken: "r",
+	}))
 
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex, AuthFile: "~/custom-auth.json"})
+	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	svc, err := router.Build(t.Context(), sp.Config, sp.Logger(), "cx")
@@ -223,4 +225,28 @@ func TestBuild_CodexProfile_ExpandsHomeAuthFile(t *testing.T) {
 	provider, _, ok := svc.Active()
 	require.True(t, ok)
 	require.Equal(t, "cx", provider)
+}
+
+// The copilot twin: a fresh copilot_token in the provider's own store is
+// ready without any network round-trip.
+func TestBuild_CopilotProfile_PersonalStore(t *testing.T) {
+	sp := newFixture(t)
+
+	require.NoError(t, jsonfile.WriteAtomicJSON(sp.Config.AuthStorePath("gh"), map[string]string{
+		"user_access_token": "u",
+		"copilot_token":     "c",
+		"expires_at":        time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339),
+	}, 0o600))
+
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Providers.Set("gh", &models.Profile{Name: "GitHub", Protocol: models.ProtocolCopilot})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	svc, err := router.Build(t.Context(), sp.Config, sp.Logger(), "gh")
+	require.NoError(t, err)
+
+	provider, _, ok := svc.Active()
+	require.True(t, ok)
+	require.Equal(t, "gh", provider)
 }

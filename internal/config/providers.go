@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
@@ -58,6 +59,15 @@ func (c *Config) LogDir() string {
 	return filepath.Join(c.Home, "logs")
 }
 
+// AuthStorePath is the per-provider credential store:
+// <CCX_HOME>/auth/<provider-key>.json. The key also names the file, which is
+// why LoadProviders rejects keys that are not filename-safe — a key with a
+// separator would escape the auth directory. One path policy for the auth
+// command, the daemon route and the status quota panel.
+func (c *Config) AuthStorePath(providerKey string) string {
+	return filepath.Join(c.Home, "auth", providerKey+".json")
+}
+
 // LoadProviders reads providers.json (unversioned; the map key is
 // "providers", the legacy "profiles" key keeps loading forever). A file
 // still carrying pre-rename residue (version, daemon.auth_token, the
@@ -74,6 +84,12 @@ func LoadProviders(path string) (*models.Providers, error) {
 		return nil, fmt.Errorf("jsonfile: unmarshal %s: %w", path, err)
 	}
 
+	for _, key := range p.Providers.Keys {
+		if !validProviderKey(key) {
+			return nil, fmt.Errorf("providers: provider key %q is not usable as a file name (it names the auth store file)", key)
+		}
+	}
+
 	// Detection runs only after a successful decode: a broken file must
 	// surface the unmarshal error, never a migration attempt.
 	if hasLegacyProvidersResidue(data) {
@@ -81,6 +97,17 @@ func LoadProviders(path string) (*models.Providers, error) {
 	}
 
 	return &p, nil
+}
+
+// validProviderKey: the provider key doubles as a file name under <home>/auth,
+// so it must stay inside that directory — no separators, no dot navigation,
+// no empty name (an empty key is valid JSON but names nothing).
+func validProviderKey(key string) bool {
+	if key == "" || key == "." || key == ".." {
+		return false
+	}
+
+	return !strings.ContainsAny(key, `/\`)
 }
 
 // ResolveDaemonPort is the single port-resolution chain for CLI and daemon:

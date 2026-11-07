@@ -218,3 +218,15 @@ func TestExchange_ErrorIncludesBodyMessage(t *testing.T) {
 	require.Contains(t, err.Error(), "Copilot is not available")
 	require.Contains(t, err.Error(), "403")
 }
+
+func TestAuthenticated(t *testing.T) {
+	dir := t.TempDir()
+	valid := filepath.Join(dir, "ok.json")
+	require.NoError(t, jsonfile.WriteAtomicJSON(valid, map[string]string{"user_access_token": "u"}, 0o600))
+	empty := filepath.Join(dir, "empty.json")
+	require.NoError(t, jsonfile.WriteAtomicJSON(empty, map[string]string{"user_access_token": ""}, 0o600))
+
+	require.True(t, copilot.Authenticated(valid))
+	require.False(t, copilot.Authenticated(empty))
+	require.False(t, copilot.Authenticated(filepath.Join(dir, "missing.json")))
+}

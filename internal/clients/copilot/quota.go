@@ -31,7 +31,7 @@ type PremiumQuota struct {
 func (c *Client) Quota(ctx context.Context) (*QuotaInfo, error) {
 	store, err := c.loadStore()
 	if err != nil {
-		return nil, errors.New("copilot: not authenticated — ccx auth copilot")
+		return nil, errors.New("copilot: not authenticated — run ccx auth <provider>")
 	}
 	quotaURL, err := internalUserURL(c.exURL)
 	if err != nil {
@@ -51,7 +51,7 @@ func (c *Client) Quota(ctx context.Context) (*QuotaInfo, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, errors.New("copilot: quota: user token invalid — ccx auth copilot")
+		return nil, errors.New("copilot: quota: user token invalid — run ccx auth <provider>")
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("copilot: quota: status %d", resp.StatusCode)
