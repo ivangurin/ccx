@@ -17,9 +17,9 @@ import (
 // restores them afterwards.
 func shortReadGuard(t *testing.T) {
 	t.Helper()
-	oldFirst, oldIdle := readguard.FirstByte, readguard.Idle
-	readguard.FirstByte, readguard.Idle = 100*time.Millisecond, 100*time.Millisecond
-	t.Cleanup(func() { readguard.FirstByte, readguard.Idle = oldFirst, oldIdle })
+	oldFirst, oldIdle, oldNon := readguard.FirstByte, readguard.Idle, readguard.NonStream
+	readguard.FirstByte, readguard.Idle, readguard.NonStream = 100*time.Millisecond, 100*time.Millisecond, 100*time.Millisecond
+	t.Cleanup(func() { readguard.FirstByte, readguard.Idle, readguard.NonStream = oldFirst, oldIdle, oldNon })
 }
 
 // A hung upstream (nothing ever sent) must answer 502 quickly instead of

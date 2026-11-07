@@ -125,3 +125,24 @@ func TestSystemBetweenCallsAndResultsKeepsPairing(t *testing.T) {
 	require.Equal(t, "tool", chat.Messages[2].Role)
 	require.Equal(t, "t1", chat.Messages[2].ToolCallID)
 }
+
+// A mixed message (tool_result + hook text) answers SOME calls but does not
+// end the turn — a following split result still pairs with its call; the
+// answered ids no longer pair (a duplicate of an answered id IS an orphan).
+func TestMixedMessageKeepsPendingForSplitResults(t *testing.T) {
+	req := chatBody(
+		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t1","name":"a","input":{}},{"type":"tool_use","id":"t2","name":"b","input":{}}]`)},
+		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"},{"type":"text","text":"hook output"}]`)},
+		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t2","content":"two"}]`)},
+	)
+	chat := openai.BuildChatRequest(req, "max_tokens")
+
+	// [assistant, user text (hook), tool one, tool two] — every call answered
+	tools := 0
+	for _, m := range chat.Messages {
+		if m.Role == "tool" {
+			tools++
+		}
+	}
+	require.Equal(t, 2, tools, "both parallel calls stay answered")
+}

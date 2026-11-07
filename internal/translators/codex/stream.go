@@ -15,10 +15,11 @@ import (
 
 // streamEvent is a typed Responses SSE event.
 type streamEvent struct {
-	Type   string `json:"type"`
-	Delta  string `json:"delta"`
-	ItemID string `json:"item_id"`
-	Item   *struct {
+	Type    string `json:"type"`
+	Delta   string `json:"delta"`
+	Message string `json:"message"` // the error event's text (not a delta)
+	ItemID  string `json:"item_id"`
+	Item    *struct {
 		Type   string `json:"type"`
 		Name   string `json:"name"`
 		CallID string `json:"call_id"`
@@ -59,6 +60,11 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 		if ev.Type == evMessageDelta && ev.Usage != nil {
 			usage = *ev.Usage
 		}
+		// a stream error (mid-relay break or a backend error event) must not
+		// stay a clean 200 in the usage log
+		if ev.Type == evError && ev.Error != nil && ev.Error.Message != "" {
+			entry.Status, entry.Error = http.StatusBadGateway, ev.Error.Message
+		}
 		writer.Event(ev.Type, ev)
 	})
 	if !started {
@@ -70,6 +76,16 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 	writer.Close()
 	entry.TTFTMS = ttft.Milliseconds()
 	entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+
+	return ""
 }
 
 // streamEvents converts the upstream Responses SSE into Anthropic events via
@@ -199,7 +215,7 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 		case evError:
 			emit(models.AnthropicEvent{
 				Type:  evError,
-				Error: &models.AnthropicError{Type: "api_error", Message: se.Delta},
+				Error: &models.AnthropicError{Type: "api_error", Message: firstNonEmpty(se.Message, se.Delta)},
 			})
 		default:
 			// other Responses events are ignored

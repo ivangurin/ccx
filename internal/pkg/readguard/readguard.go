@@ -14,18 +14,34 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 // Deadlines used by the translators. Vars (not consts) so tests can shrink
-// them. First-byte is generous on purpose: a queued 200k-token prompt
-// legitimately takes over a minute before the first token; killing that turn
-// to save a hung connection is the worse failure.
+// them. FirstByte covers a streamed request's time to the first token (a
+// queued 200k-token prompt legitimately takes over a minute); a NON-stream
+// response's first body byte only arrives when the generation is COMPLETE,
+// so its deadline is a total-time cap instead — NonStream is therefore a
+// whole-generation budget (10 minutes), not a first-token patience.
 var (
 	FirstByte = 120 * time.Second
 	Idle      = 120 * time.Second
+	NonStream = 600 * time.Second
 )
+
+// FirstByteFor picks the first-byte deadline for a request: the first-token
+// patience when the client streams, the whole-generation budget when it does
+// not (a non-stream response's first byte arrives only when the generation
+// is complete).
+func FirstByteFor(stream bool) time.Duration {
+	if stream {
+		return FirstByte
+	}
+
+	return NonStream
+}
 
 // Guard is the watchdog for one upstream request. Arm it before building the
 // request (the returned context must travel on it), attach the body after the
@@ -35,6 +51,7 @@ type Guard struct {
 	cancel    context.CancelFunc
 	resetCh   chan time.Duration
 	done      chan struct{}
+	stopOnce  sync.Once
 	timedOut  atomic.Bool
 	firstByte time.Duration
 	idle      time.Duration
@@ -103,14 +120,12 @@ func (g *Guard) Body(body io.ReadCloser) io.ReadCloser {
 }
 
 // Stop ends the guard: the watchdog goroutine exits and the armed context is
-// canceled. Safe to call more than once.
+// canceled. Safe to call more than once, from any goroutine.
 func (g *Guard) Stop() {
-	g.cancel()
-	select {
-	case <-g.done:
-	default:
+	g.stopOnce.Do(func() {
+		g.cancel()
 		close(g.done)
-	}
+	})
 }
 
 type guardedBody struct {

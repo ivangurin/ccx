@@ -18,10 +18,19 @@ import (
 //     without masquerading as a normal completion;
 //   - message_stop is strictly {"type":"message_stop"};
 //   - onFinish (nil-safe) fires only on the clean path with the final usage
-//     and the time to first token — the two numbers only the relay sees.
+//     and the time to first token — the two numbers only the relay sees;
+//   - onBreak (nil-safe) fires when the stream breaks instead — the usage
+//     entry must not record a clean 200 for a generation the client never
+//     finished receiving.
 //
 //nolint:gocognit // relay: lazy writer + break handling, splitting would obscure
-func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string, onFinish func(ttft time.Duration, usage models.Usage)) {
+func ServeChatStream(
+	w http.ResponseWriter,
+	resp *http.Response,
+	model string,
+	onFinish func(ttft time.Duration, usage models.Usage),
+	onBreak func(msg string),
+) {
 	reader := sse.NewReader(resp.Body)
 	conv := NewStreamConverter(model)
 	started := time.Now()
@@ -51,8 +60,14 @@ func ServeChatStream(w http.ResponseWriter, resp *http.Response, model string, o
 					emit(out)
 				}
 				writer.Close()
+				if onBreak != nil {
+					onBreak("upstream stream interrupted")
+				}
 			} else {
 				writeStreamError(w, http.StatusBadGateway, "upstream stream interrupted before any event")
+				if onBreak != nil {
+					onBreak("upstream stream interrupted before any event")
+				}
 			}
 
 			return

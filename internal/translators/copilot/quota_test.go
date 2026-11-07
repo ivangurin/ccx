@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/translators/prefill"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,4 +54,20 @@ func TestClassifyQuota_CompactIsAgent(t *testing.T) {
 	cls := classifyQuota(body(t, raw))
 	require.Equal(t, initiatorAgent, cls.Initiator)
 	require.True(t, cls.IsCompact)
+}
+
+// A truncation continuation (the prefill fix repacks the trailing assistant
+// into a user message led by the machine instruction) is a continuation of
+// the billed turn, not a new interaction — the classifier must know the
+// marker.
+func TestClassifyQuota_PrefillContinuationIsAgent(t *testing.T) {
+	payload := prefill.Instruction + "…the cut text…"
+	raw := `{"messages":[{"role":"user","content":"go on"}]}`
+	m := body(t, raw)
+	msgs, ok := m["messages"].([]any)
+	require.True(t, ok)
+	msg, ok := msgs[0].(map[string]any)
+	require.True(t, ok)
+	msg["content"] = payload
+	require.Equal(t, initiatorAgent, classifyQuota(m).Initiator)
 }

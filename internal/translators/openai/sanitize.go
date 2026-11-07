@@ -13,48 +13,47 @@ import (
 // upstreams, while the text still carries the content to the model.
 // An orphan with no extractable text is dropped (an empty user turn is noise).
 //
-// The pairing survives messages that cannot start a new turn: consecutive
-// tool-result-only user messages (parallel results split across messages)
-// and system hooks the client inserts mid-exchange. A user message that is
-// NOT tool-result-only ends the turn and clears the pairing.
+// The pending set works by SUBTRACTION: an assistant message refills it, a
+// user message with tool_results removes exactly the ids it answers (a mixed
+// tool_result+hook-text message answers some calls without ending the turn —
+// the split results that follow still pair), and only a user message with no
+// tool_results at all (the human typed) ends the turn. System hooks ride
+// between calls and results without touching the set.
 func sanitizeOrphans(req *models.MessagesRequest) {
 	pendingIDs := map[string]bool{}
 	for i := range req.Messages {
 		msg := &req.Messages[i]
-		switch {
-		case msg.Role == roleAssistant:
+		switch msg.Role {
+		case roleAssistant:
 			pendingIDs = toolUseIDs(msg)
-		case msg.Role == "user" && isToolResultOnly(msg):
+		case "user":
 			msg.Content = sanitizeContent(msg.Content, pendingIDs)
-			// pairing stays: the next split result may answer the same calls
-		case msg.Role == "user":
-			msg.Content = sanitizeContent(msg.Content, pendingIDs)
-			pendingIDs = map[string]bool{}
+			pendingIDs = subtractAnswered(msg, pendingIDs)
 		default:
-			// system and unknown roles ride between calls and results —
-			// the pairing survives them
+			// system and unknown roles — the pairing survives them
 		}
 	}
 }
 
-// isToolResultOnly: the message content is a non-empty array of tool_result
-// blocks (a string content is not — the user typed it).
-func isToolResultOnly(msg *models.Message) bool {
-	var plain string
-	if json.Unmarshal(msg.Content, &plain) == nil {
-		return false
-	}
+// subtractAnswered removes the ids this message's tool_results answer; a
+// message with no tool_results clears the set (the human's turn).
+func subtractAnswered(msg *models.Message, pending map[string]bool) map[string]bool {
 	var blocks []models.ContentBlock
-	if json.Unmarshal(msg.Content, &blocks) != nil || len(blocks) == 0 {
-		return false
+	if json.Unmarshal(msg.Content, &blocks) != nil {
+		return pending // string content: nothing answered, nothing to clear
 	}
+	answeredAny := false
 	for _, b := range blocks {
-		if b.Type != "tool_result" {
-			return false
+		if b.Type == "tool_result" && pending[deref(b.ToolUseID)] {
+			delete(pending, deref(b.ToolUseID))
+			answeredAny = true
 		}
 	}
+	if answeredAny {
+		return pending
+	}
 
-	return true
+	return map[string]bool{}
 }
 
 // toolUseIDs collects the tool_use ids of one assistant message.

@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/stretchr/testify/require"
 )
@@ -91,4 +94,79 @@ func TestCodex_NonStreamFailedEventIs502(t *testing.T) {
 
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Body.String(), "model overloaded")
+}
+
+// The Responses "error" event carries its text in the message field (not a
+// delta) — the relayed error must say what the backend said.
+func TestCodex_NonStreamErrorEventCarriesMessage(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		_, _ = io.WriteString(w, "event: error\ndata: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"The server had an error processing your request\"}\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt-5","max_tokens":50,"stream":false,"messages":[{"role":"user","content":"hi"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "The server had an error processing your request")
+}
+
+// The aggregated path records TTFT too — the upstream is a stream, its first
+// event time is available and the usage log should not show a systematic 0.
+func TestCodex_NonStreamRecordsTTFT(t *testing.T) {
+	capt := &usageCapture{}
+	old := usagelog.Default
+	usagelog.Default = capt
+	t.Cleanup(func() { usagelog.Default = old })
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		_, _ = io.WriteString(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{Name: "sub"}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt-5","max_tokens":50,"stream":false,"messages":[{"role":"user","content":"hi"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	e := capt.last(t)
+	require.Positive(t, e.TTFTMS)
+}
+
+type usageCapture struct {
+	mu      sync.Mutex
+	entries []usagelog.Entry
+}
+
+func (c *usageCapture) Record(e usagelog.Entry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = append(c.entries, e)
+}
+
+func (c *usageCapture) last(t *testing.T) usagelog.Entry {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	require.NotEmpty(t, c.entries)
+
+	return c.entries[len(c.entries)-1]
 }

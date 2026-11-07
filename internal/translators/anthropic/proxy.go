@@ -101,11 +101,16 @@ func relay(w http.ResponseWriter, resp *http.Response) {
 // provider 400.
 var maxProxyBody int64 = 64 * 1024 * 1024
 
-// SetMaxProxyBodyForTest shrinks the body bound (tests restore nothing —
-// each test sets its own).
-func SetMaxProxyBodyForTest(n int64) { maxProxyBody = n }
+// SetMaxProxyBodyForTest shrinks the body bound and returns the restore —
+// a bare mutation would leak into every later test in the package.
+func SetMaxProxyBodyForTest(n int64) (restore func()) {
+	old := maxProxyBody
+	maxProxyBody = n
 
-func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
+	return func() { maxProxyBody = old }
+}
+
+func (t *Translator) proxy(w http.ResponseWriter, r *http.Request, recordUsage bool) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxProxyBody+1))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
@@ -117,23 +122,36 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	// one shallow probe for both identity fields — the body can be tens of
+	// megabytes, parsing it twice for two scalars is waste on the hot path
+	var probe struct {
+		Model  string `json:"model"`
+		Stream bool   `json:"stream"`
+	}
+	_ = json.Unmarshal(body, &probe)
+
 	// usage record: model/stream from the buffered body; token counts stay
 	// zero — passthrough never parses SSE by design, and sniffing every
-	// relayed byte for counts was rejected (byte-precise is the point)
+	// relayed byte for counts was rejected (byte-precise is the point);
+	// count_tokens is not a billable interaction and records nothing
 	entry := usagelog.Entry{
 		Ts:       time.Now(),
 		Provider: t.profile.Name, Protocol: string(t.Protocol()),
-		Model: bodyModel(body), Stream: bodyStream(body),
+		Model: probe.Model, Stream: probe.Stream,
 		Status: http.StatusOK,
 	}
 	started := time.Now()
-	defer func() {
-		entry.LatencyMS = time.Since(started).Milliseconds()
-		usagelog.Record(entry)
-	}()
+	if recordUsage {
+		defer func() {
+			entry.LatencyMS = time.Since(started).Milliseconds()
+			usagelog.Record(entry)
+		}()
+	}
 	// read deadlines: a hung gateway (nothing ever sent) would otherwise
-	// leave the client request open forever — see readguard
-	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
+	// leave the client request open forever — see readguard; a non-stream
+	// answer's first byte IS the finished generation, so it gets the
+	// whole-generation budget, not the first-token patience
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByteFor(probe.Stream), readguard.Idle)
 	defer guard.Stop()
 	resp, err := t.upstream(gctx, r, body)
 	if err != nil {
@@ -143,35 +161,12 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if resp.StatusCode == http.StatusBadRequest {
-		resp = t.rectifyRetry(gctx, r, body, resp)
+		resp = t.rectifyRetry(r, body, probe.Stream, resp)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	resp.Body = guard.Body(resp.Body)
 	entry.Status = resp.StatusCode
 	relay(w, resp)
-}
-
-// bodyModel/bodyStream read the two identity fields without a full decode.
-func bodyModel(body []byte) string {
-	var probe struct {
-		Model string `json:"model"`
-	}
-	if json.Unmarshal(body, &probe) == nil {
-		return probe.Model
-	}
-
-	return ""
-}
-
-func bodyStream(body []byte) bool {
-	var probe struct {
-		Stream bool `json:"stream"`
-	}
-	if json.Unmarshal(body, &probe) == nil {
-		return probe.Stream
-	}
-
-	return false
 }
 
 // upstream performs one upstream roundtrip with the buffered body.
@@ -185,10 +180,12 @@ func (t *Translator) upstream(ctx context.Context, r *http.Request, body []byte)
 }
 
 // rectifyRetry consumes a 400 response, and when the error text names a
-// fixable thinking-contract violation, retries ONCE with the fixed body.
-// The original response's body is re-armed, so the caller can relay either
+// fixable thinking-contract violation, retries ONCE with the fixed body —
+// under a FRESH guard: the first attempt already spent most of the armed
+// budget, and a fixable request must not die on the stale remainder. The
+// original response's body is re-armed, so the caller can relay either
 // outcome unchanged.
-func (t *Translator) rectifyRetry(ctx context.Context, r *http.Request, body []byte, resp *http.Response) *http.Response {
+func (t *Translator) rectifyRetry(r *http.Request, body []byte, stream bool, resp *http.Response) *http.Response {
 	errText, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(errText))
@@ -198,13 +195,17 @@ func (t *Translator) rectifyRetry(ctx context.Context, r *http.Request, body []b
 		return resp
 	}
 	_ = resp.Body.Close()
-	retried, err := t.upstream(ctx, r, fixed)
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByteFor(stream), readguard.Idle)
+	defer guard.Stop()
+	retried, err := t.upstream(gctx, r, fixed)
 	if err != nil {
-		// the retry failing to even connect is a plain 502 — the original
-		// upstream answered, so this error is the user's best signal
+		// the retry failing mid-flight is a plain 502 carrying the real
+		// cause — the original upstream answered, so this error is the
+		// user's best signal
+		msg := "rectified retry failed: " + guard.Err(err).Error()
 		errResp := &http.Response{
 			StatusCode: http.StatusBadGateway,
-			Body:       io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"api_error","message":"rectified retry failed"}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"api_error","message":"` + msg + `"}}`)),
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 		}
 
@@ -216,12 +217,13 @@ func (t *Translator) rectifyRetry(ctx context.Context, r *http.Request, body []b
 
 // ServeMessages: POST /v1/messages (forward with body and SSE as is).
 func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
-	t.proxy(w, r)
+	t.proxy(w, r, true)
 }
 
-// ServeCountTokens: POST /v1/messages/count_tokens (forward).
+// ServeCountTokens: POST /v1/messages/count_tokens (forward; not a billable
+// interaction — no usage record).
 func (t *Translator) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
-	t.proxy(w, r)
+	t.proxy(w, r, false)
 }
 
 // writeError writes errors in the Anthropic format.

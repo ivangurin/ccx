@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -166,4 +167,16 @@ func TestStopReleasesWatchdog(t *testing.T) {
 	gctx2, g2 := Arm(parent, time.Hour, time.Hour)
 	require.NoError(t, gctx2.Err())
 	g2.Stop()
+}
+
+// Concurrent Stops must not panic (the shared-package contract), even from
+// several goroutines at once.
+func TestStopConcurrentSafe(_ *testing.T) {
+	for range 100 {
+		_, g := Arm(context.Background(), time.Hour, time.Hour)
+		var wg sync.WaitGroup
+		wg.Go(func() { g.Stop() })
+		wg.Go(func() { g.Stop() })
+		wg.Wait()
+	}
 }

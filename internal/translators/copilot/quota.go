@@ -1,5 +1,11 @@
 package copilot
 
+import (
+	"strings"
+
+	"github.com/ivangurin/ccx/internal/translators/prefill"
+)
+
 // Quota marking: the gateway bills one premium interaction per
 // user-initiated turn. Tool continuations, context compaction and subagent
 // turns are continuations of an already-billed interaction — the request
@@ -43,11 +49,25 @@ func classifyQuota(m map[string]any) quotaClass {
 	if last != nil && last["role"] == initiatorUser && carriesToolResult(last) {
 		cls.Initiator = initiatorAgent
 	}
+	if last != nil && isPrefillContinuation(last) {
+		cls.Initiator = initiatorAgent
+	}
 	if cls.IsSubagent || cls.IsCompact {
 		cls.Initiator = initiatorAgent
 	}
 
 	return cls
+}
+
+// isPrefillContinuation recognizes the prefill fix's repacked truncation
+// continuation: the machine instruction leads the synthetic user message
+// (a user cannot type it — it is a code constant injected by prefill.Rewrite).
+func isPrefillContinuation(msg map[string]any) bool {
+	if msg["role"] != initiatorUser {
+		return false
+	}
+
+	return strings.HasPrefix(messageText(msg), prefill.Instruction)
 }
 
 // carriesToolResult: the message content holds at least one tool_result

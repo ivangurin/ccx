@@ -21,7 +21,8 @@ func TestProxy_OversizedBodyRefused(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	anthropic.SetMaxProxyBodyForTest(1024)
+	restore := anthropic.SetMaxProxyBodyForTest(1024)
+	defer restore()
 
 	tr := anthropic.New(&models.Profile{Protocol: models.ProtocolAnthropic, BaseURL: up.URL})
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"pad":"`+strings.Repeat("x", 2048)+`"}`))

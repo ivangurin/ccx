@@ -113,10 +113,15 @@ func newerGeneration(disk, loaded time.Time) bool {
 
 // SaveAuth is read-modify-write: it reads the existing file and patches ONLY
 // tokens.access/refresh/last_refresh — auth_mode, id_token, account_id and
-// other codex CLI fields survive the refresh untouched (invariant: the file
-// belongs to someone else, we are guests). If the file is missing, it
-// creates a minimal one. The whole read-modify-write runs under the sidecar
-// flock — see the package doc.
+// other codex CLI fields survive untouched (invariant: the file belongs to
+// someone else, we are guests). If the file is missing, it creates a minimal
+// one. The whole read-modify-write runs under the sidecar flock — see the
+// package doc.
+//
+// This is the SEEDING path (writing tokens obtained elsewhere into the
+// file). Refresh results must go through Token → saveAuthCAS: this write is
+// generation-naive (no compare-and-swap, last_refresh stamped at write time)
+// and would clobber a concurrent native-CLI generation.
 func SaveAuth(path string, auth Auth) error {
 	lock, err := flock.LockWait(path+".lock", authLockTimeout)
 	if err != nil {

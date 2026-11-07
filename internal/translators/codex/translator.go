@@ -343,7 +343,8 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// read deadlines: a hung gateway (nothing ever sent) would otherwise
-	// leave the client request open forever — see readguard
+	// leave the client request open forever — see readguard; the upstream is
+	// always streamed here, so the first-token patience is always right
 	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
 	defer guard.Stop()
 	upReq, err := http.NewRequestWithContext(gctx, http.MethodPost, t.base+"/responses", bytes.NewReader(body)) //nolint:gosec // base is a constant/test

@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -72,4 +73,19 @@ func TestQuotaIDs_DistinctContinuationsDistinctRequestIDs(t *testing.T) {
 	// the same turn retried stays the same id
 	r1again, _ := quotaIDs("sess-1", body(t, turn1))
 	require.Equal(t, r1, r1again)
+}
+
+// When the system entropy source fails, the fallback ids still differ per
+// call (a constant fallback would collapse distinct session-less requests
+// into one interaction id).
+func TestQuotaIDs_RandomFallbackDiffers(t *testing.T) {
+	old := randRead
+	randRead = func([]byte) (int, error) { return 0, io.ErrClosedPipe }
+	t.Cleanup(func() { randRead = old })
+
+	r1, i1 := quotaIDs("", body(t, sessBody))
+	r2, i2 := quotaIDs("", body(t, sessBody))
+	require.NotEqual(t, r1, r2)
+	require.NotEqual(t, i1, i2)
+	require.Len(t, r1, 36)
 }

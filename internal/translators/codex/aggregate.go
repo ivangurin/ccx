@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
@@ -15,7 +16,12 @@ import (
 // converted to Anthropic events and folded into one MessagesResponse.
 func (t *Translator) serveAggregate(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
 	var events []models.AnthropicEvent
+	startedAt := time.Now()
+	ttft := time.Duration(0)
 	started := t.streamEvents(resp, model, func(ev models.AnthropicEvent) {
+		if ttft == 0 {
+			ttft = time.Since(startedAt) // the upstream is a stream — its first event time is the TTFT
+		}
 		events = append(events, ev)
 	})
 	if !started {
@@ -32,6 +38,7 @@ func (t *Translator) serveAggregate(w http.ResponseWriter, resp *http.Response, 
 
 		return
 	}
+	entry.TTFTMS = ttft.Milliseconds()
 	entry.InputTokens, entry.OutputTokens = out.Usage.InputTokens, out.Usage.OutputTokens
 	data, err := json.Marshal(out) //nolint:errchkjson // assembled from typed events
 	if err != nil {

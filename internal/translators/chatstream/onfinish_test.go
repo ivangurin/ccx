@@ -35,7 +35,7 @@ func TestServeChatStream_OnFinish(t *testing.T) {
 	ServeChatStream(rec, resp, "gpt", func(ttft time.Duration, usage models.Usage) {
 		called = true
 		gotTTFT, gotUsage = ttft, usage
-	})
+	}, nil)
 
 	require.True(t, called, "onFinish fires on the clean path")
 	require.Equal(t, 9, gotUsage.InputTokens)
@@ -60,7 +60,7 @@ func TestServeChatStream_OnFinishNotCalledOnBreak(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ServeChatStream(rec, resp, "gpt", func(time.Duration, models.Usage) {
 		t.Fatal("onFinish must not fire on a broken stream")
-	})
+	}, nil)
 }
 
 // nil onFinish is legal (a caller that does not care).
@@ -77,5 +77,26 @@ func TestServeChatStream_NilOnFinish(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	rec := httptest.NewRecorder()
-	require.NotPanics(t, func() { ServeChatStream(rec, resp, "gpt", nil) })
+	require.NotPanics(t, func() { ServeChatStream(rec, resp, "gpt", nil, nil) })
+}
+
+// A broken stream reports to onBreak — the usage entry must not record a
+// clean 200 for a generation the client never finished receiving.
+func TestServeChatStream_OnBreak(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"}}]}\n\n")
+		// no [DONE] — the connection just ends
+	}))
+	t.Cleanup(up.Close)
+
+	resp, err := http.Get(up.URL) //nolint:gosec,noctx // test
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	rec := httptest.NewRecorder()
+	broke := false
+	ServeChatStream(rec, resp, "gpt", nil, func(_ string) { broke = true })
+
+	require.True(t, broke)
 }

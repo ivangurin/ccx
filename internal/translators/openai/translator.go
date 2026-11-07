@@ -137,8 +137,10 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// read deadlines: a hung gateway (nothing ever sent) would otherwise
-	// leave the client request open forever — see readguard
-	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
+	// leave the client request open forever — see readguard; a non-stream
+	// answer's first byte IS the finished generation, so it gets the
+	// whole-generation budget, not the first-token patience
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByteFor(req.Stream), readguard.Idle)
 	defer guard.Stop()
 	resp, err := t.do(gctx, r, body)
 	if err != nil {
@@ -160,6 +162,8 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		chatstream.ServeChatStream(w, resp, req.Model, func(ttft time.Duration, usage models.Usage) {
 			entry.TTFTMS = ttft.Milliseconds()
 			entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
+		}, func(msg string) {
+			entry.Status, entry.Error = http.StatusBadGateway, msg
 		})
 
 		return

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // Deterministic request/interaction ids: the gateway aggregates requests
@@ -76,14 +78,20 @@ func deterministicUUID(seed string) string {
 
 func randomUUID() string {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand failure leaves zero bytes — still a valid shape; a
-		// billing id colliding at the zero id is better than dropping the
-		// request over id generation
-		return "00000000-0000-4000-8000-000000000000"
+	if _, err := randRead(b); err != nil {
+		// crypto/rand failure: derive from the clock + a process-wide counter
+		// instead — a CONSTANT fallback would collapse every session-less
+		// request into one interaction id (the dedup we rely on, in reverse)
+		return deterministicUUID(fmt.Sprintf("ccx-rand-fallback-%d-%d",
+			time.Now().UnixNano(), fallbackCounter.Add(1)))
 	}
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
+
+// randRead is crypto/rand.Read as a var so tests can force the fallback.
+var randRead = rand.Read
+
+var fallbackCounter atomic.Uint64
