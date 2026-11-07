@@ -12,6 +12,7 @@ import (
 
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/readguard"
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/ivangurin/ccx/internal/translators/openai"
 	"github.com/ivangurin/ccx/internal/translators/prefill"
@@ -124,7 +125,11 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, t.base+"/chat/completions", bytes.NewReader(payload)) //nolint:gosec // base is a constant/test
+	// read deadlines: a hung gateway (nothing ever sent) would otherwise
+	// leave the client request open forever — see readguard
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
+	defer guard.Stop()
+	upReq, err := http.NewRequestWithContext(gctx, http.MethodPost, t.base+"/chat/completions", bytes.NewReader(payload)) //nolint:gosec // base is a constant/test
 	if err != nil {
 		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
@@ -133,7 +138,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	upReq.Header = t.headers(token)
 	resp, err := t.http.Do(upReq)
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
 
 		return
 	}
@@ -143,6 +148,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	resp.Body = guard.Body(resp.Body)
 	if req.Stream {
 		chatstream.ServeChatStream(w, resp, req.Model)
 

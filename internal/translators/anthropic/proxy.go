@@ -1,10 +1,13 @@
 package anthropic
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/ivangurin/ccx/internal/pkg/readguard"
 )
 
 // hopHeaders are hop-by-hop headers, not forwarded by the proxy (RFC 7230).
@@ -23,8 +26,8 @@ var hopHeaders = []string{
 // upstreamRequest builds the request to the upstream: the client's path/query,
 // the body as is, the profile's authorization (Bearer|x-api-key) instead of the
 // client's daemon token.
-func (t *Translator) upstreamRequest(r *http.Request, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, t.profile.BaseURL+r.URL.RequestURI(), body) //nolint:gosec // base_url comes from the owner config
+func (t *Translator) upstreamRequest(ctx context.Context, r *http.Request, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, r.Method, t.profile.BaseURL+r.URL.RequestURI(), body) //nolint:gosec // base_url comes from the owner config
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: build request: %w", err)
 	}
@@ -88,7 +91,11 @@ func relay(w http.ResponseWriter, resp *http.Response) {
 }
 
 func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
-	req, err := t.upstreamRequest(r, r.Body)
+	// read deadlines: a hung gateway (nothing ever sent) would otherwise
+	// leave the client request open forever — see readguard
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
+	defer guard.Stop()
+	req, err := t.upstreamRequest(gctx, r, r.Body)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 
@@ -96,11 +103,12 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := t.http.Do(req) //nolint:gosec // base_url from the owner config
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeError(w, http.StatusBadGateway, guard.Err(err).Error())
 
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+	resp.Body = guard.Body(resp.Body)
 	relay(w, resp)
 }
 

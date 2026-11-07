@@ -15,6 +15,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/readguard"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
 	"github.com/ivangurin/ccx/internal/translators/relay"
@@ -315,7 +316,11 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, t.base+"/responses", bytes.NewReader(body)) //nolint:gosec // base is a constant/test
+	// read deadlines: a hung gateway (nothing ever sent) would otherwise
+	// leave the client request open forever — see readguard
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
+	defer guard.Stop()
+	upReq, err := http.NewRequestWithContext(gctx, http.MethodPost, t.base+"/responses", bytes.NewReader(body)) //nolint:gosec // base is a constant/test
 	if err != nil {
 		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 
@@ -332,7 +337,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := t.http.Do(upReq)
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
 
 		return
 	}
@@ -342,6 +347,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	resp.Body = guard.Body(resp.Body)
 	t.serveStream(w, resp, req.Model)
 }
 

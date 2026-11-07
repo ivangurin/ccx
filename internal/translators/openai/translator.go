@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/readguard"
 	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 )
@@ -58,8 +59,8 @@ func requestToken(src *http.Request) string {
 	return strings.TrimSpace(src.Header.Get("X-Api-Key"))
 }
 
-func (t *Translator) do(src *http.Request, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, t.chatURL(), bytes.NewReader(body)) //nolint:gosec // base_url from the owner config
+func (t *Translator) do(ctx context.Context, src *http.Request, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.chatURL(), bytes.NewReader(body)) //nolint:gosec // base_url from the owner config
 	if err != nil {
 		return nil, err
 	}
@@ -122,9 +123,13 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	resp, err := t.do(r, body)
+	// read deadlines: a hung gateway (nothing ever sent) would otherwise
+	// leave the client request open forever — see readguard
+	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByte, readguard.Idle)
+	defer guard.Stop()
+	resp, err := t.do(gctx, r, body)
 	if err != nil {
-		relay.WriteErr(w, http.StatusBadGateway, err.Error())
+		relay.WriteErr(w, http.StatusBadGateway, guard.Err(err).Error())
 
 		return
 	}
@@ -135,6 +140,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	resp.Body = guard.Body(resp.Body)
 	if req.Stream {
 		chatstream.ServeChatStream(w, resp, req.Model)
 
