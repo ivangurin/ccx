@@ -34,18 +34,18 @@ func runStatus(_ []string, stdout io.Writer) int {
 	}
 
 	var state models.State
-	if err := jsonfile.ReadJSON(cfg.StatePath(), &state); err != nil || state.Profile == "" {
+	if err := jsonfile.ReadJSON(cfg.StatePath(), &state); err != nil || state.Provider == "" {
 		fmt.Fprintln(stdout, "No active provider — choose one: ccx <provider> [model]")
 
 		return 0
 	}
 
-	if prof := providers.Providers.Get(state.Profile); prof == nil {
-		fmt.Fprintf(stdout, "Active provider: %s (missing from providers.json — deleted?)\n", state.Profile)
+	if prof := providers.Providers.Get(state.Provider); prof == nil {
+		fmt.Fprintf(stdout, "Active provider: %s (missing from providers.json — deleted?)\n", state.Provider)
 	} else {
-		fmt.Fprintf(stdout, "Active provider: %s (%s) · %s\n", state.Profile, prof.Name, prof.Protocol)
+		fmt.Fprintf(stdout, "Active provider: %s (%s) · %s\n", state.Provider, prof.Name, prof.Protocol)
 		if prof.Protocol == models.ProtocolCopilot {
-			printCopilotQuota(cfg, state.Profile, stdout)
+			printCopilotQuota(cfg, state.Provider, stdout)
 		}
 	}
 	fmt.Fprintf(stdout, "Model:          %s\n", state.Model)

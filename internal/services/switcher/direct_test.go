@@ -67,7 +67,7 @@ func TestApply_DirectAnthropic(t *testing.T) {
 	require.Equal(t, 1, d.stopN)
 
 	st := readState(t, sp.Config.StatePath())
-	require.Equal(t, "zai", st.Profile)
+	require.Equal(t, "zai", st.Provider)
 	require.Equal(t, "glm-5.3[1m]", st.Model)
 }
 

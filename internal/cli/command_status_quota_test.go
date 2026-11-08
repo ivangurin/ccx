@@ -16,7 +16,7 @@ import (
 func setStatusState(t *testing.T, cfg *config.Config, profile string) {
 	t.Helper()
 	require.NoError(t, jsonfile.WriteAtomicJSON(cfg.StatePath(), models.State{
-		Profile: profile, Model: "claude-sonnet-4.6", Updated: "2026-11-07T12:00:00Z",
+		Provider: profile, Model: "claude-sonnet-4.6", Updated: "2026-11-07T12:00:00Z",
 	}, 0o600))
 }
 

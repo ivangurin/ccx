@@ -269,7 +269,7 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 
 func (s *Switcher) writeState(profileKey, model string) error {
 	state := models.State{
-		Profile: profileKey,
+		Provider: profileKey,
 		Model:   model,
 		Updated: time.Now().UTC().Format(time.RFC3339),
 	}

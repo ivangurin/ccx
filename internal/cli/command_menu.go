@@ -117,7 +117,7 @@ func activeProfileIndex(cfg *config.Config, providers *models.Providers) int {
 		return 0
 	}
 	for i, key := range providers.Providers.Keys {
-		if key == state.Profile {
+		if key == state.Provider {
 			return i
 		}
 	}

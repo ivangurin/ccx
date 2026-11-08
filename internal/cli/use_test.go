@@ -80,7 +80,7 @@ func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	require.Contains(t, out.String(), "glm-flash")
 
 	st := readStateFile(t, sp.Config.StatePath())
-	require.Equal(t, "zai", st.Profile)
+	require.Equal(t, "zai", st.Provider)
 	require.Equal(t, "glm-flash", st.Model)
 }
 

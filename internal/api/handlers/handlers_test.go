@@ -75,7 +75,7 @@ func TestV1Messages_NoAuthHeaderAccepted(t *testing.T) {
 func TestAdminUse_Returns404(t *testing.T) {
 	srv, _ := newTestApp(t)
 
-	resp, err := http.Post(srv.URL+"/admin/use", "application/json", strings.NewReader(`{"profile":"zai"}`)) //nolint:gosec // test
+	resp, err := http.Post(srv.URL+"/admin/use", "application/json", strings.NewReader(`{"provider":"zai"}`)) //nolint:gosec // test
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)

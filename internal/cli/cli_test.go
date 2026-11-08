@@ -89,7 +89,7 @@ func TestExecute_ShortcutAppliesUse(t *testing.T) {
 	require.Contains(t, out.String(), modelGLMFlash)
 
 	st := readStateFile(t, sp.Config.StatePath())
-	require.Equal(t, profZai, st.Profile)
+	require.Equal(t, profZai, st.Provider)
 	require.Equal(t, modelGLMFlash, st.Model)
 }
 

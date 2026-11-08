@@ -177,7 +177,7 @@ func TestApply_HappyPath(t *testing.T) {
 
 	// state
 	st := readState(t, sp.Config.StatePath())
-	require.Equal(t, "acme", st.Profile)
+	require.Equal(t, "acme", st.Provider)
 	require.Equal(t, "copilot-code-large", st.Model)
 	require.NotEmpty(t, st.Updated)
 

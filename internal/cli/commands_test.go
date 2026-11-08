@@ -116,7 +116,7 @@ func TestCommandStatus_WithState(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeProviders(t, sp.Config.ProvidersPath(), []string{profZai})
 	require.NoError(t, jsonfile.WriteAtomicJSON(sp.Config.StatePath(),
-		models.State{Profile: profZai, Model: "zai-model", Updated: "2026-11-05T10:00:00Z"}, 0o600))
+		models.State{Provider: profZai, Model: "zai-model", Updated: "2026-11-05T10:00:00Z"}, 0o600))
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdStatus}, &out)
@@ -141,7 +141,7 @@ func TestCommandStatus_NoState(t *testing.T) {
 func TestCommandStatus_UnknownProfileInState(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeProviders(t, sp.Config.ProvidersPath(), []string{profZai})
-	require.NoError(t, jsonfile.WriteAtomicJSON(sp.Config.StatePath(), models.State{Profile: "gone", Model: "m"}, 0o600))
+	require.NoError(t, jsonfile.WriteAtomicJSON(sp.Config.StatePath(), models.State{Provider: "gone", Model: "m"}, 0o600))
 
 	var out bytes.Buffer
 	code := cli.Execute([]string{cmdStatus}, &out)

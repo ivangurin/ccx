@@ -57,7 +57,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKe
 
 		return nil, fmt.Errorf("router: provider %s not ready: %w", providerKey, err)
 	}
-	log.Info("route built", "profile", providerKey, "protocol", profile.Protocol)
+	log.Info("route built", "provider", providerKey, "protocol", profile.Protocol)
 
 	return &Service{
 		profile:       providerKey,
