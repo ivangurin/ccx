@@ -21,6 +21,15 @@ func WriteAtomicJSON(path string, v any, perm os.FileMode) error {
 	}
 	data = append(data, '\n')
 
+	return WriteAtomicRaw(path, data, perm)
+}
+
+// WriteAtomicRaw atomically writes pre-serialized bytes (settings.json is
+// patched as TEXT — the byte-precise patcher's output must not round-trip
+// through a marshaler). Same perm policy as WriteAtomicJSON: perm only for
+// a target that does not exist yet, the existing perms kept otherwise — the
+// one atomic-write implementation and one perm policy for every caller.
+func WriteAtomicRaw(path string, data []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("jsonfile: mkdir %s: %w", filepath.Dir(path), err)
 	}

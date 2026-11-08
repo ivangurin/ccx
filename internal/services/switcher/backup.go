@@ -26,35 +26,6 @@ func backupSettings(cfg *config.Config, settings *models.Settings) error {
 	return os.WriteFile(path, data, 0o600) //nolint:gosec // fixed perms
 }
 
-// writeFileAtomic — tmp in the same directory + rename, perms 600.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".ccxtmp-*")
-	if err != nil {
-		return fmt.Errorf("tmp: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-
-		return fmt.Errorf("chmod: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-
-		return fmt.Errorf("write: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename: %w", err)
-	}
-
-	return nil
-}
-
 // writeStateFile — atomic write of state.json (format 1:1 with bash-ccx).
 func writeStateFile(path string, state models.State) error {
 	if err := jsonfile.WriteAtomicJSON(path, state, 0o600); err != nil {

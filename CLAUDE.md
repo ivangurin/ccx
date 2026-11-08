@@ -125,7 +125,13 @@ internal/
   (plus `--debug` when `daemon.debug` is set) and waits for `/health` —
   which answering means the translator's `Ready()` passed (the daemon
   builds the route before listening); on failure, `~/.claude/settings.json`
-  is left untouched and the user stays on the previous profile. Restart
+  is left untouched and the user stays on the previous profile — ENFORCED,
+  not just printed: switchAborted respawns the daemon for the provider
+  named by state.json (a failed Restart already killed it; a settings-write
+  failure after a successful Restart leaves the NEW daemon serving under an
+  untouched settings.json). A direct-anthropic previous provider needs no
+  rollback; a failed rollback names the recovery command in the error.
+  Restart
   kills in-flight SSE requests — accepted trade-off of the restart
   semantics. Port precedence everywhere: `--port` flag > `CCX_PORT` >
   `daemon.port` > 4567 — but the providers.json `daemon` block is read by
@@ -166,8 +172,10 @@ internal/
   its path at `~/.ccx/state.json`; the JSON schema is unchanged). Renamed
   from `ccx-state.json` (2026-11-07) with no fallback read: the pre-rename
   file stays on disk unread, same clean break as the legacy data migration.
-- Atomic writes: tmp file in the same directory + rename; backups and configs
-  are 0600.
+- Atomic writes: tmp file in the same directory + rename (one implementation:
+  jsonfile.WriteAtomicJSON/WriteAtomicRaw); backups and ccx-owned configs are
+  0600, but an EXISTING target keeps its own perms (settings.json belongs to
+  Claude Code — a switch must not silently tighten it).
 
 ### Translator runtime invariants (v0.0.4 hardening)
 

@@ -47,6 +47,14 @@ func (f *fakeDaemon) lastDebugs() []bool {
 	return append([]bool(nil), f.debugs...)
 }
 
+// snapshotRestarts copies the recorded Restart calls.
+func (f *fakeDaemon) snapshotRestarts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.restarts...)
+}
+
 func (f *fakeDaemon) Stop(_ context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

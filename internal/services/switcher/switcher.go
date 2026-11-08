@@ -22,6 +22,7 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/flock"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
 // Daemon — the daemon contract for switching (the implementation is an
@@ -107,18 +108,72 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	// comes from the same providers.json snapshot the route was built from —
 	// both ride the spawn as flags; the daemon never reads the block.
 	port := config.ResolveDaemonPort(s.cfg, 0)
-	if err := s.daemon.Restart(ctx, profileKey, port, providers.DaemonDebug()); err != nil {
-		return "", fmt.Errorf("ccx: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous provider", err)
+	debug := providers.DaemonDebug()
+	if err := s.daemon.Restart(ctx, profileKey, port, debug); err != nil {
+		return "", s.switchAborted(ctx, providers, port, debug,
+			fmt.Errorf("ccx: cancelled: daemon did not come up (%v)", err))
 	}
 
 	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model); err != nil {
-		return "", err
+		return "", s.switchAborted(ctx, providers, port, debug, err)
 	}
 	if err := s.writeState(profileKey, model); err != nil {
+		// no rollback here: the switch is already committed (the daemon and
+		// settings.json agree on the new provider) — only state.json lags,
+		// and respawning the previous daemon would contradict settings.json
 		return "", err
 	}
 
 	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model, baseURL(port)), nil
+}
+
+// switchAborted reports a failed switch and makes the "you stay on the
+// previous provider" promise TRUE again: the failed Restart already killed
+// the previous daemon (or a post-restart failure left the NEW daemon
+// serving under an untouched settings.json that still names the old
+// provider and its credential) — either way the previous provider must be
+// serving again. The restore is best-effort: its failure lands in the
+// error text together with the recovery command, never swallowed.
+func (s *Switcher) switchAborted(
+	ctx context.Context,
+	providers *models.Providers,
+	port int, debug bool,
+	cause error,
+) error {
+	if rerr := s.rollbackDaemon(ctx, providers, port, debug); rerr != nil {
+		return fmt.Errorf("%v — settings.json untouched; the previous daemon was NOT restored: %w", cause, rerr)
+	}
+
+	return fmt.Errorf("%v — settings.json untouched, you stay on the previous provider", cause)
+}
+
+// rollbackDaemon respawns the daemon for the provider named by state.json.
+// A previous direct-anthropic provider needs no daemon (settings.json still
+// points straight at its upstream); no recorded state (the very first
+// switch) means nothing was serving either.
+func (s *Switcher) rollbackDaemon(ctx context.Context, providers *models.Providers, port int, debug bool) error {
+	var state models.State
+	if err := jsonfile.ReadJSON(s.cfg.StatePath(), &state); err != nil {
+		// an unreadable/absent state file means no previous provider is on
+		// record (the very first switch) — nothing was serving, nothing to
+		// restore; this is not a rollback failure
+		return nil //nolint:nilerr // deliberate: "nothing to roll back" is success here
+	}
+	if state.Provider == "" {
+		return nil
+	}
+	prev := providers.Providers.Get(state.Provider)
+	if prev == nil {
+		return fmt.Errorf("previous provider %q is gone from providers.json — pick one: ccx <provider>", state.Provider)
+	}
+	if prev.Protocol == models.ProtocolAnthropic {
+		return nil
+	}
+	if err := s.daemon.Restart(ctx, state.Provider, port, debug); err != nil {
+		return fmt.Errorf("%s did not come back up (%v) — run: ccx %s", prev.Name, err, state.Provider)
+	}
+
+	return nil
 }
 
 // applyDirect — a direct anthropic profile: upstream URL + credential into
@@ -260,7 +315,11 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 	if err := settings.SetModelPin(model); err != nil {
 		return fmt.Errorf("ccx: %w", err)
 	}
-	if err := writeFileAtomic(s.cfg.SettingsPath(), settings.Bytes()); err != nil {
+	// WriteAtomicRaw (not a local copy): settings.json is patched as TEXT and
+	// the shared helper's perm policy keeps the file's existing perms — the
+	// file belongs to Claude Code, not to ccx, and a switch must not
+	// silently tighten it.
+	if err := jsonfile.WriteAtomicRaw(s.cfg.SettingsPath(), settings.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("ccx: writing settings.json: %w", err)
 	}
 
@@ -270,8 +329,8 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 func (s *Switcher) writeState(profileKey, model string) error {
 	state := models.State{
 		Provider: profileKey,
-		Model:   model,
-		Updated: time.Now().UTC().Format(time.RFC3339),
+		Model:    model,
+		Updated:  time.Now().UTC().Format(time.RFC3339),
 	}
 
 	return writeStateFile(s.cfg.StatePath(), state)
