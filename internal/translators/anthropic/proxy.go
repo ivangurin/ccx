@@ -152,7 +152,9 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request, recordUsage b
 	// answer's first byte IS the finished generation, so it gets the
 	// whole-generation budget, not the first-token patience
 	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByteFor(probe.Stream), readguard.Idle)
-	defer guard.Stop()
+	// closure form: a successful rectify retry hands the guard over, and the
+	// deferred stop must hit the guard that owns the live response
+	defer func() { guard.Stop() }()
 	resp, err := t.upstream(gctx, r, body)
 	if err != nil {
 		entry.Status, entry.Error = http.StatusBadGateway, guard.Err(err).Error()
@@ -161,7 +163,18 @@ func (t *Translator) proxy(w http.ResponseWriter, r *http.Request, recordUsage b
 		return
 	}
 	if resp.StatusCode == http.StatusBadRequest {
-		resp = t.rectifyRetry(r, body, probe.Stream, resp)
+		var retryGuard *readguard.Guard
+		resp, retryGuard = t.rectifyRetry(r, body, probe.Stream, resp)
+		if retryGuard != nil {
+			// the first attempt is fully consumed: its guard retires, the
+			// retry's guard — whose context the retried body still reads
+			// through — owns the rest of the exchange. Stopping the retry's
+			// guard inside rectifyRetry cancels that context before the
+			// caller relays the body, killing every streamed retry on its
+			// first read.
+			guard.Stop()
+			guard = retryGuard
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	resp.Body = guard.Body(resp.Body)
@@ -184,35 +197,40 @@ func (t *Translator) upstream(ctx context.Context, r *http.Request, body []byte)
 // under a FRESH guard: the first attempt already spent most of the armed
 // budget, and a fixable request must not die on the stale remainder. The
 // original response's body is re-armed, so the caller can relay either
-// outcome unchanged.
-func (t *Translator) rectifyRetry(r *http.Request, body []byte, stream bool, resp *http.Response) *http.Response {
+// outcome unchanged. A retried response comes back WITH its guard: the
+// body reads through the guard's context, so the guard must outlive this
+// function — the caller stops it after relaying. The guard is nil for
+// every other outcome (no retry attempted, or a synthetic error response
+// whose body needs no watchdog).
+func (t *Translator) rectifyRetry(r *http.Request, body []byte, stream bool, resp *http.Response) (*http.Response, *readguard.Guard) {
 	errText, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(errText))
 
 	fixed, ok := rectifyBody(body, string(errText))
 	if !ok {
-		return resp
+		return resp, nil
 	}
 	_ = resp.Body.Close()
 	gctx, guard := readguard.Arm(r.Context(), readguard.FirstByteFor(stream), readguard.Idle)
-	defer guard.Stop()
 	retried, err := t.upstream(gctx, r, fixed)
 	if err != nil {
+		guard.Stop()
 		// the retry failing mid-flight is a plain 502 carrying the real
 		// cause — the original upstream answered, so this error is the
-		// user's best signal
+		// user's best signal. %q escapes: transport error texts quote the
+		// URL, and a raw quote spliced into the envelope breaks the JSON.
 		msg := "rectified retry failed: " + guard.Err(err).Error()
 		errResp := &http.Response{
 			StatusCode: http.StatusBadGateway,
-			Body:       io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"api_error","message":"` + msg + `"}}`)),
+			Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"type":"error","error":{"type":"api_error","message":%q}}`, msg))),
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 		}
 
-		return errResp
+		return errResp, nil
 	}
 
-	return retried
+	return retried, guard
 }
 
 // ServeMessages: POST /v1/messages (forward with body and SSE as is).

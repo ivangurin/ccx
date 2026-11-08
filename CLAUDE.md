@@ -272,7 +272,12 @@ internal/
   (signature/thinking-block → strip thinking from the history;
   budget_tokens floor → clamp to 1024); unrelated 400s relay untouched; the
   passthrough buffers the body (64 MiB bound; over → 413, never a silent
-  truncation) and arms a FRESH deadline for the retry.
+  truncation) and arms a FRESH deadline for the retry — the retried response
+  comes back WITH its guard: the body reads through the guard's context, so
+  stopping that guard before the caller relays cancels every streamed retry
+  on its first read (unit tests survived on buffered bodies; a gated-chunk
+  test pins the stream now). The synthetic 502 body escapes via %q —
+  transport errors quote the URL.
 - **Usage log**: append-only `~/.ccx/logs/usage-YYYY-MM-DD.jsonl`
   (provider/protocol/model/stream/tokens/latency/TTFT/status; counts and
   timings only — never bodies or credentials); stream breaks record
