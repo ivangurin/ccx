@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/strutil"
 )
 
 // event names (goconst).
@@ -155,7 +156,7 @@ func (c *StreamConverter) Finish() []models.AnthropicEvent {
 		Type: evMessageDelta,
 		Delta: &models.AnthropicDelta{
 			Type:       evMessageDelta,
-			StopReason: firstNonEmptyStr(c.stopReason, "end_turn"),
+			StopReason: strutil.FirstNonEmpty(c.stopReason, "end_turn"),
 		},
 		Usage: &usage,
 	})
@@ -229,14 +230,4 @@ func deltaEvent(index int, deltaType, value string) models.AnthropicEvent {
 		Index: &idx,
 		Delta: &delta,
 	}
-}
-
-func firstNonEmptyStr(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-
-	return ""
 }

@@ -96,3 +96,40 @@ func TestServeMessages_WebSearchStream(t *testing.T) {
 	require.Contains(t, out, "event: message_stop")
 	require.NotContains(t, out, "event: error")
 }
+
+// Citations with NO search action on record (every web_search_call was an
+// open_page, or the action was absent) must not materialize a
+// web_search_tool_result: with no server_tool_use to pair with, its
+// tool_use_id would be empty and Claude Code's WebSearch parser cannot
+// associate it — an unpaired result block is noise at best.
+func TestServeMessages_WebSearchCitationsWithoutSearchEmitNoResult(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_1\",\"type\":\"web_search_call\",\"status\":\"in_progress\"}}\n\n",
+			// open_page, not search: a page fetch, not a query
+			"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ws_1\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"open_page\",\"url\":\"https://a.example/1\"}}}\n\n",
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\"}}\n\n",
+			"event: response.output_text.annotation.added\ndata: {\"type\":\"response.output_text.annotation.added\",\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://a.example/1\",\"title\":\"A One\",\"start_index\":0,\"end_index\":5}}\n\n",
+			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"summary\",\"item_id\":\"msg_1\"}\n\n",
+			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":7}}}\n\n",
+		}
+		for _, ev := range events {
+			_, _ = io.WriteString(w, ev)
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	out := rec.Body.String()
+	require.Contains(t, out, "summary")
+	require.NotContains(t, out, "web_search_tool_result",
+		"citations without a single search action have no server_tool_use to pair with")
+	require.NotContains(t, out, `"tool_use_id":""`)
+}

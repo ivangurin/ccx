@@ -172,6 +172,14 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
+	ServeChatJSON(w, resp, model, entry)
+}
+
+// ServeChatJSON relays one non-stream chat/completions response back as an
+// Anthropic message — shared with the copilot translator (the identical
+// upstream shape; a per-package copy had already drifted in its error text).
+// Exported so copilot reuses this instead of a verbatim duplicate.
+func ServeChatJSON(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
 	var chat models.ChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
 		entry.Status, entry.Error = http.StatusBadGateway, "invalid upstream response: "+err.Error()

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/translators/content"
 )
 
 // sanitizeOrphans heals orphan tool_results before conversion: a tool_result
@@ -44,8 +45,8 @@ func subtractAnswered(msg *models.Message, pending map[string]bool) map[string]b
 	}
 	answeredAny := false
 	for _, b := range blocks {
-		if b.Type == "tool_result" && pending[deref(b.ToolUseID)] {
-			delete(pending, deref(b.ToolUseID))
+		if b.Type == "tool_result" && pending[content.Deref(b.ToolUseID)] {
+			delete(pending, content.Deref(b.ToolUseID))
 			answeredAny = true
 		}
 	}
@@ -65,7 +66,7 @@ func toolUseIDs(msg *models.Message) map[string]bool {
 	}
 	for _, b := range blocks {
 		if b.Type == blockToolUse {
-			ids[deref(b.ID)] = true
+			ids[content.Deref(b.ID)] = true
 		}
 	}
 
@@ -85,13 +86,13 @@ func sanitizeContent(raw json.RawMessage, paired map[string]bool) json.RawMessag
 	changed := false
 	kept := make([]models.ContentBlock, 0, len(blocks))
 	for _, b := range blocks {
-		if b.Type != "tool_result" || paired[deref(b.ToolUseID)] {
+		if b.Type != "tool_result" || paired[content.Deref(b.ToolUseID)] {
 			kept = append(kept, b)
 
 			continue
 		}
 		changed = true
-		if text := toolResultText(b); text != "" {
+		if text := content.ToolResultText(b); text != "" {
 			kept = append(kept, models.ContentBlock{Type: blockText, Text: &text})
 		}
 	}

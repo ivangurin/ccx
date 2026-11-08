@@ -10,6 +10,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
+	"github.com/ivangurin/ccx/internal/pkg/strutil"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 )
@@ -90,16 +91,6 @@ func (t *Translator) serveStream(w http.ResponseWriter, resp *http.Response, mod
 	writer.Close()
 	entry.TTFTMS = ttft.Milliseconds()
 	entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-
-	return ""
 }
 
 // streamEvents converts the upstream Responses SSE into Anthropic events via
@@ -302,7 +293,7 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 		case evError:
 			emit(models.AnthropicEvent{
 				Type:  evError,
-				Error: &models.AnthropicError{Type: "api_error", Message: firstNonEmpty(se.Message, se.Delta)},
+				Error: &models.AnthropicError{Type: "api_error", Message: strutil.FirstNonEmpty(se.Message, se.Delta)},
 			})
 		default:
 			// other Responses events are ignored

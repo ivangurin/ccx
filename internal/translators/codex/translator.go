@@ -20,6 +20,7 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/billing"
+	"github.com/ivangurin/ccx/internal/translators/content"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 	"github.com/ivangurin/ccx/internal/translators/sessionid"
 )
@@ -146,7 +147,7 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 	// with that role ("System messages are not allowed", verified live), so
 	// they merge into instructions — the channel Codex CLI uses for all
 	// system-level text — after the top-level system prompt.
-	instructions := systemText(req.System)
+	instructions := content.SystemText(req.System)
 	var systemMsgs []string
 	out := &ResponsesRequest{
 		Model:           req.Model,
@@ -172,7 +173,7 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 	for _, msg := range req.Messages {
 		if msg.Role == roleSystem {
 			// same wire shape as the top-level system field (string | blocks)
-			systemMsgs = append(systemMsgs, systemText(msg.Content))
+			systemMsgs = append(systemMsgs, content.SystemText(msg.Content))
 
 			continue
 		}
@@ -186,31 +187,6 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 	out.Instructions = billing.Strip(instructions)
 
 	return out
-}
-
-func systemText(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return ""
-	}
-	parts := make([]string, 0, len(blocks))
-	for _, b := range blocks {
-		if b.Type == typeText {
-			parts = append(parts, b.Text)
-		}
-	}
-
-	return strings.Join(parts, "\n")
 }
 
 func convertMessage(msg models.Message) []ResponsesItem {
@@ -237,11 +213,11 @@ func convertMessage(msg models.Message) []ResponsesItem {
 		switch b.Type {
 		case typeText:
 			if msg.Role == roleAssistantS {
-				texts = append(texts, deref(b.Text))
+				texts = append(texts, content.Deref(b.Text))
 			} else {
 				out = append(out, ResponsesItem{
 					Type: typeMessage, Role: msg.Role,
-					Content: json.RawMessage(contentJSON(msg.Role, deref(b.Text))),
+					Content: json.RawMessage(contentJSON(msg.Role, content.Deref(b.Text))),
 				})
 			}
 		case "tool_use":
@@ -254,15 +230,15 @@ func convertMessage(msg models.Message) []ResponsesItem {
 				args = "{}"
 			}
 			out = append(out, ResponsesItem{
-				Type: "function_call", Name: deref(b.Name),
-				Arguments: args, CallID: deref(b.ID),
+				Type: "function_call", Name: content.Deref(b.Name),
+				Arguments: args, CallID: content.Deref(b.ID),
 			})
 		case "tool_result":
 			// the pointer keeps output on the wire even when the result is
 			// empty — omission is a hard 400 (see ResponsesItem.Output)
-			result := toolResultText(b)
+			result := content.ToolResultText(b)
 			out = append(out, ResponsesItem{
-				Type: "function_call_output", CallID: deref(b.ToolUseID),
+				Type: "function_call_output", CallID: content.Deref(b.ToolUseID),
 				Output: &result,
 			})
 		default:
@@ -287,36 +263,6 @@ func contentJSON(role, text string) string {
 	data, _ := json.Marshal([]map[string]string{{"type": field, "text": text}}) //nolint:errchkjson // constant structure
 
 	return string(data)
-}
-
-func toolResultText(b models.ContentBlock) string {
-	var s string
-	if err := json.Unmarshal(b.Content, &s); err == nil {
-		return s
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(b.Content, &blocks); err != nil {
-		return string(b.Content)
-	}
-	parts := make([]string, 0, len(blocks))
-	for _, blk := range blocks {
-		if blk.Type == "text" {
-			parts = append(parts, blk.Text)
-		}
-	}
-
-	return strings.Join(parts, "\n")
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-
-	return *s
 }
 
 // ServeMessages: POST /v1/messages.

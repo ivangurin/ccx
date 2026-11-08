@@ -95,9 +95,12 @@ type webSearchBlock struct {
 
 // blocks: one server_tool_use per search plus one aggregated
 // web_search_tool_result tied to the first search. Nil when the stream
-// never searched.
+// recorded no search action — citations alone (open_page fetches cited by
+// the model) must not produce a result block: with no server_tool_use to
+// pair with, its tool_use_id would be empty and the client's WebSearch
+// parser cannot associate an unpaired result.
 func (c *webSearchCollector) blocks() []webSearchBlock {
-	if len(c.searches) == 0 && len(c.results) == 0 {
+	if len(c.searches) == 0 {
 		return nil
 	}
 	out := make([]webSearchBlock, 0, len(c.searches)+1)
@@ -108,17 +111,11 @@ func (c *webSearchCollector) blocks() []webSearchBlock {
 			block:  models.AnthropicBlock{Type: typeServerToolUse, ID: s.ID, Name: nameWebSearch, Input: input},
 		})
 	}
-	if len(c.results) > 0 {
-		content, _ := json.Marshal(c.results) //nolint:errchkjson // constant shape
-		toolUseID := ""
-		if len(c.searches) > 0 {
-			toolUseID = c.searches[0].ID
-		}
-		out = append(out, webSearchBlock{
-			itemID: typeWebSearchToolResult,
-			block:  models.AnthropicBlock{Type: typeWebSearchToolResult, ToolUseID: toolUseID, Content: content},
-		})
-	}
+	content, _ := json.Marshal(c.results) //nolint:errchkjson // constant shape
+	out = append(out, webSearchBlock{
+		itemID: typeWebSearchToolResult,
+		block:  models.AnthropicBlock{Type: typeWebSearchToolResult, ToolUseID: c.searches[0].ID, Content: content},
+	})
 
 	return out
 }

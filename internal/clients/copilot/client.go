@@ -270,12 +270,15 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// The token is valid and now cached in memory — a failed store save
+	// (read-only home, full disk) must not fail the request it was fetched
+	// for. The cost of a stale store is one extra exchange at the next
+	// process start; failing the turn is unaffordable either way, and the
+	// very next call in THIS process serves from the cache.
 	c.cached, c.expiry = token, expiresAt
 	store.CopilotToken = token
 	store.ExpiresAt = expiresAt.UTC().Format(time.RFC3339)
-	if err := jsonfile.WriteAtomicJSON(c.store, store, 0o600); err != nil {
-		return "", fmt.Errorf("copilot: save token: %w", err)
-	}
+	_ = jsonfile.WriteAtomicJSON(c.store, store, 0o600)
 
 	return token, nil
 }

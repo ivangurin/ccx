@@ -8,6 +8,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
+	"github.com/ivangurin/ccx/internal/translators/content"
 	"github.com/ivangurin/ccx/internal/translators/relay"
 )
 
@@ -125,9 +126,9 @@ func (f *folder) applyDelta(ev models.AnthropicEvent) {
 	blk := &f.out.Content[*ev.Index]
 	switch ev.Delta.Type {
 	case "text_delta":
-		blk.Text = strPtr(derefStr(blk.Text) + ev.Delta.Text)
+		blk.Text = strPtr(content.Deref(blk.Text) + ev.Delta.Text)
 	case "thinking_delta":
-		blk.Thinking = strPtr(derefStr(blk.Thinking) + ev.Delta.Thinking)
+		blk.Thinking = strPtr(content.Deref(blk.Thinking) + ev.Delta.Thinking)
 	case "input_json_delta":
 		f.inputJSON[*ev.Index] += ev.Delta.PartialJSON
 	default:
@@ -160,14 +161,6 @@ func (f *folder) finish() {
 }
 
 func strPtr(s string) *string { return &s }
-
-func derefStr(s *string) string {
-	if s == nil {
-		return ""
-	}
-
-	return *s
-}
 
 // blockFromEvent converts an SSE content block (value strings) into the
 // response DTO (pointer strings) — two types, one shape.

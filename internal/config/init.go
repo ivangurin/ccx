@@ -10,6 +10,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/pkg/strutil"
 )
 
 // DefaultDaemonPort is the default daemon port (fixed: settings.json points
@@ -89,7 +90,7 @@ func profileFromSettings(path string) *models.Profile {
 		return nil
 	}
 	env := settings.Env
-	primary := firstNonEmpty(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], env["ANTHROPIC_DEFAULT_OPUS_MODEL"], env["ANTHROPIC_DEFAULT_MODEL"])
+	primary := strutil.FirstNonEmpty(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], env["ANTHROPIC_DEFAULT_OPUS_MODEL"], env["ANTHROPIC_DEFAULT_MODEL"])
 	haiku := env["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
 
 	prof := &models.Profile{
@@ -157,14 +158,4 @@ func dropAnthropicKeys(env map[string]string) map[string]string {
 	}
 
 	return out
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-
-	return ""
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/translators/billing"
+	"github.com/ivangurin/ccx/internal/translators/content"
 )
 
 // block/role types (goconst).
@@ -55,7 +56,7 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 		out.ToolChoice = mapToolChoice(req.ToolChoice)
 	}
 
-	if sys := billing.Strip(systemText(req.System)); sys != "" {
+	if sys := billing.Strip(content.SystemText(req.System)); sys != "" {
 		out.Messages = append(out.Messages, models.ChatMessage{Role: "system", Content: sys})
 	}
 	for _, msg := range req.Messages {
@@ -97,32 +98,6 @@ func mapToolChoice(raw json.RawMessage) json.RawMessage {
 	}
 }
 
-// systemText extracts the system (a string or text blocks).
-func systemText(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return ""
-	}
-	parts := make([]string, 0, len(blocks))
-	for _, b := range blocks {
-		if b.Type == blockText {
-			parts = append(parts, b.Text)
-		}
-	}
-
-	return strings.Join(parts, "\n")
-}
-
 // convertMessage expands a message into chat messages (a user message with
 // tool_result blocks becomes several messages).
 func convertMessage(msg models.Message) []models.ChatMessage {
@@ -140,28 +115,34 @@ func convertMessage(msg models.Message) []models.ChatMessage {
 	var out []models.ChatMessage
 	var assistantTexts []string
 	var assistantTools []models.ChatToolCall
+	var userTexts []string
 	for _, b := range blocks {
 		switch b.Type {
 		case blockText:
 			if msg.Role == roleAssistant {
-				assistantTexts = append(assistantTexts, deref(b.Text))
+				assistantTexts = append(assistantTexts, content.Deref(b.Text))
 			} else {
-				out = append(out, models.ChatMessage{Role: msg.Role, Content: deref(b.Text)})
+				// buffered, not emitted in place: a text block sitting before
+				// the message's tool_results (hook/skill text prepended) must
+				// not land between the assistant tool_calls and the tool
+				// answers — strict upstreams reject a role:tool message that
+				// does not directly follow the tool_calls with a 400
+				userTexts = append(userTexts, content.Deref(b.Text))
 			}
 		case blockToolUse:
 			assistantTools = append(assistantTools, models.ChatToolCall{
-				ID:   deref(b.ID),
+				ID:   content.Deref(b.ID),
 				Type: "function",
 				Function: models.ChatFunction{
-					Name:      deref(b.Name),
+					Name:      content.Deref(b.Name),
 					Arguments: string(b.Input),
 				},
 			})
 		case "tool_result":
 			out = append(out, models.ChatMessage{
 				Role:       "tool",
-				Content:    toolResultText(b),
-				ToolCallID: deref(b.ToolUseID),
+				Content:    content.ToolResultText(b),
+				ToolCallID: content.Deref(b.ToolUseID),
 			})
 		default:
 			// image and unknown blocks are skipped — don't drop the dialogue
@@ -177,36 +158,9 @@ func convertMessage(msg models.Message) []models.ChatMessage {
 
 		return []models.ChatMessage{assistant}
 	}
+	for _, text := range userTexts {
+		out = append(out, models.ChatMessage{Role: msg.Role, Content: text})
+	}
 
 	return out
-}
-
-func toolResultText(b models.ContentBlock) string {
-	var s string
-	if err := json.Unmarshal(b.Content, &s); err == nil {
-		return s
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal(b.Content, &blocks); err != nil {
-		return string(b.Content)
-	}
-	parts := make([]string, 0, len(blocks))
-	for _, blk := range blocks {
-		if blk.Type == blockText {
-			parts = append(parts, blk.Text)
-		}
-	}
-
-	return strings.Join(parts, "\n")
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-
-	return *s
 }

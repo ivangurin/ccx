@@ -214,21 +214,11 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	t.serveJSON(w, resp, req.Model, &entry)
 }
 
+// serveJSON delegates to the openai translator's shared implementation —
+// copilot's upstream answer IS a chat/completions response, and a local
+// verbatim copy had already drifted from the original in its error text.
 func (t *Translator) serveJSON(w http.ResponseWriter, resp *http.Response, model string, entry *usagelog.Entry) {
-	var chat models.ChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
-		entry.Status, entry.Error = http.StatusBadGateway, "invalid response: "+err.Error()
-		relay.WriteErr(w, http.StatusBadGateway, entry.Error)
-
-		return
-	}
-	entry.InputTokens, entry.OutputTokens = chat.Usage.InputTokens, chat.Usage.OutputTokens
-	out := openai.BuildMessagesResponse(&chat, model)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if data, merr := json.Marshal(out); merr == nil {
-		_, _ = w.Write(data)
-	}
+	openai.ServeChatJSON(w, resp, model, entry)
 }
 
 // ServeCountTokens: local estimation.

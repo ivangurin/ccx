@@ -134,6 +134,34 @@ func TestToken_RefreshOnExpiry(t *testing.T) {
 	require.Equal(t, "tid_copilot_secret", tok)
 }
 
+// A failed store save after a SUCCESSFUL exchange must not fail the
+// request: the token is valid and already cached in memory — a disk failure
+// (read-only home, full disk) costs one extra exchange at the next process
+// start, not a dead turn.
+func TestToken_SaveFailureStillReturnsToken(t *testing.T) {
+	gh := &fakeGitHub{}
+	up := httptest.NewServer(gh.handler(t))
+	t.Cleanup(up.Close)
+
+	// the store's directory is read-only: the exchange succeeds, the save cannot
+	dir := t.TempDir()
+	store := filepath.Join(dir, "copilot-auth.json")
+	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{userTokenKey: "gho_user"}, 0o600))
+	require.NoError(t, os.Chmod(dir, 0o500))       //nolint:gosec // the read-only dir IS the test
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) //nolint:gosec // test cleanup
+	client := newClient(t, up, store)
+
+	token, err := client.Token(context.Background())
+	require.NoError(t, err, "a valid exchanged token must be returned despite the save failure")
+	require.Equal(t, "tid_copilot_secret", token)
+
+	// the in-memory cache holds it: the very next call exchanges nothing
+	token2, err := client.Token(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, token, token2)
+	require.EqualValues(t, 1, gh.exchangeCalls.Load(), "the second call serves from the cache")
+}
+
 func TestToken_NotAuthenticated(t *testing.T) {
 	gh := httptest.NewServer((&fakeGitHub{}).handler(t))
 	t.Cleanup(gh.Close)

@@ -1,6 +1,7 @@
 package relay_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,8 +55,45 @@ func TestUpstreamError_NonJSONBodyIsWrapped(t *testing.T) {
 
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.JSONEq(t,
-		`{"type":"error","error":{"type":"api_error","message":"upstream 502"}}`,
+		`{"type":"error","error":{"type":"api_error","message":"upstream 502: plain text gateway noise"}}`,
 		rec.Body.String())
+}
+
+// The provider's actual reason must survive the wrap — quotes and all: a
+// plain-text cause ("rate limited", a quoted reason, an HTML block) is the
+// user's only diagnostic, and a huge body is cut to a bounded snippet.
+func TestUpstreamError_NonJSONBodyReasonSurvives(t *testing.T) {
+	resp := httpResponse(http.StatusForbidden, `denied: "automatization" not allowed`)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	rec := httptest.NewRecorder()
+
+	relay.UpstreamError(rec, resp)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.JSONEq(t,
+		`{"type":"error","error":{"type":"api_error","message":"upstream 403: denied: \"automatization\" not allowed"}}`,
+		rec.Body.String())
+}
+
+func TestUpstreamError_NonJSONBodyIsCapped(t *testing.T) {
+	big := strings.Repeat("x", 100*1024)
+	resp := httpResponse(http.StatusTooManyRequests, big)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	rec := httptest.NewRecorder()
+
+	relay.UpstreamError(rec, resp)
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	var out struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	// "upstream 429: " + snippet + "…" — the snippet is bounded well below
+	// the 64 KiB body cap
+	require.Less(t, len(out.Error.Message), 700)
+	require.True(t, strings.HasSuffix(out.Error.Message, "…"))
 }
 
 func httpResponse(status int, body string) *http.Response {
