@@ -37,6 +37,12 @@ Run a single test:
 go test ./internal/services/switcher/... -run TestName -count=1
 ```
 
+Releasing = push an annotated tag `v*` to origin: `.github/workflows/release.yml`
+triggers on the tag, bakes `GITHUB_REF_NAME` into `cli.Version` via ldflags
+(no version bump commit — the code itself only carries `dev`), and attaches
+`ccx-macos-<tag>.zip`; tag messages are release-note style, the run takes
+~40s (verified live, v0.3.0).
+
 ## Architecture
 
 CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
