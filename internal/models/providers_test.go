@@ -77,17 +77,19 @@ func TestProviders_UnmarshalJSON_UnusedKeyGarbageIgnored(t *testing.T) {
 
 func TestProviders_UnmarshalJSON_DaemonBlockNormalized(t *testing.T) {
 	for name, raw := range map[string]string{ //nolint:gosec // fixture dummies under an auth_token key, not credentials
-		"absent":     `{}`,
-		"null":       `{"daemon": null}`,
-		"empty":      `{"daemon": {}}`,
-		"zero port":  `{"daemon": {"port": 0}}`,
-		"dead token": `{"daemon": {"port": 0, "auth_token": "dead"}}`,
+		"absent":      `{}`,
+		"null":        `{"daemon": null}`,
+		"empty":       `{"daemon": {}}`,
+		"zero port":   `{"daemon": {"port": 0}}`,
+		"dead token":  `{"daemon": {"port": 0, "auth_token": "dead"}}`,
+		"debug false": `{"daemon": {"debug": false}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var p models.Providers
 			require.NoError(t, json.Unmarshal([]byte(raw), &p))
 			require.Nil(t, p.Daemon)
 			require.Equal(t, 0, p.DaemonPort())
+			require.False(t, p.DaemonDebug())
 		})
 	}
 
@@ -95,6 +97,35 @@ func TestProviders_UnmarshalJSON_DaemonBlockNormalized(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"daemon": {"port": 4567, "auth_token": "dead"}}`), &p))
 	require.NotNil(t, p.Daemon)
 	require.Equal(t, 4567, p.DaemonPort())
+}
+
+// daemon.debug — the debug launch flag: the SWITCHER reads it and passes
+// --debug to the spawned daemon (the daemon itself never reads this block).
+func TestProviders_UnmarshalJSON_DaemonDebug(t *testing.T) {
+	t.Run("debug only", func(t *testing.T) {
+		var p models.Providers
+		require.NoError(t, json.Unmarshal([]byte(`{"daemon": {"debug": true}}`), &p))
+		require.NotNil(t, p.Daemon) // {debug: true} is not an empty block
+		require.True(t, p.DaemonDebug())
+		require.Equal(t, 0, p.DaemonPort())
+	})
+
+	t.Run("port and debug together", func(t *testing.T) {
+		var p models.Providers
+		require.NoError(t, json.Unmarshal([]byte(`{"daemon": {"port": 4600, "debug": true}}`), &p))
+		require.Equal(t, 4600, p.DaemonPort())
+		require.True(t, p.DaemonDebug())
+	})
+}
+
+func TestProviders_MarshalJSON_DaemonDebug(t *testing.T) {
+	p := models.Providers{}
+	p.Providers.Set(zaiKey, &models.Profile{Name: "z.ai", Protocol: models.ProtocolAnthropic})
+	p.Daemon = &models.Daemon{Debug: true}
+
+	raw, err := json.Marshal(&p)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"daemon":{"debug":true}`) // port omitted at 0
 }
 
 func TestProviders_MarshalJSON_NoEmptyDaemonBlock(t *testing.T) {

@@ -2,13 +2,17 @@ package models
 
 import "encoding/json"
 
-// Daemon holds the local ccx daemon's only parameter: the listen port
-// (optional — absent/0 means the default 4567 at resolution time). There is
-// no daemon-owned secret anymore: openai credentials are pass-through (the
-// token Claude Code sends travels upstream), copilot/codex own theirs in
-// the translators; the surface is localhost-only.
+// Daemon holds the local ccx daemon's launch parameters: the listen port
+// and the debug flag (both optional — absent/0/false at resolution time).
+// The block is SWITCHER-OWNED: the switcher reads it and spawns the daemon
+// with --port/--debug; the daemon itself never reads it (its flags are the
+// single input). There is no daemon-owned secret anymore: openai
+// credentials are pass-through (the token Claude Code sends travels
+// upstream), copilot/codex own theirs in the translators; the surface is
+// localhost-only.
 type Daemon struct {
-	Port int `json:"port,omitempty"`
+	Port  int  `json:"port,omitempty"`
+	Debug bool `json:"debug,omitempty"`
 }
 
 // Providers is the root of providers.json (unversioned). The provider
@@ -31,6 +35,11 @@ func (p *Providers) DaemonPort() int {
 	}
 
 	return p.Daemon.Port
+}
+
+// DaemonDebug is daemon.debug, nil-safe (no daemon block = no debug).
+func (p *Providers) DaemonDebug() bool {
+	return p.Daemon != nil && p.Daemon.Debug
 }
 
 // UnmarshalJSON — why custom: the legacy "profiles" key must keep loading
@@ -59,10 +68,11 @@ func (p *Providers) UnmarshalJSON(b []byte) error {
 		}
 	}
 	p.Daemon = raw.Daemon
-	// An empty/zero-port daemon block is semantically "no block": normalizing
-	// at decode time guarantees every re-save omits the key (a value struct
-	// with omitempty can never be omitted — hence the pointer).
-	if p.Daemon != nil && p.Daemon.Port == 0 {
+	// An empty daemon block is semantically "no block": normalizing at decode
+	// time guarantees every re-save omits the key (a value struct with
+	// omitempty can never be omitted — hence the pointer). A block with only
+	// debug:false is as empty as one with only port:0.
+	if p.Daemon != nil && p.Daemon.Port == 0 && !p.Daemon.Debug {
 		p.Daemon = nil
 	}
 

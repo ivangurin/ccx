@@ -22,19 +22,29 @@ type fakeDaemon struct {
 	mu        sync.Mutex
 	restartOK bool
 	restarts  []string // "profile:port" per call
+	debugs    []bool   // the debug launch flag per call
 	stopN     int
 	stopErr   error
 }
 
-func (f *fakeDaemon) Restart(_ context.Context, providerKey string, port int) error {
+func (f *fakeDaemon) Restart(_ context.Context, providerKey string, port int, debug bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restarts = append(f.restarts, providerKey+":"+itoa(port))
+	f.debugs = append(f.debugs, debug)
 	if f.restartOK {
 		return nil
 	}
 
 	return errors.New("daemon did not come up")
+}
+
+// lastDebugs snapshots the recorded debug flags (nil-safe on no calls).
+func (f *fakeDaemon) lastDebugs() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]bool(nil), f.debugs...)
 }
 
 func (f *fakeDaemon) Stop(_ context.Context) error {
@@ -258,6 +268,22 @@ func TestApply_NoCredentials_PlaceholderToken(t *testing.T) {
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "ccx", env["ANTHROPIC_AUTH_TOKEN"])
+}
+
+// daemon.debug is switcher-owned launch config: the daemon block is read
+// HERE (from the same providers.json snapshot the route comes from) and
+// rides the spawn as --debug — the daemon itself never reads the block.
+func TestApply_DaemonDebugPassedToRestart(t *testing.T) {
+	sw, d, sp := newTestSwitcher(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Daemon.Debug = true
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+
+	require.Equal(t, []bool{true}, d.lastDebugs())
 }
 
 // A failed restart leaves settings.json byte-identical — the invariant.

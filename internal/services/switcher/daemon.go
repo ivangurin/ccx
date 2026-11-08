@@ -59,17 +59,22 @@ func baseURL(port int) string {
 }
 
 // Restart stops any running daemon, waits out its drain, spawns a fresh one
-// with the launch parameters and waits for /health — which answering means
+// with the launch parameters (--provider/--port, plus --debug when the
+// switcher read daemon.debug) and waits for /health — which answering means
 // the translator passed Ready() (the daemon builds the route before
 // listening).
-func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int) error {
+func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int, debug bool) error {
 	if err := d.Stop(ctx); err != nil {
 		return err
 	}
 	if err := d.waitDrained(ctx); err != nil {
 		return err
 	}
-	if err := spawn(d.cfg, "--provider", providerKey, "--port", strconv.Itoa(port)); err != nil {
+	args := []string{"--provider", providerKey, "--port", strconv.Itoa(port)}
+	if debug {
+		args = append(args, "--debug")
+	}
+	if err := spawn(d.cfg, args...); err != nil {
 		return fmt.Errorf("daemon: spawn: %w", err)
 	}
 	base := baseURL(port)

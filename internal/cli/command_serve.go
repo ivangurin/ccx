@@ -29,7 +29,7 @@ func (f *serveFlags) bind(cmd *cobra.Command) {
 	fl.StringVar(&f.provider, "provider", "", "providers.json key to proxy (required)")
 	fl.IntVar(&f.port, "port", 0, "listen port (default: CCX_PORT > daemon.port > 4567)")
 	fl.BoolVar(&f.daemon, "daemon", false, "spawned mode (output to daemon.log)")
-	fl.BoolVar(&f.debug, "debug", false, "debug logging: level=debug, dev format, tee into <CCX_HOME>/logs/debug-<launch time>.log")
+	fl.BoolVar(&f.debug, "debug", false, "debug logging: level=debug, dev format, tee into <CCX_HOME>/logs/debug-<launch time>.log (providers.json daemon.debug makes the switcher pass this flag)")
 }
 
 // options validates the parsed flags and converts them to daemon options.

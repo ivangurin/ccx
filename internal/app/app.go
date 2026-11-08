@@ -31,7 +31,9 @@ var Version = "dev"
 type ServeOptions struct {
 	// Provider is the providers.json key the route is built from (required).
 	Provider string
-	// Port is the listen port; 0 = resolve (CCX_PORT > daemon.port > 4567).
+	// Port is the listen port; 0 = resolve (CCX_PORT > 4567 — providers.json
+	// daemon.port is switcher-owned and never read here; the switcher always
+	// passes an explicit --port).
 	Port int
 	// Debug switches the daemon logger to debug/dev and tees it into
 	// <LogDir>/debug-<launch time>.log (wired in cli; Run itself ignores it —
@@ -76,12 +78,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 		return fmt.Errorf("app: %w", err)
 	}
 
-	port := opts.Port
-	if port == 0 {
-		// the single port-resolution chain (CCX_PORT > daemon.port > 4567) —
-		// a local copy here used to drift from the CLI's resolution
-		port = config.ResolveDaemonPort(a.cfg, 0)
-	}
+	port := resolveListenPort(a.cfg, opts.Port)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -140,6 +137,25 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 // default makes a lock-held test wait out the full 5s).
 var lockRetry = 5 * time.Second
 
+// resolveListenPort is the daemon-side fallback when --port is absent: env
+// CCX_PORT, else the fixed default. providers.json daemon.* is deliberately
+// NOT read — that block is switcher-owned launch config, and the switcher
+// always passes an explicit --port; daemon.port reaches the daemon through
+// the switcher's resolution (config.ResolveDaemonPort), never its own.
+func resolveListenPort(c *config.Config, flagPort int) int {
+	if flagPort > 0 {
+		return flagPort
+	}
+	if c.DaemonPort > 0 {
+		return c.DaemonPort
+	}
+
+	return config.DefaultDaemonPort
+}
+
+// ResolveListenPortForTest exports resolveListenPort for fallback tests.
+var ResolveListenPortForTest = resolveListenPort
+
 // SetLockRetryForTest overrides the lock retry window; ResetLockRetryForTest
 // restores it.
 func SetLockRetryForTest(d time.Duration) { lockRetry = d }
@@ -176,5 +192,5 @@ func (a *App) pidfilePath() string {
 
 func (a *App) writePidfile() {
 	_ = os.MkdirAll(a.cfg.LogDir(), 0o750)
-	_ = os.WriteFile(a.pidfilePath(), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600) //nolint:gosec // fixed permissions
+	_ = os.WriteFile(a.pidfilePath(), fmt.Appendf(nil, "%d\n", os.Getpid()), 0o600) //nolint:gosec // fixed permissions
 }

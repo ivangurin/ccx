@@ -28,8 +28,10 @@ import (
 // HTTP client + detached spawn; tests substitute a mock).
 type Daemon interface {
 	// Restart — stop any running daemon, spawn a fresh one with the launch
-	// params and wait for readiness (health == translator Ready()).
-	Restart(ctx context.Context, providerKey string, port int) error
+	// params and wait for readiness (health == translator Ready()). The
+	// params carry the providers.json daemon block (--port/--debug): the
+	// daemon never reads that block itself.
+	Restart(ctx context.Context, providerKey string, port int, debug bool) error
 	// Stop — best-effort shutdown of a running daemon (a direct anthropic
 	// profile doesn't need it); a no-op success if it is not running.
 	Stop(ctx context.Context) error
@@ -101,8 +103,11 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	}
 
 	// Invariant: the restarted daemon is ready BEFORE the settings.json edit.
+	// The daemon block is switcher-owned: the port resolves here, daemon.debug
+	// comes from the same providers.json snapshot the route was built from —
+	// both ride the spawn as flags; the daemon never reads the block.
 	port := config.ResolveDaemonPort(s.cfg, 0)
-	if err := s.daemon.Restart(ctx, profileKey, port); err != nil {
+	if err := s.daemon.Restart(ctx, profileKey, port, providers.DaemonDebug()); err != nil {
 		return "", fmt.Errorf("ccx: cancelled: daemon did not come up (%v) — settings.json untouched, you stay on the previous provider", err)
 	}
 

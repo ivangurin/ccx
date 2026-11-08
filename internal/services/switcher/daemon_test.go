@@ -203,48 +203,57 @@ func watchingHandler(f *fakeAdminDaemon, procDone <-chan struct{}) http.Handler 
 }
 
 // Restart against a fake old daemon + injectable spawn: stop the old one,
-// spawn with --provider/--port, wait for health on the new one — in order.
+// spawn with --provider/--port (--debug when the launch carries it), wait
+// for health on the new one — in order.
 func TestHTTPDaemon_RestartStopsThenSpawnsThenWaitsHealth(t *testing.T) {
-	shortenWaits()
-	f := newFakeAdminDaemon(t, true) // the OLD daemon: closes on /admin/stop
+	for name, debug := range map[string]bool{"plain": false, "debug": true} {
+		t.Run(name, func(t *testing.T) {
+			shortenWaits()
+			f := newFakeAdminDaemon(t, true) // the OLD daemon: closes on /admin/stop
 
-	cfg := f.config(t)
-	oldPort := serverPort(t, f.srv)
-	cfg.DaemonStartTimeout = 2 * time.Second
+			cfg := f.config(t)
+			oldPort := serverPort(t, f.srv)
+			cfg.DaemonStartTimeout = 2 * time.Second
 
-	// spawn seam: remember the args and start the NEW fake daemon on the same
-	// port (free after the stop) — /health answers from then on.
-	var spawnArgs []string
-	var spawnMu sync.Mutex
-	switcher.SetSpawnForTest(func(_ *config.Config, args ...string) error {
-		spawnMu.Lock()
-		spawnArgs = append([]string(nil), args...)
-		spawnMu.Unlock()
-		f.record("spawn")
-		lis, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(oldPort))
-		if err != nil {
-			return err // the old daemon still holds the port — ordering broken
-		}
-		newFake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		newFake.Listener = lis
-		newFake.Start()
-		t.Cleanup(newFake.Close)
-		f.record("health-up")
+			// spawn seam: remember the args and start the NEW fake daemon on
+			// the same port (free after the stop) — /health answers from then on.
+			var spawnArgs []string
+			var spawnMu sync.Mutex
+			switcher.SetSpawnForTest(func(_ *config.Config, args ...string) error {
+				spawnMu.Lock()
+				spawnArgs = append([]string(nil), args...)
+				spawnMu.Unlock()
+				f.record("spawn")
+				lis, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(oldPort))
+				if err != nil {
+					return err // the old daemon still holds the port — ordering broken
+				}
+				newFake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				}))
+				newFake.Listener = lis
+				newFake.Start()
+				t.Cleanup(newFake.Close)
+				f.record("health-up")
 
-		return nil
-	})
-	t.Cleanup(switcher.ResetSpawnForTest)
+				return nil
+			})
+			t.Cleanup(switcher.ResetSpawnForTest)
 
-	d := switcher.NewHTTPDaemon(cfg)
-	require.NoError(t, d.Restart(context.Background(), "work", oldPort))
+			d := switcher.NewHTTPDaemon(cfg)
+			require.NoError(t, d.Restart(context.Background(), "work", oldPort, debug))
 
-	events := f.snapshot()
-	require.Equal(t, []string{"stop", "spawn", "health-up"}, events)
-	spawnMu.Lock()
-	defer spawnMu.Unlock()
-	require.Equal(t, []string{"--provider", "work", "--port", strconv.Itoa(oldPort)}, spawnArgs)
+			events := f.snapshot()
+			require.Equal(t, []string{"stop", "spawn", "health-up"}, events)
+			spawnMu.Lock()
+			defer spawnMu.Unlock()
+			want := []string{"--provider", "work", "--port", strconv.Itoa(oldPort)}
+			if debug {
+				want = append(want, "--debug")
+			}
+			require.Equal(t, want, spawnArgs)
+		})
+	}
 }
 
 // The spawned daemon never becomes healthy — Restart fails with the log hint.
@@ -258,7 +267,7 @@ func TestHTTPDaemon_RestartHealthTimeout(t *testing.T) {
 	t.Cleanup(switcher.ResetSpawnForTest)
 
 	d := switcher.NewHTTPDaemon(cfg)
-	err := d.Restart(context.Background(), "work", serverPort(t, f.srv))
+	err := d.Restart(context.Background(), "work", serverPort(t, f.srv), false)
 	require.ErrorContains(t, err, "daemon.log")
 }
 
@@ -308,7 +317,7 @@ func TestHTTPDaemon_RestartWaitsForDrainingOldDaemon(t *testing.T) {
 	t.Cleanup(switcher.ResetSpawnForTest)
 
 	d := switcher.NewHTTPDaemon(cfg)
-	require.NoError(t, d.Restart(context.Background(), "work", oldPort))
+	require.NoError(t, d.Restart(context.Background(), "work", oldPort, false))
 	select {
 	case <-childDone(t, child):
 	case <-time.After(3 * time.Second):

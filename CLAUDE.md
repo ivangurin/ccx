@@ -55,7 +55,9 @@ under the `providers`
 key, connection fields `base_url`/`api_key`/… sit directly in the provider
 entry, `protocol` decides which of them are meaningful; the client
 masquerade — UA, editor versions, integration id, originator, prefill — is
-code constants, not config; `daemon.port` is optional; a legacy `profiles`
+code constants, not config; the `daemon` block (`port`, `debug`) is
+optional and SWITCHER-OWNED — the switcher reads it and spawns the daemon
+with `--port`/`--debug`, the daemon itself never reads the block; a legacy `profiles`
 key / `version` / `daemon.auth_token` load forever and self-migrate on the
 next load — best-effort rewrite via SaveProviders).
 
@@ -70,7 +72,7 @@ internal/
                                          hint texts, cobra owns parsing/help/completion
   app/                                  app.Run(): serve mode: config→logger→lock→route(Build)→http
                                          spawn.go: detached daemon launch (Setsid, pidfile,
-                                         --provider/--port args)
+                                         --provider/--port/--debug args)
   config/                               env config + CCX_* paths + providers.json (load/save, 0600)
                                          Home=~/.ccx; settings.json default stays in ~/.claude
                                          providers.go: ResolveDaemonPort (flag > CCX_PORT >
@@ -120,13 +122,16 @@ internal/
 ### Key invariants (from bash-ccx, mandatory)
 
 - **Readiness before settings.json**: switching a translated profile
-  (openai/copilot/codex) restarts the daemon with `--provider`/`--port` and
-  waits for `/health` — which answering means the translator's `Ready()`
-  passed (the daemon builds the route before listening); on failure,
-  `~/.claude/settings.json` is left untouched and the user stays on the
-  previous profile. Restart kills in-flight SSE requests — accepted
-  trade-off of the restart semantics. Port precedence everywhere:
-  `--port` flag > `CCX_PORT` > `daemon.port` > 4567.
+  (openai/copilot/codex) restarts the daemon with `--provider`/`--port`
+  (plus `--debug` when `daemon.debug` is set) and waits for `/health` —
+  which answering means the translator's `Ready()` passed (the daemon
+  builds the route before listening); on failure, `~/.claude/settings.json`
+  is left untouched and the user stays on the previous profile. Restart
+  kills in-flight SSE requests — accepted trade-off of the restart
+  semantics. Port precedence everywhere: `--port` flag > `CCX_PORT` >
+  `daemon.port` > 4567 — but the providers.json `daemon` block is read by
+  the SWITCHER only (it spawns with explicit `--port`/`--debug`); the
+  daemon's own fallback without `--port` is just `CCX_PORT` > 4567.
 - **Anthropic passthrough goes direct**: a `protocol: anthropic` profile
   needs no translation — the upstream `base_url` + credential are written
   straight into settings.json (bash-ccx semantics), and the unused daemon is
