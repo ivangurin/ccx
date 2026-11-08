@@ -80,7 +80,6 @@ internal/
                                          init.go: ccx init — import from settings/env.json + templates
   models/                               DTOs: anthropic(+sse), openai, codex, profile, providers,
                                          settings, state, admin
-  service_provider/                     DI: lazy singleton getters
   api/
     handlers/                           chi router: /v1/* (messages, count_tokens, models),
                                          /admin/* (health, stop), /health — localhost-only, no token;
@@ -115,8 +114,8 @@ internal/
     jsonfile/                           atomic JSON writes (tmp+rename, permissions)
     sse/                                upstream SSE reader + AnthropicWriter
     tui/                                interactive menu (arrows/filter/fallback)
-    tokenestimate/                      local count_tokens estimation
-    suite/provider/                     test counterpart of service_provider
+    suite/provider/                     test suite: temp CCX_HOME, safe config, lazy mocks,
+                                         cleanup (settings default pinned away from the live ~/.claude)
 ```
 
 ### Key invariants (from bash-ccx, mandatory)
@@ -244,15 +243,22 @@ internal/
 - **A codex stream without a terminal event is a truncation, not an empty
   answer** (verified live 2026-11-08 17:42–17:45): eight consecutive
   requests returned 200 + an EMPTY assistant message — usage log in=0/out=0
-  is the tell (response.completed never arrived; ttft present means the
-  stream did start) — and Claude Code rendered "no visible output" and
-  retried into the same wall; the identical signature appeared twice on the
+  is the tell (no terminal usage arrived; ttft present means the stream
+  did start) — and Claude Code rendered "no visible output" and retried
+  into the same wall; the identical signature appeared twice on the
   pre-fix binary at 16:50, i.e. a backend-side truncation, not a ccx
-  regression. The stream machine now treats a clean end without
-  response.completed/failed/incomplete as an error event (usage log 502
-  "upstream stream ended without completion"); `response.incomplete` is
-  handled as terminal too — usage captured, `incomplete_details.reason`
-  relayed in the error.
+  regression. The follow-up window (20:53–20:56, post-fix) exposed the
+  actual terminal event: `response.incomplete` with reason
+  `max_output_tokens`, NO usage in the payload, ~6–8s after stream start —
+  the pre-fix code dropped it as an unknown event, which is what the 17:42
+  empties were. The failure is intermittent and backend-side: a byte-exact
+  replay of a failing request (reassembled from the CC transcript's
+  api-request-blobs) passes minutes later. The stream machine now treats a
+  clean end without response.completed/failed/incomplete as an error event
+  (usage log 502 "upstream stream ended without completion");
+  `response.incomplete` is handled as terminal — usage captured when
+  present, `incomplete_details.reason` relayed in the error. Catch the next
+  window live with CCX_DUMP_DIR to see the raw incomplete event.
 - **CCX_DUMP_DIR captures the raw codex upstream SSE** (`codex-sse-*.json`,
   one file per event) next to the request/error dumps — the wire-shape
   class of bugs (like the parallel-call delivery) is only visible on the
