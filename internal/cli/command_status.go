@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
@@ -11,16 +12,27 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
+// quotaTimeout bounds the quota fetch: ccx status is a local-state command,
+// and a hung network (VPN come-back, DNS stall) must not freeze it — the
+// panel is supplementary and its own 15s client deadline is far too patient
+// for a status line. Var for tests.
+var quotaTimeout = 3 * time.Second
+
 // copilotQuota fetches the subscription quota panel (var for tests; the
 // default talks to the API with the cached login).
 var copilotQuota = func(storePath string) (*copilot_client.QuotaInfo, error) {
-	return copilot_client.New(storePath).Quota(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), quotaTimeout)
+	defer cancel()
+
+	return copilot_client.New(storePath).Quota(ctx)
 }
 
 // runStatus — ccx status: active provider/model from state.json; a
 // Copilot quota panel rides along when the active provider speaks copilot —
 // the pool is what the daemon's quota marking spends, and status is where
-// the burn becomes visible instead of felt.
+// the burn becomes visible instead of felt. The local lines print BEFORE
+// the panel: the quota fetch is the only network call here, and it must
+// never hold the local answer hostage.
 func runStatus(_ []string, stdout io.Writer) int {
 	cfg, err := config.NewFromEnv()
 	if err != nil {
@@ -40,16 +52,18 @@ func runStatus(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
+	copilot := false
 	if prof := providers.Providers.Get(state.Provider); prof == nil {
 		fmt.Fprintf(stdout, "Active provider: %s (missing from providers.json — deleted?)\n", state.Provider)
 	} else {
 		fmt.Fprintf(stdout, "Active provider: %s (%s) · %s\n", state.Provider, prof.Name, prof.Protocol)
-		if prof.Protocol == models.ProtocolCopilot {
-			printCopilotQuota(cfg, state.Provider, stdout)
-		}
+		copilot = prof.Protocol == models.ProtocolCopilot
 	}
 	fmt.Fprintf(stdout, "Model:          %s\n", state.Model)
 	fmt.Fprintf(stdout, "Updated:        %s\n", state.Updated)
+	if copilot {
+		printCopilotQuota(cfg, state.Provider, stdout)
+	}
 
 	return 0
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/ivangurin/ccx/internal/clients/copilot"
@@ -49,6 +50,32 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	require.Contains(t, out.String(), "Copilot quota")
 	require.Contains(t, out.String(), "INDIVIDUAL")
 	require.Contains(t, out.String(), "ai credits: 37/300 remaining · resets 2026-12-01")
+}
+
+// The local lines print BEFORE the quota panel: the panel is the only
+// network call in ccx status, and a slow fetch must never hold the local
+// answer hostage (a hung VPN used to freeze the command for the client's
+// full 15s deadline with nothing on screen after the provider line).
+func TestStatus_LocalLinesPrintBeforeQuotaPanel(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{}
+	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	setStatusState(t, sp.Config, "work")
+
+	old := copilotQuota
+	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+		return &copilot.QuotaInfo{CopilotPlan: "INDIVIDUAL"}, nil
+	}
+	t.Cleanup(func() { copilotQuota = old })
+
+	var out bytes.Buffer
+	require.Equal(t, 0, runStatus(nil, &out))
+
+	outStr := out.String()
+	require.Less(t, strings.Index(outStr, "Model:"), strings.Index(outStr, "Copilot quota"),
+		"Model/Updated must render before the quota panel")
+	require.Less(t, strings.Index(outStr, "Updated:"), strings.Index(outStr, "Copilot quota"))
 }
 
 func TestStatus_NoQuotaForOtherProtocols(t *testing.T) {
