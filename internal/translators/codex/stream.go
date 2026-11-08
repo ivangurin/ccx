@@ -48,6 +48,11 @@ type streamEvent struct {
 		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
+		// incomplete_details rides response.incomplete (the documented third
+		// terminal event, e.g. content_filter / max_output_tokens)
+		IncompleteDetails *struct {
+			Reason string `json:"reason"`
+		} `json:"incomplete_details"`
 	} `json:"response"`
 }
 
@@ -118,6 +123,13 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 	stopReason := "end_turn"
 	var search webSearchCollector
 	started := false
+	// ended — the stream's fate is known: a terminal event
+	// (completed/failed/incomplete) or an already-relayed stream error. A
+	// clean EOF without one is an upstream truncation — observed live
+	// 2026-11-08 (17:42-17:45: 200 + an EMPTY assistant message on every
+	// codex request; the usage log's in=0/out=0 was the tell) — and must
+	// surface as an error, never as a healthy empty answer.
+	ended := false
 
 	openBlock := func(itemID string, block models.AnthropicBlock) {
 		idx := nextIndex
@@ -161,6 +173,7 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 				Type:  evError,
 				Error: &models.AnthropicError{Type: "api_error", Message: "upstream stream interrupted"},
 			})
+			ended = true // the error is relayed; no truncation error after the loop
 
 			break
 		}
@@ -244,6 +257,7 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 		case "response.function_call_arguments.done":
 			emitArgs(se.ItemID, se.Arguments)
 		case "response.completed":
+			ended = true
 			if se.Response != nil && se.Response.Usage != nil {
 				usage = *se.Response.Usage
 			}
@@ -260,9 +274,26 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 				openBlock(blk.itemID, blk.block)
 			}
 		case "response.failed":
+			ended = true
 			msg := "response failed"
 			if se.Response != nil && se.Response.Error != nil && se.Response.Error.Message != "" {
 				msg = se.Response.Error.Message
+			}
+			emit(models.AnthropicEvent{
+				Type:  evError,
+				Error: &models.AnthropicError{Type: "api_error", Message: msg},
+			})
+		case "response.incomplete":
+			// a terminal event too: an incomplete answer (content filter,
+			// output cap) is not an answer — capture the usage it still
+			// reports and surface the reason as an error
+			ended = true
+			if se.Response != nil && se.Response.Usage != nil {
+				usage = *se.Response.Usage
+			}
+			msg := "upstream response incomplete"
+			if se.Response != nil && se.Response.IncompleteDetails != nil && se.Response.IncompleteDetails.Reason != "" {
+				msg += ": " + se.Response.IncompleteDetails.Reason
 			}
 			emit(models.AnthropicEvent{
 				Type:  evError,
@@ -279,6 +310,15 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 	}
 	if !started {
 		return false
+	}
+	if !ended {
+		// a clean end (EOF/[DONE]) without a terminal event — the upstream
+		// truncated the stream; the error event keeps it a visible failure in
+		// the client AND in the usage log (serveStream maps evError to 502)
+		emit(models.AnthropicEvent{
+			Type:  evError,
+			Error: &models.AnthropicError{Type: "api_error", Message: "upstream stream ended without completion"},
+		})
 	}
 	// close ALL blocks in opening order
 	for _, id := range itemOrder {

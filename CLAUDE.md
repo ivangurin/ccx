@@ -233,6 +233,26 @@ internal/
   must serialize as `arguments:"{}"`, never omitted via omitempty
   (`Missing required parameter: 'input[N].arguments'`, verified live
   2026-11-08 — replaying a history with inputless tool_use calls).
+- **Codex `output` is type-strict per item** (verified live 2026-11-08):
+  `function_call_output` must carry `output` even when the result is empty
+  (`Missing required parameter: 'input[N].output'` — an Agent call that
+  returned no content), while every OTHER item type must NOT carry it
+  (`Unknown parameter: 'input[N].output'`). A bare string + omitempty
+  cannot express both, so `ResponsesItem.Output` is a `*string`: nil keeps
+  the field off the wire, `&""` serializes an empty result. The output twin
+  of the `arguments:"{}"` rule.
+- **A codex stream without a terminal event is a truncation, not an empty
+  answer** (verified live 2026-11-08 17:42–17:45): eight consecutive
+  requests returned 200 + an EMPTY assistant message — usage log in=0/out=0
+  is the tell (response.completed never arrived; ttft present means the
+  stream did start) — and Claude Code rendered "no visible output" and
+  retried into the same wall; the identical signature appeared twice on the
+  pre-fix binary at 16:50, i.e. a backend-side truncation, not a ccx
+  regression. The stream machine now treats a clean end without
+  response.completed/failed/incomplete as an error event (usage log 502
+  "upstream stream ended without completion"); `response.incomplete` is
+  handled as terminal too — usage captured, `incomplete_details.reason`
+  relayed in the error.
 - **CCX_DUMP_DIR captures the raw codex upstream SSE** (`codex-sse-*.json`,
   one file per event) next to the request/error dumps — the wire-shape
   class of bugs (like the parallel-call delivery) is only visible on the

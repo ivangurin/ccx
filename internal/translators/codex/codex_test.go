@@ -45,7 +45,8 @@ func TestBuildResponsesRequest(t *testing.T) {
 	require.Equal(t, "t1", out.Input[1].CallID)
 	require.Equal(t, "bash", out.Input[1].Name)
 	require.Equal(t, "function_call_output", out.Input[2].Type)
-	require.Equal(t, "ok", out.Input[2].Output)
+	require.NotNil(t, out.Input[2].Output)
+	require.Equal(t, "ok", *out.Input[2].Output)
 	require.Len(t, out.Tools, 1)
 	require.Equal(t, "bash", out.Tools[0].Name)
 }
@@ -389,4 +390,81 @@ func TestResponsesRequest_StoreAlwaysFalse(t *testing.T) {
 	raw, err := json.Marshal(codex.BuildResponsesRequest(&req))
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"store":false`)
+}
+
+// An empty tool_result content must still serialize function_call_output
+// WITH its output field: the backend rejects the omission
+// ("Missing required parameter: 'input[N].output'", verified live
+// 2026-11-08 — replaying a history whose Agent calls returned no content).
+// The output twin of the arguments:"{}" normalization.
+func TestBuildResponsesRequest_EmptyToolResultKeepsOutputField(t *testing.T) {
+	var req models.MessagesRequest
+	require.NoError(t, jsonUnmarshal(`{
+		"model":"gpt-6.1-sol","max_tokens":10,
+		"messages":[
+			{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Agent","input":{}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":""}]}
+		]
+	}`, &req))
+
+	out := codex.BuildResponsesRequest(&req)
+	raw, err := json.Marshal(out.Input[1])
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"output":""`) // present, not omitted
+}
+
+// A stream that ends (clean EOF) WITHOUT a terminal event
+// (response.completed/failed/incomplete) was truncated upstream — observed
+// live 2026-11-08 17:42-17:45: every codex request returned 200 + an EMPTY
+// assistant message (in=0/out=0 in the usage log), which Claude Code renders
+// as "no visible output" and retries into the same wall. A truncation must
+// surface as an error event, never as a healthy empty answer.
+func TestServeMessages_StreamEndsWithoutCompletionSurfacesError(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\"}}\n\n")
+		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"par\"}\n\n")
+		// no response.completed — the connection just closes
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	out := rec.Body.String()
+	require.Contains(t, out, "text_delta") // the partial content did relay
+	require.Contains(t, out, "event: error")
+	require.Contains(t, out, "ended without completion")
+	require.Contains(t, out, "event: message_stop") // the stream still closes cleanly
+}
+
+// response.incomplete IS a terminal event (the documented Responses API
+// third terminal, e.g. content_filter): its usage must be captured and the
+// truncation surfaced as an error — an incomplete answer is not an answer.
+func TestServeMessages_ResponseIncompleteSurfacesError(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"role\":\"assistant\"}}\n\n")
+		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"half \"}\n\n")
+		_, _ = io.WriteString(w, "event: response.incomplete\ndata: {\"type\":\"response.incomplete\",\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":3},\"incomplete_details\":{\"reason\":\"content_filter\"}}}\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"m","max_tokens":5,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	out := rec.Body.String()
+	require.Contains(t, out, "event: error")
+	require.Contains(t, out, "response incomplete")
+	require.Contains(t, out, "content_filter") // the reason rides along
+	require.Contains(t, out, `"input_tokens":7`)
+	require.Contains(t, out, `"output_tokens":3`) // usage still recorded
 }

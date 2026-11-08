@@ -55,7 +55,14 @@ type ResponsesItem struct {
 	Name      string          `json:"name,omitempty"`    // function_call
 	Arguments string          `json:"arguments,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
-	Output    string          `json:"output,omitempty"` // function_call_output
+	// Output — function_call_output's result, REQUIRED present on that item
+	// type even when empty ("Missing required parameter: 'input[N].output'",
+	// verified live 2026-11-08) and FORBIDDEN on every other type
+	// ("Unknown parameter: 'input[N].output'", verified live the same day —
+	// a bare string with omitempty cannot express both, hence the pointer:
+	// nil = the field stays off the wire, &"" = an empty result that still
+	// serializes). The twin of the arguments:"{}" rule.
+	Output *string `json:"output,omitempty"` // function_call_output
 	// no item_id here: the backend validates input params strictly
 	// ("Unknown parameter: 'input[N].item_id'", verified live); item_id is an
 	// SSE-event concept, call_id alone ties a call to its output.
@@ -251,9 +258,12 @@ func convertMessage(msg models.Message) []ResponsesItem {
 				Arguments: args, CallID: deref(b.ID),
 			})
 		case "tool_result":
+			// the pointer keeps output on the wire even when the result is
+			// empty — omission is a hard 400 (see ResponsesItem.Output)
+			result := toolResultText(b)
 			out = append(out, ResponsesItem{
 				Type: "function_call_output", CallID: deref(b.ToolUseID),
-				Output: toolResultText(b),
+				Output: &result,
 			})
 		default:
 			// thinking/image and unknown ones are skipped (reasoning is on the Responses side)
