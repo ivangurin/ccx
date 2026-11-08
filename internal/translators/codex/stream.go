@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/sse"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/ivangurin/ccx/internal/translators/relay"
@@ -19,12 +20,20 @@ type streamEvent struct {
 	Delta   string `json:"delta"`
 	Message string `json:"message"` // the error event's text (not a delta)
 	ItemID  string `json:"item_id"`
-	Item    *struct {
-		Type   string `json:"type"`
-		Name   string `json:"name"`
-		CallID string `json:"call_id"`
-		ID     string `json:"id"`
-		Action *struct {
+	// Arguments — the COMPLETE function arguments, carried by
+	// response.function_call_arguments.done (top level) and by the function_call
+	// items of output_item.added/done. Parallel calls never emit argument
+	// deltas at all — these carriers are the only source (verified live
+	// 2026-11-08); single calls stream .delta fragments and then repeat the
+	// full string in the done carriers, which must be ignored there.
+	Arguments string `json:"arguments"`
+	Item      *struct {
+		Type      string `json:"type"`
+		Name      string `json:"name"`
+		CallID    string `json:"call_id"`
+		ID        string `json:"id"`
+		Arguments string `json:"arguments"`
+		Action    *struct {
 			Type  string `json:"type"`
 			Query string `json:"query"`
 		} `json:"action"`
@@ -99,6 +108,12 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 	itemIdx := map[string]int{}
 	itemIsTool := map[string]bool{}
 	itemOrder := []string{}
+	// arguments already delivered per item: streamed = any .delta fragment was
+	// forwarded (fragments concatenate, every one must pass), sealed = the full
+	// string was delivered once by a done carrier (a second carrier of the same
+	// arguments must not append a copy — input_json_delta concatenates client-side)
+	argsStreamed := map[string]bool{}
+	argsSealed := map[string]bool{}
 	var usage models.Usage
 	stopReason := "end_turn"
 	var search webSearchCollector
@@ -111,6 +126,22 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 		itemIsTool[itemID] = block.Type == typeToolUse
 		itemOrder = append(itemOrder, itemID)
 		emit(models.AnthropicEvent{Type: "content_block_start", Index: &idx, ContentBlock: &block})
+	}
+
+	// emitArgs delivers a COMPLETE arguments string exactly once: only when no
+	// fragment has streamed and no carrier has fired yet. The empty string is
+	// not a delivery (output_item.added carries arguments:"" routinely).
+	emitArgs := func(itemID, args string) {
+		if args == "" || argsStreamed[itemID] || argsSealed[itemID] {
+			return
+		}
+		idx, ok := itemIdx[itemID]
+		if !ok {
+			return
+		}
+		argsSealed[itemID] = true
+		delta := models.AnthropicDelta{Type: "input_json_delta", PartialJSON: args}
+		emit(models.AnthropicEvent{Type: evContentBlockDelta, Index: &idx, Delta: &delta})
 	}
 
 	for {
@@ -136,6 +167,9 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 		if ev.Done {
 			break
 		}
+		if reqdump.Enabled() {
+			reqdump.Write("codex-sse", []byte(ev.Data))
+		}
 		var se streamEvent
 		if jsonErr := json.Unmarshal([]byte(ev.Data), &se); jsonErr != nil {
 			continue
@@ -159,6 +193,7 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 				switch se.Item.Type {
 				case "function_call":
 					openBlock(id, models.AnthropicBlock{Type: typeToolUse, ID: se.Item.CallID, Name: se.Item.Name})
+					emitArgs(id, se.Item.Arguments)
 				case responsesItemWebSearchCall:
 					// hosted search: no client block — collected at item.done
 				default:
@@ -166,9 +201,25 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 				}
 			}
 		case "response.output_item.done":
-			// only the done item carries the action (added is status-only)
-			if se.Item != nil && se.Item.Type == responsesItemWebSearchCall && se.Item.Action != nil {
-				search.onCallDone(se.Item.ID, se.Item.Action.Type, se.Item.Action.Query)
+			if se.Item == nil {
+				break
+			}
+			switch se.Item.Type {
+			case "function_call":
+				// the complete item is the authoritative arguments carrier for
+				// calls that never streamed deltas (parallel calls)
+				id := se.Item.ID
+				if id == "" {
+					id = se.Item.CallID
+				}
+				emitArgs(id, se.Item.Arguments)
+			case responsesItemWebSearchCall:
+				// only the done item carries the action (added is status-only)
+				if se.Item.Action != nil {
+					search.onCallDone(se.Item.ID, se.Item.Action.Type, se.Item.Action.Query)
+				}
+			default:
+				// other done items (message, reasoning…) carry nothing extra
 			}
 		case "response.output_text.annotation.added":
 			if se.Annotation != nil {
@@ -181,12 +232,17 @@ func (t *Translator) streamEvents(resp *http.Response, model string, emit func(m
 			}
 			idx := itemIdx[se.ItemID]
 			delta := models.AnthropicDelta{Type: "text_delta", Text: se.Delta}
-			emit(models.AnthropicEvent{Type: "content_block_delta", Index: &idx, Delta: &delta})
+			emit(models.AnthropicEvent{Type: evContentBlockDelta, Index: &idx, Delta: &delta})
 		case "response.function_call_arguments.delta":
-			if idx, ok := itemIdx[se.ItemID]; ok {
+			// a sealed item already carries its full arguments — a late fragment
+			// would duplicate them
+			if idx, ok := itemIdx[se.ItemID]; ok && !argsSealed[se.ItemID] {
+				argsStreamed[se.ItemID] = true
 				delta := models.AnthropicDelta{Type: "input_json_delta", PartialJSON: se.Delta}
-				emit(models.AnthropicEvent{Type: "content_block_delta", Index: &idx, Delta: &delta})
+				emit(models.AnthropicEvent{Type: evContentBlockDelta, Index: &idx, Delta: &delta})
 			}
+		case "response.function_call_arguments.done":
+			emitArgs(se.ItemID, se.Arguments)
 		case "response.completed":
 			if se.Response != nil && se.Response.Usage != nil {
 				usage = *se.Response.Usage

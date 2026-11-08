@@ -26,13 +26,14 @@ import (
 
 // role/type constants (goconst).
 const (
-	evError        = "error"
-	evMessageDelta = "message_delta"
-	typeToolUse    = "tool_use"
-	typeText       = "text"
-	typeMessage    = "message"
-	roleAssistantS = "assistant"
-	roleSystem     = "system"
+	evError             = "error"
+	evMessageDelta      = "message_delta"
+	evContentBlockDelta = "content_block_delta"
+	typeToolUse         = "tool_use"
+	typeText            = "text"
+	typeMessage         = "message"
+	roleAssistantS      = "assistant"
+	roleSystem          = "system"
 )
 
 // codex CLI mimicry (was config: CodexDefaults) — the subscription backend
@@ -237,9 +238,17 @@ func convertMessage(msg models.Message) []ResponsesItem {
 				})
 			}
 		case "tool_use":
+			// nil input must not become omitted arguments: the backend rejects
+			// the item ("Missing required parameter: 'input[N].arguments'",
+			// verified live 2026-11-08). An argumentless call is the empty
+			// object on this wire.
+			args := string(b.Input)
+			if args == "" {
+				args = "{}"
+			}
 			out = append(out, ResponsesItem{
 				Type: "function_call", Name: deref(b.Name),
-				Arguments: string(b.Input), CallID: deref(b.ID),
+				Arguments: args, CallID: deref(b.ID),
 			})
 		case "tool_result":
 			out = append(out, ResponsesItem{

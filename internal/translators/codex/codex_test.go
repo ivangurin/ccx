@@ -101,6 +101,87 @@ func TestServeMessages_FunctionCallStream(t *testing.T) {
 	require.Contains(t, out, "input_json_delta")
 }
 
+// Parallel function calls arrive WITHOUT any function_call_arguments.delta
+// events: the ChatGPT backend carries the arguments only in
+// response.function_call_arguments.done (top-level arguments string) and in
+// the complete output_item.done item — in either order (verified live
+// 2026-11-08: a parallel Claude Code Agent launch reached the client with
+// input {} and its validator rejected the missing required params, while
+// single calls do stream classic deltas). Both carriers must feed the
+// tool_use input, exactly once per item.
+func TestServeMessages_ParallelFunctionCallArgumentsWithoutDeltas(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		seq := []string{
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_a\",\"name\":\"echo\",\"arguments\":\"\"}}\n\n",
+			"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"fc_1\",\"arguments\":\"{\\\"message\\\":\\\"hi\\\"}\"}\n\n",
+			"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_a\",\"name\":\"echo\",\"arguments\":\"{\\\"message\\\":\\\"hi\\\"}\",\"status\":\"completed\"}}\n\n",
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_2\",\"call_id\":\"call_b\",\"name\":\"add\",\"arguments\":\"\"}}\n\n",
+			// this call's item.done arrives BEFORE its arguments.done (observed live)
+			"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_2\",\"call_id\":\"call_b\",\"name\":\"add\",\"arguments\":\"{\\\"a\\\":2,\\\"b\\\":40}\",\"status\":\"completed\"}}\n\n",
+			"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"fc_2\",\"arguments\":\"{\\\"a\\\":2,\\\"b\\\":40}\"}\n\n",
+			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":5}}}\n\n",
+		}
+		for _, ev := range seq {
+			_, _ = io.WriteString(w, ev)
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"m","max_tokens":50,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	out := rec.Body.String()
+	require.Contains(t, out, `"id":"call_a"`)
+	require.Contains(t, out, `"id":"call_b"`)
+	require.Contains(t, out, `"partial_json":"{\"message\":\"hi\"}"`)
+	require.Contains(t, out, `"partial_json":"{\"a\":2,\"b\":40}"`)
+	// exactly one delivery per call — the second carrier of the same arguments
+	// must not append a second copy of the JSON
+	require.Equal(t, 2, strings.Count(out, "input_json_delta"))
+	require.Contains(t, out, `"stop_reason":"tool_use"`)
+}
+
+// Classic single-call emission — delta fragments followed by done carriers
+// carrying the same full string: the fragments already delivered the input,
+// so the done carriers must be ignored, not appended (input_json_delta
+// fragments concatenate on the client).
+func TestServeMessages_FunctionCallDoneDoesNotDuplicateDeltaArguments(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		seq := []string{
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_a\",\"name\":\"bash\",\"arguments\":\"\"}}\n\n",
+			"event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{\\\"cmd\\\":\"}\n\n",
+			"event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"\\\"ls\\\"}\"}\n\n",
+			"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"fc_1\",\"arguments\":\"{\\\"cmd\\\":\\\"ls\\\"}\"}\n\n",
+			"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_a\",\"name\":\"bash\",\"arguments\":\"{\\\"cmd\\\":\\\"ls\\\"}\",\"status\":\"completed\"}}\n\n",
+			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":4}}}\n\n",
+		}
+		for _, ev := range seq {
+			_, _ = io.WriteString(w, ev)
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"m","max_tokens":50,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	out := rec.Body.String()
+	// the two fragments pass through, the two done carriers do not
+	require.Equal(t, 2, strings.Count(out, "input_json_delta"))
+	require.Contains(t, out, `"partial_json":"{\"cmd\":"`)
+	require.Contains(t, out, `"partial_json":"\"ls\"}"`)
+	require.NotContains(t, out, `"partial_json":"{\"cmd\":\"ls\"}"`)
+}
+
 func TestServeMessages_Headers(t *testing.T) {
 	var hdrs http.Header
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +254,58 @@ func TestBuildResponsesRequest_FunctionCallHasNoItemID(t *testing.T) {
 	require.NotContains(t, string(raw), "item_id")
 	// the call↔output tie survives via call_id
 	require.Contains(t, string(raw), `"call_id":"t1"`)
+}
+
+// A tool_use with no input (the client omits the field when nothing streamed)
+// must serialize as arguments:"{}", not as an omitted field: omitempty would
+// drop empty-string arguments and the backend rejects the item outright
+// ("Missing required parameter: 'input[1].arguments'", verified live
+// 2026-11-08 — the poisoned history after a lost-arguments round 400'd every
+// retry until the conversation was abandoned).
+func TestBuildResponsesRequest_NilInputIsNotEmptyArguments(t *testing.T) {
+	var req models.MessagesRequest
+	require.NoError(t, jsonUnmarshal(`{
+		"model":"gpt-6.1-sol","max_tokens":10,
+		"messages":[
+			{"role":"user","content":"do it"},
+			{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash"}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}
+		],
+		"tools":[{"name":"bash","description":"run","input_schema":{"type":"object"}}]
+	}`, &req))
+
+	raw, err := json.Marshal(codex.BuildResponsesRequest(&req))
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"arguments":"{}"`)
+}
+
+// A successful stream also dumps its raw upstream SSE events (codex-sse):
+// wire-shape surprises — like the parallel-call arguments delivery — are only
+// visible on the real backend, and the paired dumps are what diagnoses them.
+func TestServeMessages_DumpsUpstreamSSEWhenEnabled(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{}}}\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	dir := filepath.Join(t.TempDir(), "dumps")
+	t.Setenv("CCX_DUMP_DIR", dir)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	tr.ServeMessages(httptest.NewRecorder(), req)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	sseDumped := false
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "codex-sse") {
+			sseDumped = true
+		}
+	}
+	require.True(t, sseDumped, "raw upstream events must dump under CCX_DUMP_DIR")
 }
 
 // Claude Code sends SessionStart-hook output as a message with role "system"

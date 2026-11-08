@@ -214,6 +214,24 @@ internal/
   expired), saves are compare-and-swap (a newer foreign generation is never
   clobbered); ties and undated files lose — refusing to act on an ambiguous
   order is safer than guessing.
+- **Parallel codex function calls carry no argument deltas**: the ChatGPT
+  backend streams `response.function_call_arguments.delta` fragments only
+  for single calls; parallel calls deliver the complete arguments solely in
+  `response.function_call_arguments.done` (top-level `arguments` string)
+  and the `output_item.done` item, in either order — the translator seals
+  the full string once per item (a delta-streamed item ignores the done
+  carriers: input_json_delta concatenates client-side) (verified live
+  2026-11-08: parallel Agent launches reached Claude Code with input `{}`
+  → InputValidationError on required params; the retried turns then 400'd
+  on the poisoned history until the session was abandoned).
+- **Codex omitted arguments are a hard 400**: a tool_use without `input`
+  must serialize as `arguments:"{}"`, never omitted via omitempty
+  (`Missing required parameter: 'input[N].arguments'`, verified live
+  2026-11-08 — replaying a history with inputless tool_use calls).
+- **CCX_DUMP_DIR captures the raw codex upstream SSE** (`codex-sse-*.json`,
+  one file per event) next to the request/error dumps — the wire-shape
+  class of bugs (like the parallel-call delivery) is only visible on the
+  real backend.
 - **Orphan tool_result healing (openai)**: a tool_result whose call is not
   among the pending assistant calls becomes a text block (a dangling
   tool_call_id is a guaranteed 400 on strict upstreams); pairing works by
@@ -271,6 +289,19 @@ working on this code, and the owner may switch profiles or hand-move files
 mid-task (verified live: state.json was hand-renamed while the rename change
 was being built, and a blind hand-copy would have clobbered the fresh file) —
 re-check live paths immediately before any write into them.
+
+Diagnostic shape of "copilot stopped answering" (verified live 2026-11-07,
+a full evening traced via usage log + daemon.log + settings backups +
+zsh history + CC transcripts): `ENOTFOUND` in the client error means the
+direct provider's hostname DNS — never the daemon (127.0.0.1 resolves no
+name); a bare `Connection error.` right after a switch to a direct
+anthropic profile is the switcher's by-design silent daemon stop while the
+running session's env still says 127.0.0.1:4567 — a stale-daemon
+diagnosis must first check what settings.json pointed at WHEN the failing
+session started (backups/ carry the timestamped sequence). daemon.log
+records every spawn but NO stop: `/admin/stop` exits silently (pidfile
+removed) and SIGTERM logs `signal — shutting down` — absence of that line
+means no signal escalation ever ran.
 
 ```bash
 ./bin/ccx serve --daemon --provider <key> --port 4570   # pick a free port

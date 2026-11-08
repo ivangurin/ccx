@@ -76,6 +76,45 @@ func TestCodex_NonStreamAggregates(t *testing.T) {
 	require.Equal(t, 7, out.Usage.OutputTokens)
 }
 
+// The parallel-call wire shape (no argument deltas, arguments carried by the
+// done events — see TestServeMessages_ParallelFunctionCallArgumentsWithoutDeltas)
+// must fold into complete tool_use inputs on the aggregated path too, not
+// into literal {} objects.
+func TestCodex_NonStreamParallelCallsWithoutDeltas(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		seq := []string{
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_a\",\"name\":\"echo\",\"arguments\":\"\"}}\n\n",
+			"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_a\",\"name\":\"echo\",\"arguments\":\"{\\\"message\\\":\\\"hi\\\"}\",\"status\":\"completed\"}}\n\n",
+			"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"fc_1\",\"arguments\":\"{\\\"message\\\":\\\"hi\\\"}\"}\n\n",
+			"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_2\",\"call_id\":\"call_b\",\"name\":\"add\",\"arguments\":\"\"}}\n\n",
+			"event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"fc_2\",\"arguments\":\"{\\\"a\\\":2,\\\"b\\\":40}\"}\n\n",
+			"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_2\",\"call_id\":\"call_b\",\"name\":\"add\",\"arguments\":\"{\\\"a\\\":2,\\\"b\\\":40}\",\"status\":\"completed\"}}\n\n",
+			"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":5}}}\n\n",
+		}
+		for _, ev := range seq {
+			_, _ = io.WriteString(w, ev)
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"gpt-5","max_tokens":50,"stream":false,"messages":[{"role":"user","content":"hi"}]}`))
+	rec := httptest.NewRecorder()
+
+	tr.ServeMessages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var out models.MessagesResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Len(t, out.Content, 2)
+	require.Equal(t, "tool_use", out.Content[0].Type)
+	require.JSONEq(t, `{"message":"hi"}`, string(out.Content[0].Input))
+	require.Equal(t, "tool_use", out.Content[1].Type)
+	require.JSONEq(t, `{"a":2,"b":40}`, string(out.Content[1].Input))
+}
+
 // A response.failed event in the aggregated stream must surface as 502, not
 // as a partial message that looks complete.
 func TestCodex_NonStreamFailedEventIs502(t *testing.T) {
