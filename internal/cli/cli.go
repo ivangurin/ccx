@@ -114,6 +114,10 @@ func newRootCmd(stdout io.Writer) *cobra.Command {
 	use := bodyCmd(stdout, "use <provider> [model]", "switch to a provider (and model)", runUse)
 	list := bodyCmd(stdout, "list", "providers and models", runList)
 	status := bodyCmd(stdout, "status", "active provider/model, daemon state", runStatus)
+	test := bodyCmd(stdout, "test", "probe providers and models (real requests, temp daemons)", runTest)
+	// the body parses --provider itself (bash-parity argv handling); cobra
+	// flag parsing would strip it before RunE sees the args
+	test.DisableFlagParsing = true
 	edit := bodyCmd(stdout, "edit", "open providers.json in $EDITOR", runEdit)
 	stop := bodyCmd(stdout, "stop", "stop the daemon", runStop)
 	auth := bodyCmd(stdout, "auth [provider]", "login flow (copilot/codex); no argument — auth state", runAuth)
@@ -123,7 +127,7 @@ func newRootCmd(stdout io.Writer) *cobra.Command {
 		return 0
 	})
 
-	root.AddCommand(use, list, status, newInitCmd(stdout), edit, newServeCmd(), stop, auth, version)
+	root.AddCommand(use, list, status, test, newInitCmd(stdout), edit, newServeCmd(), stop, auth, version)
 
 	return root
 }

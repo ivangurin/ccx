@@ -336,6 +336,14 @@ internal/
 - zsh does not word-split an unquoted `$var` — manual multi-word CLI checks
   need explicit arguments or `${=var}` (verified live: a loop over
   "serve --provider x …" tested the shortcut path instead of serve).
+- Go treats `command_test.go` in a non-test package as a TEST file (the
+  `_test.go` suffix wins over any convention) — a source file named that
+  silently drops out of `go build` and its symbols vanish ("undefined:
+  runTest" in cli.go); the fix is a different name (`command_testcmd.go`).
+  Same trap shape: a package-level const initialized from an identically
+  named const (`probeModelID = probeModelID`) is an initialization cycle
+  after a mechanical perl rename — check the const block after scripted
+  edits (verified live, 2026-11-09, ccx test work).
 
 ## Testing
 
