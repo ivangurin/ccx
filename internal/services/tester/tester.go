@@ -236,12 +236,18 @@ func testProvider(
 }
 
 // validateProfile — the structural phase (no network): protocol known,
-// base_url present for URL-based protocols, models listed and sane.
+// base_url present for URL-based protocols, a credential where the daemon
+// holds none of its own (openai is pass-through — a probe without a token
+// is guaranteed 401, testing it only burns a round-trip), models listed
+// and sane.
 func validateProfile(p *models.Profile) error {
 	switch p.Protocol {
 	case models.ProtocolAnthropic, models.ProtocolOpenAI:
 		if p.BaseURL == "" {
 			return errors.New("base_url is empty")
+		}
+		if p.AuthToken == "" && p.APIKey == "" {
+			return errors.New("auth_token is empty — no credential to probe with")
 		}
 	case models.ProtocolCopilot, models.ProtocolCodex:
 		// credentials live in the auth store — Ready() covers them

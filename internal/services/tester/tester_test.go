@@ -121,6 +121,24 @@ func TestTest_ProviderError_Structural(t *testing.T) {
 	require.Equal(t, 0, report.ProvidersOK)
 }
 
+func TestTest_ProviderError_NoCredential(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	up := anthropicUpstream(t, "")
+	writeProviders(t, sp, newProviders().With("openai-api", &models.Profile{
+		Name:     "OpenAI",
+		Protocol: models.ProtocolOpenAI,
+		BaseURL:  up.URL,
+		// no auth_token / api_key — a pass-through probe is guaranteed 401
+		Models: []models.Model{{ID: "gpt", Default: true}},
+	}).done())
+
+	report := tester.Run(sp.Context(), sp.Config, tester.Options{Version: testVersion})
+
+	res := report.Providers[0]
+	require.ErrorContains(t, res.Err, "auth_token is empty")
+	require.Empty(t, res.Models)
+}
+
 func TestTest_ProviderError_UnknownProtocol(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeProviders(t, sp, newProviders().With("weird", &models.Profile{

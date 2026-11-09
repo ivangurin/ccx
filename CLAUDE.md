@@ -336,6 +336,12 @@ internal/
 - zsh does not word-split an unquoted `$var` — manual multi-word CLI checks
   need explicit arguments or `${=var}` (verified live: a loop over
   "serve --provider x …" tested the shortcut path instead of serve).
+- The `[1m]` bracket suffix on a model id (Claude Code's 1M-context
+  marker) is a CLIENT-side convention — z.ai accepted `glm-5.3[1m]` on
+  2026-11-07..09 morning and began rejecting it mid-day 2026-11-09 with
+  `1211 Unknown Model` while `/v1/models` lists only bare ids (verified
+  live, both sides); anything probing an upstream must strip the bracket
+  suffix for anthropic profiles (`tester.probeID`).
 - Go treats `command_test.go` in a non-test package as a TEST file (the
   `_test.go` suffix wins over any convention) — a source file named that
   silently drops out of `go build` and its symbols vanish ("undefined:
