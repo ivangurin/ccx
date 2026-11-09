@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/ivangurin/ccx?style=for-the-badge)](https://github.com/ivangurin/ccx/releases)
 [![License](https://img.shields.io/github/license/ivangurin/ccx?style=for-the-badge)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%2B%20Apple%20Silicon-lightgrey?style=for-the-badge)](https://github.com/ivangurin/ccx/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS%20arm64%20%2B%20amd64-lightgrey?style=for-the-badge)](https://github.com/ivangurin/ccx/releases/latest)
 
 Claude Code is a great coding agent — but it speaks exactly one language: the
 Anthropic Messages API. ccx lets you point it wherever you want: an
@@ -73,7 +73,16 @@ into a single binary with nothing else to run or babysit.
 
 ## Install
 
-macOS (Apple Silicon):
+macOS (Apple Silicon and Intel) via Homebrew:
+
+```bash
+brew install ivangurin/tap/ccx
+```
+
+The formula tracks the latest release and is updated automatically on every
+`v*` tag. Upgrading: `brew upgrade ccx`. Uninstalling: `brew uninstall ccx`.
+
+Or without Homebrew (Apple Silicon):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ivangurin/ccx/main/install.sh | sh

@@ -1,7 +1,9 @@
-# Release: a pushed v* tag builds the darwin/arm64 binary and attaches it
-# to a generated GitHub Release as ccx-macos-<tag>.zip (tag verbatim, "v"
-# included). Cross-compiled on ubuntu — Go needs no macOS runner for this,
-# and macOS minutes cost 10x.
+# Release: a pushed v* tag builds darwin/arm64 + darwin/amd64 binaries and
+# attaches them to a generated GitHub Release as ccx-mac-<arch>-<tag>.zip
+# (tag verbatim, "v" included), then regenerates Formula/ccx.rb in the
+# ivangurin/homebrew-tap repository so `brew install ivangurin/tap/ccx`
+# tracks the latest release. Cross-compiled on ubuntu — Go needs no macOS
+# runner for this, and macOS minutes cost 10x.
 name: release
 
 on:
@@ -20,15 +22,70 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Build darwin/arm64
+      - name: Build darwin/arm64 and darwin/amd64
         # the tag is baked into cli.Version: a released binary must not
         # answer "dev" to `ccx version`
-        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath
-          -ldflags "-X github.com/ivangurin/ccx/internal/cli.Version=${GITHUB_REF_NAME}"
-          -o bin/ccx ./cmd/ccx
-      - name: Zip binary to archive root
-        run: zip -j "ccx-macos-${GITHUB_REF_NAME}.zip" bin/ccx
-      - name: Create release with the artifact
+        run: |
+          for arch in arm64 amd64; do
+            CGO_ENABLED=0 GOOS=darwin GOARCH=$arch go build -trimpath \
+              -ldflags "-X github.com/ivangurin/ccx/internal/cli.Version=${GITHUB_REF_NAME}" \
+              -o "bin/ccx-$arch" ./cmd/ccx
+          done
+      - name: Zip binaries to archive root
+        run: |
+          zip -j "ccx-mac-arm64-${GITHUB_REF_NAME}.zip"  bin/ccx-arm64
+          zip -j "ccx-mac-amd64-${GITHUB_REF_NAME}.zip"  bin/ccx-amd64
+      - name: Create release with the artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "ccx-macos-${GITHUB_REF_NAME}.zip" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME"
+          "ccx-mac-arm64-${GITHUB_REF_NAME}.zip"
+          "ccx-mac-amd64-${GITHUB_REF_NAME}.zip" --generate-notes
+      - name: Regenerate tap formula
+        env:
+          # deploy key (write access to ivangurin/homebrew-tap only) — a
+          # GITHUB_TOKEN cannot push outside its own repository
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          ARM_SHA=$(sha256sum "ccx-mac-arm64-${GITHUB_REF_NAME}.zip" | cut -d' ' -f1)
+          AMD_SHA=$(sha256sum "ccx-mac-amd64-${GITHUB_REF_NAME}.zip" | cut -d' ' -f1)
+          mkdir -p Formula
+          # quoted heredoc delimiter: #{version} must stay literal Ruby
+          cat > Formula/ccx.rb <<'EOF'
+          class Ccx < Formula
+            desc "Switch Claude Code LLM providers"
+            homepage "https://github.com/ivangurin/ccx"
+            version "TAG_PLACEHOLDER"
+            on_arm do
+              url "https://github.com/ivangurin/ccx/releases/download/#{version}/ccx-mac-arm64-#{version}.zip"
+              sha256 "ARM_PLACEHOLDER"
+            end
+            on_intel do
+              url "https://github.com/ivangurin/ccx/releases/download/#{version}/ccx-mac-amd64-#{version}.zip"
+              sha256 "AMD_PLACEHOLDER"
+            end
+            def install
+              bin "ccx"
+            end
+            test do
+              assert_match version.to_s, shell_output("#{bin}/ccx version")
+            end
+          end
+          EOF
+          sed -i.bak "s/TAG_PLACEHOLDER/${GITHUB_REF_NAME}/; s/ARM_PLACEHOLDER/${ARM_SHA}/; s/AMD_PLACEHOLDER/${AMD_SHA}/" Formula/ccx.rb
+          rm -f Formula/ccx.rb.bak
+          # the secret is an OpenSSH ed25519 deploy key: bake it to disk
+          # for ssh (printenv preserves its line structure)
+          mkdir -p ~/.ssh
+          printenv TAP_DEPLOY_KEY > ~/.ssh/tap_deploy
+          chmod 600 ~/.ssh/tap_deploy
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tap_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone git@github.com:ivangurin/homebrew-tap.git tap
+          mkdir -p tap/Formula
+          cp Formula/ccx.rb tap/Formula/ccx.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/ccx.rb
+          git commit -m "ccx ${GITHUB_REF_NAME}"
+          git push

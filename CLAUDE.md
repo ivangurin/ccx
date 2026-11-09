@@ -39,9 +39,13 @@ go test ./internal/services/switcher/... -run TestName -count=1
 
 Releasing = push an annotated tag `v*` to origin: `.github/workflows/release.yml`
 triggers on the tag, bakes `GITHUB_REF_NAME` into `cli.Version` via ldflags
-(no version bump commit — the code itself only carries `dev`), and attaches
-`ccx-macos-<tag>.zip`; tag messages are release-note style, the run takes
-~40s (verified live, v0.3.0).
+(no version bump commit — the code itself only carries `dev`), attaches
+`ccx-mac-<arch>-<tag>.zip` for BOTH darwin/arm64 and darwin/amd64, and
+regenerates `Formula/ccx.rb` in `ivangurin/homebrew-tap` (pushed via the
+`TAP_DEPLOY_KEY` deploy key secret — a write-scoped key, not a PAT, because
+`GITHUB_TOKEN` cannot push outside its own repo and PATs cannot be minted via
+API); `brew install ivangurin/tap/ccx` tracks the latest release; tag
+messages are release-note style.
 
 ## Architecture
 
