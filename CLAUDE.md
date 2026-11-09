@@ -53,7 +53,16 @@ style. Re-releasing the same tag: delete the release AND the remote tag,
 re-tag, push — but note GitHub's CDN caches release assets by URL: the
 re-created release can serve STALE zip bytes for a while (verified live
 2026-11-09 — `?nocache=<timestamp>` on the download URL bypasses it; the
-API's `updated_at` tells fresh from stale).
+API's `updated_at` tells fresh from stale), and `gh release delete` does
+NOT remove the remote tag — a force-pushed re-tag does not refresh it
+either; push the tag ref explicitly (`git push origin refs/tags/<tag>`)
+or `gh release create` fails with "tag exists locally but has not been
+pushed" (verified live, v0.4.0). The tap formula's install step is
+`bin.install "ccx"` — `bin` is the destination PATHNAME (prefix/bin), not
+an install method; `bin "ccx"` dies inside the build child with an
+opaque `ArgumentError: wrong number of arguments` (backtrace pinned to
+Formula#bin), the only reliable diagnosis is `brew install --formula` on
+a local probe tap or reading formula.rb:1155.
 
 ## Architecture
 
