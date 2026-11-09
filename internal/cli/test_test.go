@@ -48,7 +48,6 @@ func TestExecute_Test_Healthy(t *testing.T) {
 	code := cli.Execute([]string{cmdTest}, &out)
 
 	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "Checking providers.json")
 	require.Contains(t, out.String(), "✓ "+profZai+" [anthropic]")
 	require.Contains(t, out.String(), "✓ "+testModelGLM)
 	require.Contains(t, out.String(), "1/1 providers ok, 1/1 models ok")
@@ -78,7 +77,9 @@ func TestExecute_Test_ProviderAndModelErrors(t *testing.T) {
 	require.Contains(t, s, "base_url is empty")
 	require.Contains(t, s, "✓ ok [anthropic]")
 	require.Contains(t, s, "✓ "+testModelGood)
-	require.Contains(t, s, "1/2 providers ok, 1/2 models ok")
+	// a structurally broken provider hides its models from probing — only
+	// the ok provider's model enters the denominator
+	require.Contains(t, s, "1/2 providers ok, 1/1 models ok")
 }
 
 func TestExecute_Test_MissingProvidersFile(t *testing.T) {

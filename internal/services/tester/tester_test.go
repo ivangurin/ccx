@@ -278,8 +278,9 @@ func TestTest_ReportCounts(t *testing.T) {
 
 	require.Equal(t, 2, report.TotalProviders)
 	require.Equal(t, 1, report.ProvidersOK)
-	// the broken provider's model counts toward the total but never passes
-	require.Equal(t, 3, report.TotalModels)
+	// a structurally broken provider hides its models from the probe — they
+	// are not counted at all (only the ok provider's models enter the total)
+	require.Equal(t, 2, report.TotalModels)
 	require.Equal(t, 1, report.ModelsOK)
 }
 

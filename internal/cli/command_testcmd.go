@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/services/tester"
 )
 
 // runTest — ccx test: validate providers.json and probe every provider and
-// model with a real request through a temporary daemon. Output is a
-// three-level list: provider → models → model errors; exit 1 on any failure.
+// model with a real request through a temporary daemon. The live view
+// repaints in place on a terminal (providers → models, running → ✓/✗ with
+// the cause on the line) and degrades to plain appended lines on a pipe;
+// exit 1 on any failure.
 func runTest(argv []string, stdout io.Writer) int {
 	opts, code := parseTestArgs(argv, stdout)
 	if code != 0 {
@@ -24,26 +27,21 @@ func runTest(argv []string, stdout io.Writer) int {
 		return 1
 	}
 
-	report := tester.Run(context.Background(), cfg, *opts)
-
-	fmt.Fprintln(stdout, "Checking providers.json")
-	for _, p := range report.Providers {
-		if p.Err != nil {
-			fmt.Fprintf(stdout, "  ✗ %s — %v\n", p.Key, p.Err)
-
-			continue
-		}
-		fmt.Fprintf(stdout, "  ✓ %s [%s]\n", p.Key, p.Protocol)
-		for _, m := range p.Models {
-			if m.Err != nil {
-				fmt.Fprintf(stdout, "    ✗ %s\n      ✗ %v\n", m.ID, m.Err)
-			} else {
-				fmt.Fprintf(stdout, "    ✓ %s\n", m.ID)
-			}
+	// TTY detection on the real stdout (not the injected writer): the
+	// repaint escape codes would smear a redirected pipe; tests drive the
+	// non-TTY path through cli.Execute and unit-test the TTY frame directly
+	tty := false
+	if f, ok := stdout.(*os.File); ok {
+		info, statErr := f.Stat()
+		if statErr == nil && info.Mode()&os.ModeCharDevice != 0 {
+			tty = true
 		}
 	}
-	fmt.Fprintf(stdout, "\n%d/%d providers ok, %d/%d models ok\n",
-		report.ProvidersOK, report.TotalProviders, report.ModelsOK, report.TotalModels)
+	render := tester.NewRenderer(stdout, tty)
+	opts.OnUpdate = render.Update
+
+	report := tester.Run(context.Background(), cfg, *opts)
+	render.Finish(report)
 
 	if report.ProvidersOK < report.TotalProviders || report.ModelsOK < report.TotalModels {
 		return 1

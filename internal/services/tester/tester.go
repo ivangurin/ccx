@@ -31,10 +31,13 @@ const probeTimeout = 30 * time.Second
 
 // Options narrows the run: a non-empty Provider tests just that key.
 // Version is the binary version string, reported by /admin/health (cli owns
-// it; passing it here keeps the import cycle away).
+// it; passing it here keeps the import cycle away). OnUpdate, when set,
+// fires after every visible state change so the caller can repaint a live
+// view (the run is sequential — no locking needed around the state).
 type Options struct {
 	Provider string
 	Version  string
+	OnUpdate func(*Live)
 }
 
 // Report is the aggregated result of one Run.
@@ -47,19 +50,39 @@ type Report struct {
 	ModelsOK       int
 }
 
+// Status is the probe state of a provider or model: running (the text
+// glyph), passed or failed.
+type Status int
+
+const (
+	StatusRunning Status = iota
+	StatusOK
+	StatusFail
+)
+
 // ProviderResult — level 1 (the provider) + level 2 (its models or the
 // provider-level error).
 type ProviderResult struct {
 	Key      string
 	Protocol models.Protocol
-	Err      error // non-nil: structural failure, not-ready, daemon startup — models are not probed
+	Status   Status
+	Err      error // non-nil when Status == StatusFail: structural failure, not-ready, daemon startup
 	Models   []ModelResult
 }
 
 // ModelResult — level 2 (the model) + level 3 (its probe error).
 type ModelResult struct {
-	ID  string
-	Err error // non-nil: the probe failed (HTTP status, network, timeout)
+	ID     string
+	Status Status
+	Err    error // non-nil when Status == StatusFail: HTTP status, network, timeout
+}
+
+// Live is the mutable state the OnUpdate callback observes: the growing
+// list of provider results (statuses mutate in place as probes complete).
+type Live struct {
+	Providers []*ProviderResult
+	Done      int // providers finished (ok or failed) — feeds the progress bar
+	Total     int
 }
 
 // Run validates providers.json and probes every (or the selected) provider
@@ -67,63 +90,100 @@ type ModelResult struct {
 // once here; every failure mode lands in the report, never panics Run.
 func Run(ctx context.Context, cfg *config.Config, opts Options) *Report {
 	report := &Report{}
+	live := &Live{}
+	notify := func() {
+		if opts.OnUpdate != nil {
+			opts.OnUpdate(live)
+		}
+	}
 
 	providers, err := config.LoadProviders(cfg.ProvidersPath())
 	if err != nil {
 		report.Providers = []ProviderResult{{
-			Key: "providers.json",
-			Err: fmt.Errorf("%w — run ccx init first", err),
+			Key:    "providers.json",
+			Status: StatusFail,
+			Err:    fmt.Errorf("%w — run ccx init first", err),
 		}}
 		report.TotalProviders = 1
+		live.Providers = []*ProviderResult{&report.Providers[0]}
+		live.Total, live.Done = 1, 1
+		notify()
 
 		return report
 	}
 
+	keys := []string{}
+	profiles := map[string]*models.Profile{}
 	for _, key := range providers.Providers.Keys {
 		if opts.Provider != "" && key != opts.Provider {
 			continue
 		}
-		profile := providers.Providers.Get(key)
-		res := testProvider(ctx, cfg, opts, key, profile)
-		report.Providers = append(report.Providers, res)
-		report.TotalProviders++
-		report.TotalModels += len(profile.Models)
-		if res.Err == nil {
-			report.ProvidersOK++
-		}
-		for _, m := range res.Models {
-			if m.Err == nil {
-				report.ModelsOK++
-			}
-		}
+		keys = append(keys, key)
+		profiles[key] = providers.Providers.Get(key)
 	}
 
 	// A --provider filter naming an unknown key must not print an empty
 	// report: surface it the same way an unknown provider would fail.
-	if opts.Provider != "" && report.TotalProviders == 0 {
-		report.Providers = []ProviderResult{{
-			Key: opts.Provider,
-			Err: fmt.Errorf("unknown provider: %s", opts.Provider),
-		}}
-		report.TotalProviders = 1
+	if len(keys) == 0 && opts.Provider != "" {
+		keys = []string{opts.Provider}
+	}
+
+	live.Total = len(keys)
+	for _, key := range keys {
+		profile := profiles[key]
+		res := ProviderResult{Key: key}
+		if profile != nil {
+			res.Protocol = profile.Protocol
+		}
+		live.Providers = append(live.Providers, &res)
+		notify()
+		finish := testProvider(ctx, cfg, opts, key, profile, &res, notify)
+		report.Providers = append(report.Providers, *finish)
+		report.TotalProviders++
+		report.TotalModels += len(finish.Models)
+		if finish.Err == nil {
+			report.ProvidersOK++
+		}
+		for _, m := range finish.Models {
+			if m.Err == nil {
+				report.ModelsOK++
+			}
+		}
+		live.Done++
+		notify()
 	}
 
 	return report
 }
 
 // testProvider — one provider: structural validation → daemon on a free
-// port → model probes → stop. Any level-1 failure skips the probes.
-func testProvider(ctx context.Context, cfg *config.Config, opts Options, key string, profile *models.Profile) ProviderResult {
-	res := ProviderResult{Key: key, Protocol: profile.Protocol}
+// port → model probes → stop. Any level-1 failure skips the probes. The
+// result mutates res in place (the live view sees statuses as they land)
+// and is returned complete.
+func testProvider(
+	ctx context.Context, cfg *config.Config, opts Options,
+	key string, profile *models.Profile, res *ProviderResult, notify func(),
+) *ProviderResult {
+	if profile == nil {
+		res.Status = StatusFail
+		res.Err = fmt.Errorf("unknown provider: %s", key)
+		notify()
+
+		return res
+	}
 	if err := validateProfile(profile); err != nil {
+		res.Status = StatusFail
 		res.Err = err
+		notify()
 
 		return res
 	}
 
 	svc, err := router.Build(ctx, cfg, slog.New(slog.DiscardHandler), key)
 	if err != nil {
+		res.Status = StatusFail
 		res.Err = err
+		notify()
 
 		return res
 	}
@@ -135,7 +195,9 @@ func testProvider(ctx context.Context, cfg *config.Config, opts Options, key str
 		Stop:    func() {},
 	}))
 	if err != nil {
+		res.Status = StatusFail
 		res.Err = fmt.Errorf("daemon: %w", err)
+		notify()
 
 		return res
 	}
@@ -152,12 +214,23 @@ func testProvider(ctx context.Context, cfg *config.Config, opts Options, key str
 		_ = serveErr
 	}()
 
+	// the provider cleared its checks — its models become visible (each
+	// starts as running) before the first probe fires
 	for _, m := range profile.Models {
-		res.Models = append(res.Models, ModelResult{
-			ID:  m.ID,
-			Err: probeModel(ctx, srv.Addr(), profile, m.ID),
-		})
+		res.Models = append(res.Models, ModelResult{ID: m.ID, Status: StatusRunning})
 	}
+	notify()
+
+	for i := range res.Models {
+		res.Models[i].Err = probeModel(ctx, srv.Addr(), profile, res.Models[i].ID)
+		if res.Models[i].Err != nil {
+			res.Models[i].Status = StatusFail
+		} else {
+			res.Models[i].Status = StatusOK
+		}
+		notify()
+	}
+	res.Status = StatusOK
 
 	return res
 }
