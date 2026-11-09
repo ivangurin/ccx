@@ -75,10 +75,14 @@ func (r *Renderer) Finish(report *Report) {
 
 // repaint — the TTY frame: climb to the frame's first line and clear below,
 // then paint the whole current state. The first paint has nothing above.
+// The climb is prevHi-1, not prevHi: the cursor already SITS on the last
+// frame line (the bar, closed by \r — the same footer convention as
+// tui/frame.go), so climbing the full count drifts one line up on every
+// repaint and gradually eats everything above the frame.
 func (r *Renderer) repaint(live *Live) {
 	var sb strings.Builder
 	if r.prevHi > 0 {
-		fmt.Fprintf(&sb, "\r\x1b[%dA\x1b[J", r.prevHi)
+		fmt.Fprintf(&sb, "\r\x1b[%dA\x1b[J", r.prevHi-1)
 	}
 	r.prevHi = paint(&sb, live)
 	_, _ = io.WriteString(r.w, sb.String())
