@@ -44,13 +44,21 @@ type ServeOptions struct {
 
 // App — the daemon.
 type App struct {
-	cfg *config.Config
-	log *slog.Logger
+	cfg      *config.Config
+	log      *slog.Logger
+	usageLog *slog.Logger
 }
 
-// New creates an App.
-func New(cfg *config.Config, log *slog.Logger) *App {
-	return &App{cfg: cfg, log: log}
+// New creates an App. usageLog is the usage stream over the same sink —
+// usage is DATA, not diagnostics: pinned to info+json by buildServeLogger so
+// a warn/error CCX_LOG_LEVEL daemon keeps recording (a nil usageLog falls
+// back to log; tests pass the suite's silent logger for both).
+func New(cfg *config.Config, log *slog.Logger, usageLog *slog.Logger) *App {
+	if usageLog == nil {
+		usageLog = log
+	}
+
+	return &App{cfg: cfg, log: log, usageLog: usageLog}
 }
 
 // Run blocks until a signal/ctx cancel (or /admin/stop). The route is built
@@ -81,7 +89,8 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 	if sidErr != nil {
 		sid = -1
 	}
-	a.log.Info("daemon launch",
+	a.log.Info(
+		"daemon launch",
 		"pid", os.Getpid(),
 		"ppid", os.Getppid(),
 		"sid", sid,
@@ -89,16 +98,17 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 		"debug", opts.Debug,
 	)
 
-	// per-request usage log into <LogDir>/usage-YYYY-MM-DD.jsonl (counts and
-	// timings only; Noop outside serve mode, tests swap it)
-	_ = os.MkdirAll(a.cfg.LogDir(), 0o750)
-	usagelog.Default = usagelog.NewFileRecorder(a.cfg.LogDir())
+	// per-request usage rides the unified daemon log (kind=usage JSONL lines;
+	// counts and timings only; Noop outside serve mode, tests swap it). The
+	// stream is the dedicated usage logger (info+json pinned) — a warn/error
+	// env level must never silence usage accounting.
+	usagelog.Default = usagelog.NewSlogRecorder(a.usageLog)
 
-	// request dumps exist only in debug runs; CCX_DUMP_DIR overrides the
-	// directory but can no longer turn dumping on (flag-gated by design:
-	// bodies must never land on disk in a normal run). Must precede
-	// router.Build — the first served request may already dump.
-	reqdump.Configure(reqdump.Options{Enabled: opts.Debug, Dir: a.cfg.LogDir()})
+	// request dumps exist only in debug runs (flag-gated by design: bodies
+	// must never land on disk in a normal run) and ride the unified log as
+	// kind=reqdump lines. Must precede router.Build — the first served
+	// request may already dump.
+	reqdump.Configure(reqdump.Options{Enabled: opts.Debug, Logger: a.log})
 
 	svc, err := router.Build(ctx, a.cfg, a.log, opts.Provider)
 	if err != nil {

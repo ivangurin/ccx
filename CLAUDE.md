@@ -327,23 +327,30 @@ internal/
   `response.incomplete` is handled as terminal — usage captured when
   present, `incomplete_details.reason` relayed in the error. Catch the next
   window live with `--debug` to see the raw incomplete event.
-- **Request dumps are `--debug`-gated** (2026-11-09; CCX_DUMP_DIR no longer
-  enables dumping — it only overrides the directory, default `<CCX_HOME>/logs`):
-  all dumps of one daemon launch append to a single JSONL
-  `dump-<launch time>.log` (each line
-  `{"ts":…,"seq":…,"kind":"…","body":<verbatim json or string>}`); the
-  `debug-<launch time>.log` tee logger files are GONE — the daemon log
-  itself is `daemon-<launch time>.log` (one per launch, same format as
-  before, level=debug with the flag). The wire-shape class of bugs (like
-  the parallel-call delivery) is only visible on the real backend.
-  JSONL integrity by construction: one writer process, one mutex over the
-  held O_APPEND handle, one Write per line; `json.Valid` re-marshals
-  non-JSON bodies as escaped strings — a RawMessage embed of a raw body
-  would let a newline inside it split the line (verified by review,
-  2026-11-09). A test logger writing into a plain `bytes.Buffer` from a
-  background goroutine is a -race FAILURE — wrap it in a mutex (`syncBuffer`
-  in selfcheck_test.go), `require.Eventually` polls it from the test
-  goroutine concurrently.
+- **One unified daemon log** (2026-11-09): everything a daemon emits goes
+  into the single `daemon-<launch time>.log` (one per launch, the spawned
+  child's stderr redirect — no file sink inside the process) as JSONL lines
+  discriminated by the `kind` attribute: plain slog records carry no kind,
+  usage is `kind=usage`, request dumps are `kind=reqdump`. The separate
+  `usage-YYYY-MM-DD.jsonl` and `dump-<launch time>.log` files are GONE
+  (CCX_DUMP_DIR with them); a day's usage slice is
+  `jq -c 'select(.kind=="usage")' logs/daemon-*.log` — the recipe reads the
+  JSON format; usage lines are info+json PINNED (kind=usage always on a
+  JSONL line regardless of CCX_LOG_LEVEL/CCX_LOG_FORMAT), so it works even
+  when the diagnostics stream is dev/text or warn-level. JSONL integrity by
+  construction: one writer process, slog's handler mutex, one Write per
+  line; a dump body rides as an attribute — `json.RawMessage` embeds into
+  slog's JSON output VERBATIM (a nested object, not a string — verified
+  live), a non-JSON body is handed over as a plain string and escaped by
+  the handler, so a broken line is impossible by either path.
+  `json.Valid`-gating in reqdump decides which of the two encodings applies.
+  A test logger writing into a plain `bytes.Buffer` from a background
+  goroutine is a -race FAILURE — wrap it in a mutex (`syncBuffer` /
+  `suite_provider.Capture`), `require.Eventually` polls it from the test
+  goroutine concurrently. In-process `app.Run` tests must assert on the
+  writer passed to Run, NOT on `logs/daemon-*.log` files — the file is
+  materialized only by the spawn redirect, an in-process daemon creates no
+  file (verified live).
 - **Orphan tool_result healing (openai)**: a tool_result whose call is not
   among the pending assistant calls becomes a text block (a dangling
   tool_call_id is a guaranteed 400 on strict upstreams); pairing works by
@@ -359,7 +366,7 @@ internal/
   on its first read (unit tests survived on buffered bodies; a gated-chunk
   test pins the stream now). The synthetic 502 body escapes via %q —
   transport errors quote the URL.
-- **Usage log**: append-only `~/.ccx/logs/usage-YYYY-MM-DD.jsonl`
+- **Usage log**: rides the unified daemon log as `kind=usage` lines
   (provider/protocol/model/stream/tokens/latency/TTFT/status; counts and
   timings only — never bodies or credentials); stream breaks record
   502+error, count_tokens records nothing; passthrough token counts stay

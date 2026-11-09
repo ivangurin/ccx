@@ -24,7 +24,7 @@ func TestRun_LockHeldReturnsError(t *testing.T) {
 	app.SetLockRetryForTest(200 * time.Millisecond)
 	t.Cleanup(app.ResetLockRetryForTest)
 
-	err = app.New(sp.Config, sp.Logger()).Run(sp.Context(), app.ServeOptions{Provider: "work"})
+	err = app.New(sp.Config, sp.Logger(), nil).Run(sp.Context(), app.ServeOptions{Provider: "work"})
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already running")

@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	codexauth "github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/stretchr/testify/require"
 )
@@ -25,19 +24,38 @@ func (fakeAuth) Token(_ context.Context) (codexauth.Auth, error) {
 	return codexauth.Auth{AccessToken: "acc", RefreshToken: "r", AccountID: "acct-1"}, nil
 }
 
-// testLaunchTime — matches reqdump.LaunchTimeForTest: the dump file name in
-// these tests must be deterministic, in production it is time.Now().
-func testLaunchTime() time.Time {
-	return time.Date(2026, 1, 2, 15, 4, 5, 0, time.Local)
+// dumpLinesOf — the decoded unified-log lines a capture holds: dumps ride
+// the daemon logger as kind=reqdump lines (no file anymore), and the
+// external test package reads back the decoded shape.
+func dumpLinesOf(t *testing.T, c *suite_provider.Capture) []map[string]any {
+	t.Helper()
+	lines := c.Lines(t)
+	require.NotEmpty(t, lines, "no dump lines captured")
+
+	return lines
 }
 
-// dumpLine — a read-only mirror of reqdump's JSONL record (the source type
-// is unexported; external test packages rebuild the shape).
-type dumpLine struct {
-	Ts   int64           `json:"ts"`
-	Seq  int64           `json:"seq"`
-	Kind string          `json:"kind"`
-	Body json.RawMessage `json:"body"`
+// dumpLineOf — the decoded line whose dump_kind matches (fails otherwise).
+func dumpLineOf(t *testing.T, lines []map[string]any, kind string) map[string]any {
+	t.Helper()
+	for _, l := range lines {
+		if l["dump_kind"] == kind {
+			return l
+		}
+	}
+	t.Fatalf("no dump line with dump_kind %s", kind)
+
+	return nil
+}
+
+// dumpBodyRaw — the body of one decoded dump line re-marshaled (a valid
+// JSON body embeds verbatim as an object; a non-JSON one as a string).
+func dumpBodyRaw(t *testing.T, line map[string]any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(line["body"])
+	require.NoError(t, err)
+
+	return raw
 }
 
 func TestBuildResponsesRequest(t *testing.T) {
@@ -307,20 +325,19 @@ func TestServeMessages_DumpsUpstreamSSEWhenEnabled(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	dir := filepath.Join(t.TempDir(), "dumps")
+	capture := &suite_provider.Capture{}
 	reqdump.ResetForTest()
 	t.Cleanup(reqdump.ResetForTest)
-	// dumping is --debug-gated in production (app.Run Configure); the env var
-	// alone no longer enables it — translator tests arm it directly
-	reqdump.Configure(reqdump.Options{Enabled: true, Dir: dir, Now: testLaunchTime})
+	// dumping is --debug-gated in production (app.Run Configure); the
+	// translator test arms it directly with a capture logger (dumps ride the
+	// unified log as kind=reqdump lines, no file anymore)
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(capture, nil))})
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	tr.ServeMessages(httptest.NewRecorder(), req)
 
-	data, err := os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
-	require.NoError(t, err)
-	require.Contains(t, string(data), `"kind":"codex-sse"`)
+	require.Contains(t, capture.String(), `"dump_kind":"codex-sse"`)
 }
 
 // Claude Code sends SessionStart-hook output as a message with role "system"
@@ -351,8 +368,8 @@ func TestBuildResponsesRequest_SystemRoleMergesIntoInstructions(t *testing.T) {
 }
 
 // The outgoing Responses payload and the rejected upstream body are dumped
-// under CCX_DUMP_DIR — the pair (what we sent / why it was rejected) is the
-// artifact live debugging needs.
+// through the unified logger — the pair (what we sent / why it was rejected)
+// is the artifact live debugging needs.
 func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -361,36 +378,22 @@ func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	dir := filepath.Join(t.TempDir(), "dumps")
+	capture := &suite_provider.Capture{}
 	reqdump.ResetForTest()
 	t.Cleanup(reqdump.ResetForTest)
-	reqdump.Configure(reqdump.Options{Enabled: true, Dir: dir, Now: testLaunchTime})
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(capture, nil))})
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","system":"s","stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	tr.ServeMessages(httptest.NewRecorder(), req)
 
-	data, err := os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
-	require.NoError(t, err)
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	lines := dumpLinesOf(t, capture)
 	require.Len(t, lines, 2)
-
-	var reqDump, respDump dumpLine
-	for _, l := range lines {
-		var line dumpLine
-		require.NoError(t, json.Unmarshal([]byte(l), &line))
-		switch line.Kind {
-		case "codex-req":
-			reqDump = line
-		case "codex-resp-400":
-			respDump = line
-		default:
-			t.Fatalf("unexpected dump kind: %s", line.Kind)
-		}
-	}
-	require.Contains(t, string(reqDump.Body), `"instructions":"s"`)
-	require.Contains(t, string(reqDump.Body), `"store":false`)
-	require.JSONEq(t, `{"detail":"System messages are not allowed"}`, string(respDump.Body))
+	reqDump := dumpLineOf(t, lines, "codex-req")
+	respDump := dumpLineOf(t, lines, "codex-resp-400")
+	require.Contains(t, string(dumpBodyRaw(t, reqDump)), `"instructions":"s"`)
+	require.Contains(t, string(dumpBodyRaw(t, reqDump)), `"store":false`)
+	require.JSONEq(t, `{"detail":"System messages are not allowed"}`, string(dumpBodyRaw(t, respDump)))
 }
 
 // The ChatGPT backend rejects the request without an explicit "store":

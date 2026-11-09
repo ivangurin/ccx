@@ -29,7 +29,7 @@ func (f *serveFlags) bind(cmd *cobra.Command) {
 	fl.StringVar(&f.provider, "provider", "", "providers.json key to proxy (required)")
 	fl.IntVar(&f.port, "port", 0, "listen port (default: CCX_PORT > daemon.port > 4567)")
 	fl.BoolVar(&f.daemon, "daemon", false, "spawned mode (output to daemon-<launch time>.log)")
-	fl.BoolVar(&f.debug, "debug", false, "debug logging: level=debug (format stays env-driven) and request dumps into <CCX_HOME>/logs/dump-<launch time>.log (providers.json daemon.debug makes the switcher pass this flag)")
+	fl.BoolVar(&f.debug, "debug", false, "debug logging: level=debug (format stays env-driven) and request dumps into the unified daemon log (providers.json daemon.debug makes the switcher pass this flag)")
 }
 
 // options validates the parsed flags and converts them to daemon options.
@@ -54,8 +54,8 @@ func (f *serveFlags) options(positional []string) (app.ServeOptions, error) {
 // newServeCmd — ccx serve [--daemon] [--debug] --provider <key> [--port N]:
 // run the daemon (foreground for debugging; --daemon is SpawnDetached's
 // internal mode, output already goes to daemon-<launch time>.log; --debug =
-// debug level plus request dumps into <LogDir>/dump-<launch time>.log, the
-// log format stays env-driven). The route comes from --provider — there is
+// debug level plus request dumps into the unified daemon log, the log
+// format stays env-driven). The route comes from --provider — there is
 // no in-daemon switching anymore.
 func newServeCmd() *cobra.Command {
 	var f serveFlags
@@ -85,7 +85,7 @@ func runServe(opts app.ServeOptions) int {
 
 		return 1
 	}
-	log, closeLog, err := buildServeLogger(cfg, opts, os.Stderr, time.Now())
+	logs, closeLog, err := buildServeLogger(cfg, opts, os.Stderr, time.Now())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ccx: %v\n", err)
 
@@ -96,8 +96,8 @@ func runServe(opts app.ServeOptions) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.New(cfg, log).Run(ctx, opts); err != nil {
-		log.Error("daemon exited with error", "err", err)
+	if err := app.New(cfg, logs.Diagnostics, logs.Usage).Run(ctx, opts); err != nil {
+		logs.Diagnostics.Error("daemon exited with error", "err", err)
 
 		return 1
 	}

@@ -68,7 +68,7 @@ func TestRun_ContextCancelLogsStopping(t *testing.T) {
 	ctx, cancel := context.WithCancel(sp.Context())
 	cancel() // pre-cancelled: the select must take ctx.Done immediately
 
-	err := app.New(sp.Config, recordingLogger(&buf)).Run(ctx, app.ServeOptions{
+	err := app.New(sp.Config, recordingLogger(&buf), nil).Run(ctx, app.ServeOptions{
 		Provider: "zai",
 		Port:     freePort(t),
 	})
@@ -97,7 +97,7 @@ func TestRun_SighupGracefulShutdown(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		err := app.New(sp.Config, recordingLogger(&buf)).Run(sp.Context(), app.ServeOptions{
+		err := app.New(sp.Config, recordingLogger(&buf), nil).Run(sp.Context(), app.ServeOptions{
 			Provider: "zai",
 			Port:     port,
 		})

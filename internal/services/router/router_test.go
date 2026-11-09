@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -148,52 +147,42 @@ func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
 	require.NoError(t, err)
 
-	dir := filepath.Join(t.TempDir(), "dumps")
+	capture := &suite_provider.Capture{}
 	reqdump.ResetForTest()
 	t.Cleanup(reqdump.ResetForTest)
-	// dumping is --debug-gated in production (app.Run Configure); the env var
-	// alone no longer enables it — the router test arms it directly
-	reqdump.Configure(reqdump.Options{Enabled: true, Dir: dir, Now: fixedLaunchTime})
+	// dumping is --debug-gated in production (app.Run Configure); the router
+	// test arms it directly with a capture logger (dumps ride the unified
+	// log as kind=reqdump lines, no file anymore)
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(capture, nil))})
 
 	rec := httptest.NewRecorder()
 	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages",
 		strings.NewReader(`{"m":1,"unknown_field":"kept"}`)))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	data, err := os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
-	require.NoError(t, err)
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	lines := capture.Lines(t)
 	require.Len(t, lines, 1)
-	require.Contains(t, lines[0], `"kind":"anthropic-req"`)
-	require.JSONEq(t, `{"m":1,"unknown_field":"kept"}`, dumpBodyOf(t, lines[0]))
+	require.Equal(t, "anthropic-req", lines[0]["dump_kind"])
+	require.InDelta(t, 1, dumpBodyOf(t, lines[0])["m"], 0)
+	require.Equal(t, "kept", dumpBodyOf(t, lines[0])["unknown_field"])
 
 	// count_tokens gets the same treatment
 	rec2 := httptest.NewRecorder()
 	svc.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens",
 		strings.NewReader(`{"m":2}`)))
-	data, err = os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
-	require.NoError(t, err)
-	lines = strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	lines = capture.Lines(t)
 	require.Len(t, lines, 2)
-	require.Contains(t, lines[1], `"kind":"anthropic-count-tokens"`)
+	require.Equal(t, "anthropic-count-tokens", lines[1]["dump_kind"])
+	require.InDelta(t, 2, dumpBodyOf(t, lines[1])["m"], 0)
 }
 
-// fixedLaunchTime — matches reqdump.LaunchTimeForTest (deterministic file
-// name; production uses time.Now()).
-func fixedLaunchTime() time.Time {
-	return time.Date(2026, 1, 2, 15, 4, 5, 0, time.Local)
-}
-
-// dumpBodyOf extracts the embedded body field from one dump JSONL line.
-func dumpBodyOf(t *testing.T, line string) string {
+// dumpBodyOf extracts the verbatim body object from one decoded dump line.
+func dumpBodyOf(t *testing.T, line map[string]any) map[string]any {
 	t.Helper()
+	body, ok := line["body"].(map[string]any)
+	require.True(t, ok, "dump body must embed as an object, got %T", line["body"])
 
-	var rec struct {
-		Body json.RawMessage `json:"body"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(line), &rec))
-
-	return string(rec.Body)
+	return body
 }
 
 // I6: a hand-edited anthropic/openai profile without base_url — a clear

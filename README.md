@@ -234,7 +234,7 @@ edited in place, never moved or reformatted.
 | `ccx status` | active provider/model |
 | `ccx init [--force]` | create providers.json (import from settings/env) |
 | `ccx edit` | open providers.json in `$EDITOR` |
-| `ccx serve [--daemon] [--debug] --provider <key> [--port N]` | run the daemon in the foreground (`--debug`: debug-level logging — the format stays env-driven — and request dumps into `~/.ccx/logs/dump-<launch time>.log`; `CCX_DUMP_DIR` overrides the dump directory) |
+| `ccx serve [--daemon] [--debug] --provider <key> [--port N]` | run the daemon in the foreground (`--debug`: debug-level logging — the format stays env-driven — and request dumps into the unified daemon log as `kind=reqdump` lines) |
 | `ccx stop` | stop the daemon |
 | `ccx auth [provider]` | login flow for the provider's protocol (copilot device flow / codex OAuth); no argument — auth state of every provider |
 | `ccx version` / `ccx help` | version / help |
