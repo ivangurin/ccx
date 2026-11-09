@@ -82,7 +82,7 @@ brew install ivangurin/tap/ccx
 The formula tracks the latest release and is updated automatically on every
 `v*` tag. Upgrading: `brew upgrade ccx`. Uninstalling: `brew uninstall ccx`.
 
-Or without Homebrew (Apple Silicon):
+Or without Homebrew (Apple Silicon and Intel):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ivangurin/ccx/main/install.sh | sh

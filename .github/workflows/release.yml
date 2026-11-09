@@ -32,9 +32,11 @@ jobs:
               -o "bin/ccx-$arch" ./cmd/ccx
           done
       - name: Zip binaries to archive root
+        # the archive carries the binary AS `ccx` — the formula's
+        # `bin "ccx"` and install.sh both expect that name at the root
         run: |
-          zip -j "ccx-mac-arm64-${GITHUB_REF_NAME}.zip"  bin/ccx-arm64
-          zip -j "ccx-mac-amd64-${GITHUB_REF_NAME}.zip"  bin/ccx-amd64
+          cp bin/ccx-arm64 ccx && zip -j "ccx-mac-arm64-${GITHUB_REF_NAME}.zip" ccx
+          cp bin/ccx-amd64 ccx && zip -j "ccx-mac-amd64-${GITHUB_REF_NAME}.zip" ccx
       - name: Create release with the artifacts
         env:
           GH_TOKEN: ${{ github.token }}

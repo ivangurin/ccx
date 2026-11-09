@@ -1,7 +1,8 @@
 #!/bin/sh
 # Installs the latest ccx release to /usr/local/bin — the same destination
-# and permissions as `make install` (Makefile PREFIX default). Supports only
-# what the release workflow publishes: darwin/arm64.
+# and permissions as `make install` (Makefile PREFIX default). Picks the
+# asset by platform: the release publishes darwin/arm64 and darwin/amd64
+# as ccx-mac-<arch>-<tag>.zip.
 #
 # Directly:                sh install.sh
 # Piped (README one-liner): curl -fsSL .../install.sh | sh
@@ -14,11 +15,13 @@ prefix=/usr/local/bin
 
 os=$(uname -s)
 arch=$(uname -m)
-if [ "$os" != "Darwin" ] || [ "$arch" != "arm64" ]; then
-    echo "error: releases are built for macOS Apple Silicon only (you are $os/$arch)" >&2
-    echo "see https://github.com/$repo/releases or build from source: make install" >&2
-    exit 1
-fi
+case "$os/$arch" in
+    Darwin/arm64)  asset_arch=arm64 ;;
+    Darwin/x86_64) asset_arch=amd64 ;;
+    *) echo "error: releases are built for macOS (arm64 and amd64) only (you are $os/$arch)" >&2
+       echo "see https://github.com/$repo/releases or build from source: make install" >&2
+       exit 1 ;;
+esac
 
 # The asset name embeds the tag, so the tag must be resolved first. Parsed
 # with plain sed — jq is not preinstalled on macOS. Unauthenticated GitHub
@@ -33,9 +36,9 @@ fi
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
-echo "Downloading ccx $tag ..."
+echo "Downloading ccx $tag (macOS $asset_arch) ..."
 curl -fSL -o "$workdir/ccx.zip" \
-    "https://github.com/$repo/releases/download/$tag/ccx-macos-$tag.zip"
+    "https://github.com/$repo/releases/download/$tag/ccx-mac-$asset_arch-$tag.zip"
 unzip -q "$workdir/ccx.zip" -d "$workdir"
 
 # /usr/local/bin does not exist on a fresh Apple Silicon macOS (Homebrew
