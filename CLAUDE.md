@@ -205,10 +205,15 @@ internal/
   Claude Code — a switch must not silently tighten it).
 - **Daemon Stop is home-scoped (foreign-daemon refusal)**: the port is a
   machine-global namespace, CCX_HOME is not — switcher Stop admin-stops only
-  a daemon whose pidfile (in the CALLER's home) names a live pid; anything
+  a daemon whose pidfile (in the CALLER's home) names a live OWN process
+  (`ownsCCX`, ps comm == our binary — NOT a bare signal-0 `pidAlive`, which
+  counts any live process including another user's via its EPERM branch); anything
   else answering on the port is a foreign home's daemon and gets an explicit
   error (a direct-profile switch prints a note and stays committed; Restart
-  fails fast instead of losing the bind race). Root cause of the 2026-11-09
+  fails fast instead of losing the bind race). ownsCCX in the gate is not
+  optional hardening: a SIGKILLed daemon leaves its pidfile behind (the
+  defer never runs), so stale pidfiles are ROUTINE, and a reused pid must
+  neither be signaled nor admin-stopped. Root cause of the 2026-11-09
   "daemon dies silently, ECONNREFUSED, only model re-selection helps" day:
   `go test`/`make test` runs from parallel Claude Code sessions killed the
   LIVE x5 daemon — the suite sandboxes CCX_HOME/CCX_SETTINGS but not the
@@ -216,6 +221,11 @@ internal/
   whatever answered there (verified live: the /admin/* access log named the
   killer — `POST /admin/stop` seconds after `go test ./...`; every death of
   the day matches a test run to the second).
+- **Ownership-gate fixtures must name an own-named process**: a test
+  pidfile pointing at `/bin/sleep` passes the old pidAlive gate but is
+  correctly refused by ownsCCX — the fixture child must re-run the test
+  binary itself (`selfChild`/`ownTestChild` + a `GO_WANT_HELPER_PROCESS`
+  sleep payload), because ps comm is the identity the gate checks.
 - **Daemon exit observability**: SIGHUP is handled like SIGTERM (an
   unhandled SIGHUP kills a Go process with zero output — a whole
   silent-death class), the ctx-cancel exit (the /admin/stop path) logs
@@ -326,6 +336,14 @@ internal/
   itself is `daemon-<launch time>.log` (one per launch, same format as
   before, level=debug with the flag). The wire-shape class of bugs (like
   the parallel-call delivery) is only visible on the real backend.
+  JSONL integrity by construction: one writer process, one mutex over the
+  held O_APPEND handle, one Write per line; `json.Valid` re-marshals
+  non-JSON bodies as escaped strings — a RawMessage embed of a raw body
+  would let a newline inside it split the line (verified by review,
+  2026-11-09). A test logger writing into a plain `bytes.Buffer` from a
+  background goroutine is a -race FAILURE — wrap it in a mutex (`syncBuffer`
+  in selfcheck_test.go), `require.Eventually` polls it from the test
+  goroutine concurrently.
 - **Orphan tool_result healing (openai)**: a tool_result whose call is not
   among the pending assistant calls becomes a text block (a dangling
   tool_call_id is a guaranteed 400 on strict upstreams); pairing works by
