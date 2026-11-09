@@ -14,10 +14,11 @@ import (
 )
 
 // SpawnDetached starts a child daemon: its own session (Setsid — terminal
-// death doesn't kill it), stdout/stderr → daemon.log, stdin → /dev/null.
+// death doesn't kill it), stdout/stderr → daemon-<launch time>.log (append —
+// a same-second relaunch appends to the same file), stdin → /dev/null.
 // args are appended after "serve --daemon" (launch parameters).
 func SpawnDetached(cfg *config.Config, args ...string) error {
-	logPath := filepath.Join(cfg.LogDir(), "daemon.log")
+	logPath := filepath.Join(cfg.LogDir(), "daemon-"+time.Now().Format("20060102-150405")+".log")
 	if err := os.MkdirAll(cfg.LogDir(), 0o750); err != nil {
 		return fmt.Errorf("spawn: log dir: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/app"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
@@ -52,20 +53,48 @@ func runStatus(_ []string, stdout io.Writer) int {
 		return 0
 	}
 
+	var prof *models.Profile
 	copilot := false
-	if prof := providers.Providers.Get(state.Provider); prof == nil {
+	if p := providers.Providers.Get(state.Provider); p == nil {
 		fmt.Fprintf(stdout, "Active provider: %s (missing from providers.json — deleted?)\n", state.Provider)
 	} else {
-		fmt.Fprintf(stdout, "Active provider: %s (%s) · %s\n", state.Provider, prof.Name, prof.Protocol)
+		fmt.Fprintf(stdout, "Active provider: %s (%s) · %s\n", state.Provider, p.Name, p.Protocol)
+		prof = p
 		copilot = prof.Protocol == models.ProtocolCopilot
 	}
 	fmt.Fprintf(stdout, "Model:          %s\n", state.Model)
 	fmt.Fprintf(stdout, "Updated:        %s\n", state.Updated)
+	printDaemonState(cfg, prof, stdout)
 	if copilot {
 		printCopilotQuota(cfg, state.Provider, stdout)
 	}
 
 	return 0
+}
+
+// daemonProbeTimeout bounds the liveness probe: status is a local-state
+// command and must never hang on a wedged network (var for tests).
+var daemonProbeTimeout = time.Second
+
+// printDaemonState shows daemon liveness for the active route: translated
+// protocols (openai/copilot/codex) route every Claude Code request through
+// the daemon — a dead daemon is ECONNREFUSED in every running session, the
+// exact 2026-11-09 failure mode status had no answer for ("проверял, что
+// демон запущен" — nothing showed it). A direct anthropic profile uses no
+// daemon by design: "down" there would be a false alarm.
+func printDaemonState(cfg *config.Config, prof *models.Profile, stdout io.Writer) {
+	if prof != nil && prof.Protocol == models.ProtocolAnthropic {
+		fmt.Fprintln(stdout, "Daemon:         not used (direct connection)")
+
+		return
+	}
+	port := config.ResolveDaemonPort(cfg, 0)
+	if app.HealthCheck(fmt.Sprintf("http://127.0.0.1:%d", port), daemonProbeTimeout) {
+		fmt.Fprintf(stdout, "Daemon:         up (127.0.0.1:%d)\n", port)
+
+		return
+	}
+	fmt.Fprintf(stdout, "Daemon:         down (no /health answer on 127.0.0.1:%d)\n", port)
 }
 
 // printCopilotQuota prints the plan and the AI-credit pool from the ACTIVE

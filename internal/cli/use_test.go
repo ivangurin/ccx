@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -59,7 +61,10 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 // state are written inside the sandbox home.
 func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
+	// an ephemeral port: the default 4567 belongs to the machine, and a live
+	// daemon may be serving on it (this test's best-effort Stop must not
+	// reach it — see the ownership gate; verified live 2026-11-09)
+	p := &models.Providers{Daemon: &models.Daemon{Port: freePort(t)}}
 	p.Providers.Set("zai", &models.Profile{
 		Name:     "z.ai",
 		Protocol: models.ProtocolAnthropic,
@@ -133,13 +138,43 @@ func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	require.Contains(t, out.String(), "not running")
 }
 
+// ownTestChild spawns a child whose ps comm matches this TEST binary — the
+// ownership gate (ownsCCX) accepts only processes named like ccx, so the
+// pidfile in these tests must name a look-alike child, not /bin/sleep
+// (a foreign-named pid is exactly what the gate must refuse).
+func ownTestChild(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.Command(self, "-test.run=^TestHelperSleepProcess$", "--", "30") //nolint:gosec // our own test binary
+	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+
+	return cmd
+}
+
+// TestHelperSleepProcess is ownTestChild's payload (never runs as a real
+// test: the guard returns unless the child env is set).
+func TestHelperSleepProcess(_ *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	time.Sleep(30 * time.Second)
+}
+
 // A daemon that ignores /admin/stop (a hung SSE stream can hold the graceful
 // drain forever) must fail the command: exit 0 "still responding" told
 // scripts the port was free while the next spawn then lost the lock race.
 func TestCommandStop_HungDaemonFailsNonZero(t *testing.T) {
-	suite_provider.NewProvider(t)
-	// no daemon.pid in the sandbox: the signal escalation finds nothing to
-	// signal and the final port wait is what reports the failure
+	sp := suite_provider.NewProvider(t)
+	// a live own-named pid in the pidfile: the ownership gate lets the stop
+	// proceed, and the hung fake is what drives the failure path
+	sleep := ownTestChild(t)
+	require.NoError(t, os.WriteFile( //nolint:gosec // sandbox home
+		filepath.Join(sp.HomeDir(), "daemon.pid"), []byte(strconv.Itoa(sleep.Process.Pid)), 0o600,
+	))
 	switcher.SetWaitTimingsForTest(100*time.Millisecond, 100*time.Millisecond, 100*time.Millisecond, 100*time.Millisecond, 20*time.Millisecond)
 	t.Cleanup(func() {
 		switcher.SetWaitTimingsForTest(10*time.Second, 2*time.Second, 2*time.Second, 35*time.Second, 200*time.Millisecond)
@@ -165,7 +200,13 @@ func TestCommandStop_HungDaemonFailsNonZero(t *testing.T) {
 
 // A daemon that honors /admin/stop closes the port and the command succeeds.
 func TestCommandStop_CleanShutdown(t *testing.T) {
-	suite_provider.NewProvider(t)
+	sp := suite_provider.NewProvider(t)
+	// this home owns the daemon (live own-named pid in daemon.pid) — the stop
+	// proceeds through the ownership gate
+	sleep := ownTestChild(t)
+	require.NoError(t, os.WriteFile( //nolint:gosec // sandbox home
+		filepath.Join(sp.HomeDir(), "daemon.pid"), []byte(strconv.Itoa(sleep.Process.Pid)), 0o600,
+	))
 	stopped := make(chan struct{})
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

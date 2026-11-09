@@ -203,6 +203,29 @@ internal/
   jsonfile.WriteAtomicJSON/WriteAtomicRaw); backups and ccx-owned configs are
   0600, but an EXISTING target keeps its own perms (settings.json belongs to
   Claude Code — a switch must not silently tighten it).
+- **Daemon Stop is home-scoped (foreign-daemon refusal)**: the port is a
+  machine-global namespace, CCX_HOME is not — switcher Stop admin-stops only
+  a daemon whose pidfile (in the CALLER's home) names a live pid; anything
+  else answering on the port is a foreign home's daemon and gets an explicit
+  error (a direct-profile switch prints a note and stays committed; Restart
+  fails fast instead of losing the bind race). Root cause of the 2026-11-09
+  "daemon dies silently, ECONNREFUSED, only model re-selection helps" day:
+  `go test`/`make test` runs from parallel Claude Code sessions killed the
+  LIVE x5 daemon — the suite sandboxes CCX_HOME/CCX_SETTINGS but not the
+  port, fixtures pinned 4567, and the old health-gated Stop trusted
+  whatever answered there (verified live: the /admin/* access log named the
+  killer — `POST /admin/stop` seconds after `go test ./...`; every death of
+  the day matches a test run to the second).
+- **Daemon exit observability**: SIGHUP is handled like SIGTERM (an
+  unhandled SIGHUP kills a Go process with zero output — a whole
+  silent-death class), the ctx-cancel exit (the /admin/stop path) logs
+  `daemon stopping`, every /admin/* request is logged with its remote addr,
+  `--debug` runs a 10s self-dial of own /health (`self-check: listener not
+  answering` = alive process, broken listener), and Run starts with a
+  `daemon launch` snapshot (pid/ppid/sid/rlimit). `ccx status` probes
+  /health and prints `Daemon: up/down/not used (direct)` — it used to show
+  nothing about the daemon, which fed a day of "the daemon IS running"
+  misdiagnosis (verified live 2026-11-09).
 
 ### Translator runtime invariants (v0.0.4 hardening)
 
@@ -293,11 +316,16 @@ internal/
   (usage log 502 "upstream stream ended without completion");
   `response.incomplete` is handled as terminal — usage captured when
   present, `incomplete_details.reason` relayed in the error. Catch the next
-  window live with CCX_DUMP_DIR to see the raw incomplete event.
-- **CCX_DUMP_DIR captures the raw codex upstream SSE** (`codex-sse-*.json`,
-  one file per event) next to the request/error dumps — the wire-shape
-  class of bugs (like the parallel-call delivery) is only visible on the
-  real backend.
+  window live with `--debug` to see the raw incomplete event.
+- **Request dumps are `--debug`-gated** (2026-11-09; CCX_DUMP_DIR no longer
+  enables dumping — it only overrides the directory, default `<CCX_HOME>/logs`):
+  all dumps of one daemon launch append to a single JSONL
+  `dump-<launch time>.log` (each line
+  `{"ts":…,"seq":…,"kind":"…","body":<verbatim json or string>}`); the
+  `debug-<launch time>.log` tee logger files are GONE — the daemon log
+  itself is `daemon-<launch time>.log` (one per launch, same format as
+  before, level=debug with the flag). The wire-shape class of bugs (like
+  the parallel-call delivery) is only visible on the real backend.
 - **Orphan tool_result healing (openai)**: a tool_result whose call is not
   among the pending assistant calls becomes a text block (a dangling
   tool_call_id is a guaranteed 400 on strict upstreams); pairing works by
@@ -353,6 +381,13 @@ internal/
 
 ## Testing
 
+- **Never pin port 4567 in test fixtures** — it is the machine-global port
+  of the developer's LIVE daemon; a fixture resolving to it turns the test
+  suite into a daemon killer (see the foreign-daemon refusal invariant;
+  verified live 2026-11-09). Fixtures take an ephemeral port (`freePort`),
+  and tests driving Stop/Restart write a live pid into the sandbox
+  daemon.pid — the ownership gate refuses anything else by design.
+
 Tests use testify (`require`); the suite provider is
 `internal/pkg/suite/provider` (temp CCX_HOME with CCX_SETTINGS pinned inside
 it — the settings default points at the live ~/.claude and must not leak
@@ -376,17 +411,17 @@ was being built, and a blind hand-copy would have clobbered the fresh file) —
 re-check live paths immediately before any write into them.
 
 Diagnostic shape of "copilot stopped answering" (verified live 2026-11-07,
-a full evening traced via usage log + daemon.log + settings backups +
+a full evening traced via usage log + daemon-*.log + settings backups +
 zsh history + CC transcripts): `ENOTFOUND` in the client error means the
 direct provider's hostname DNS — never the daemon (127.0.0.1 resolves no
 name); a bare `Connection error.` right after a switch to a direct
 anthropic profile is the switcher's by-design silent daemon stop while the
 running session's env still says 127.0.0.1:4567 — a stale-daemon
 diagnosis must first check what settings.json pointed at WHEN the failing
-session started (backups/ carry the timestamped sequence). daemon.log
-records every spawn but NO stop: `/admin/stop` exits silently (pidfile
-removed) and SIGTERM logs `signal — shutting down` — absence of that line
-means no signal escalation ever ran.
+session started (backups/ carry the timestamped sequence). daemon-*.log
+(one file per launch) records every spawn but NO stop: `/admin/stop`
+exits silently (pidfile removed) and SIGTERM logs `signal — shutting
+down` — absence of that line means no signal escalation ever ran.
 
 ```bash
 ./bin/ccx serve --daemon --provider <key> --port 4570   # pick a free port

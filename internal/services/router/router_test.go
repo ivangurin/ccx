@@ -16,6 +16,7 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccx/internal/services/router"
 	"github.com/stretchr/testify/require"
@@ -135,8 +136,8 @@ func TestServeMessages_DelegatesToActive(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec2.Code)
 }
 
-// CCX_DUMP_DIR captures the raw client body verbatim (unknown fields
-// included) and the request still reaches the translator untouched.
+// --debug-enabled dumping captures the raw client body verbatim (unknown
+// fields included) and the request still reaches the translator untouched.
 func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	sp := newFixture(t)
 	up := startEchoUpstream(t)
@@ -148,29 +149,51 @@ func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	require.NoError(t, err)
 
 	dir := filepath.Join(t.TempDir(), "dumps")
-	t.Setenv("CCX_DUMP_DIR", dir)
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	// dumping is --debug-gated in production (app.Run Configure); the env var
+	// alone no longer enables it — the router test arms it directly
+	reqdump.Configure(reqdump.Options{Enabled: true, Dir: dir, Now: fixedLaunchTime})
 
 	rec := httptest.NewRecorder()
 	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages",
 		strings.NewReader(`{"m":1,"unknown_field":"kept"}`)))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	entries, err := os.ReadDir(dir)
+	data, err := os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
 	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	require.Contains(t, entries[0].Name(), "anthropic-req")
-	dumped, err := os.ReadFile(filepath.Join(dir, entries[0].Name())) //nolint:gosec // test sandbox dir
-	require.NoError(t, err)
-	require.JSONEq(t, `{"m":1,"unknown_field":"kept"}`, string(dumped))
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	require.Len(t, lines, 1)
+	require.Contains(t, lines[0], `"kind":"anthropic-req"`)
+	require.JSONEq(t, `{"m":1,"unknown_field":"kept"}`, dumpBodyOf(t, lines[0]))
 
 	// count_tokens gets the same treatment
 	rec2 := httptest.NewRecorder()
 	svc.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens",
 		strings.NewReader(`{"m":2}`)))
-	entries, err = os.ReadDir(dir)
+	data, err = os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
 	require.NoError(t, err)
-	require.Len(t, entries, 2)
-	require.Contains(t, entries[1].Name(), "anthropic-count-tokens")
+	lines = strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	require.Len(t, lines, 2)
+	require.Contains(t, lines[1], `"kind":"anthropic-count-tokens"`)
+}
+
+// fixedLaunchTime — matches reqdump.LaunchTimeForTest (deterministic file
+// name; production uses time.Now()).
+func fixedLaunchTime() time.Time {
+	return time.Date(2026, 1, 2, 15, 4, 5, 0, time.Local)
+}
+
+// dumpBodyOf extracts the embedded body field from one dump JSONL line.
+func dumpBodyOf(t *testing.T, line string) string {
+	t.Helper()
+
+	var rec struct {
+		Body json.RawMessage `json:"body"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(line), &rec))
+
+	return string(rec.Body)
 }
 
 // I6: a hand-edited anthropic/openai profile without base_url — a clear

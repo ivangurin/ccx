@@ -69,7 +69,10 @@ func TestCommandInit_ForceRegenerates(t *testing.T) {
 
 func writeProviders(t *testing.T, path string, keysInOrder []string) {
 	t.Helper()
-	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
+	// an ephemeral port: the default 4567 is machine-global — a live daemon
+	// may be serving on it while tests run, and a use test's Stop must not
+	// reach it (the ownership gate refuses; verified live 2026-11-09)
+	p := &models.Providers{Daemon: &models.Daemon{Port: freePort(t)}}
 	for _, k := range keysInOrder {
 		p.Providers.Set(k, &models.Profile{
 			Name:     "name-" + k,

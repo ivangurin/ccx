@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	codexauth "github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +23,21 @@ type fakeAuth struct{}
 
 func (fakeAuth) Token(_ context.Context) (codexauth.Auth, error) {
 	return codexauth.Auth{AccessToken: "acc", RefreshToken: "r", AccountID: "acct-1"}, nil
+}
+
+// testLaunchTime — matches reqdump.LaunchTimeForTest: the dump file name in
+// these tests must be deterministic, in production it is time.Now().
+func testLaunchTime() time.Time {
+	return time.Date(2026, 1, 2, 15, 4, 5, 0, time.Local)
+}
+
+// dumpLine — a read-only mirror of reqdump's JSONL record (the source type
+// is unexported; external test packages rebuild the shape).
+type dumpLine struct {
+	Ts   int64           `json:"ts"`
+	Seq  int64           `json:"seq"`
+	Kind string          `json:"kind"`
+	Body json.RawMessage `json:"body"`
 }
 
 func TestBuildResponsesRequest(t *testing.T) {
@@ -291,22 +308,19 @@ func TestServeMessages_DumpsUpstreamSSEWhenEnabled(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	dir := filepath.Join(t.TempDir(), "dumps")
-	t.Setenv("CCX_DUMP_DIR", dir)
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	// dumping is --debug-gated in production (app.Run Configure); the env var
+	// alone no longer enables it — translator tests arm it directly
+	reqdump.Configure(reqdump.Options{Enabled: true, Dir: dir, Now: testLaunchTime})
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	tr.ServeMessages(httptest.NewRecorder(), req)
 
-	entries, err := os.ReadDir(dir)
+	data, err := os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
 	require.NoError(t, err)
-	require.NotEmpty(t, entries)
-	sseDumped := false
-	for _, e := range entries {
-		if strings.Contains(e.Name(), "codex-sse") {
-			sseDumped = true
-		}
-	}
-	require.True(t, sseDumped, "raw upstream events must dump under CCX_DUMP_DIR")
+	require.Contains(t, string(data), `"kind":"codex-sse"`)
 }
 
 // Claude Code sends SessionStart-hook output as a message with role "system"
@@ -348,36 +362,35 @@ func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	dir := filepath.Join(t.TempDir(), "dumps")
-	t.Setenv("CCX_DUMP_DIR", dir)
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	reqdump.Configure(reqdump.Options{Enabled: true, Dir: dir, Now: testLaunchTime})
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","system":"s","stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	tr.ServeMessages(httptest.NewRecorder(), req)
 
-	entries, err := os.ReadDir(dir)
+	data, err := os.ReadFile(filepath.Join(dir, "dump-"+reqdump.LaunchTimeForTest+".log")) //nolint:gosec // test sandbox dir
 	require.NoError(t, err)
-	require.Len(t, entries, 2)
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	require.Len(t, lines, 2)
 
-	dumped := map[string]string{}
-	for _, e := range entries {
-		data, err := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // test sandbox dir
-		require.NoError(t, err)
-		dumped[e.Name()] = string(data)
-	}
-	var reqDump, respDump string
-	for name, body := range dumped {
-		switch {
-		case strings.Contains(name, "codex-req"):
-			reqDump = body
-		case strings.Contains(name, "codex-resp-400"):
-			respDump = body
+	var reqDump, respDump dumpLine
+	for _, l := range lines {
+		var line dumpLine
+		require.NoError(t, json.Unmarshal([]byte(l), &line))
+		switch line.Kind {
+		case "codex-req":
+			reqDump = line
+		case "codex-resp-400":
+			respDump = line
 		default:
-			t.Fatalf("unexpected dump file: %s", name)
+			t.Fatalf("unexpected dump kind: %s", line.Kind)
 		}
 	}
-	require.Contains(t, reqDump, `"instructions":"s"`)
-	require.Contains(t, reqDump, `"store":false`)
-	require.JSONEq(t, `{"detail":"System messages are not allowed"}`, respDump)
+	require.Contains(t, string(reqDump.Body), `"instructions":"s"`)
+	require.Contains(t, string(reqDump.Body), `"store":false`)
+	require.JSONEq(t, `{"detail":"System messages are not allowed"}`, string(respDump.Body))
 }
 
 // The ChatGPT backend rejects the request without an explicit "store":

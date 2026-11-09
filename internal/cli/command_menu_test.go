@@ -8,9 +8,11 @@ import (
 )
 
 // menuTestProviders — two profiles: the first with two models, the second
-// without any (Keys order = insertion order: "withmodels", "bare").
+// without any (Keys order = insertion order: "withmodels", "bare"). No
+// daemon block: these are pure menu-shape tests, and pinning a port here
+// would couple them to the machine-global 4567 (a live daemon's port).
 func menuTestProviders() *models.Providers {
-	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
+	p := &models.Providers{}
 	p.Providers.Set("withmodels", &models.Profile{
 		Name:     "Has models",
 		Protocol: models.ProtocolAnthropic,

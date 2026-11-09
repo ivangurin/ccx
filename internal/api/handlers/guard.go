@@ -43,3 +43,19 @@ func requireAdminMarker(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// adminAccessLog writes one Info line per /admin/* request (method, path,
+// remote address). /admin/stop is the daemon's only fully silent exit — the
+// 2026-11-09 ECONNREFUSED forensics could not tell who stopped the daemon —
+// so every admin caller identifies itself in daemon-*.log. Deps.Log == nil
+// (the in-process tester) skips the line.
+func adminAccessLog(d Deps) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if d.Log != nil {
+				d.Log.Info("admin request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

@@ -28,8 +28,8 @@ func (f *serveFlags) bind(cmd *cobra.Command) {
 	fl := cmd.Flags()
 	fl.StringVar(&f.provider, "provider", "", "providers.json key to proxy (required)")
 	fl.IntVar(&f.port, "port", 0, "listen port (default: CCX_PORT > daemon.port > 4567)")
-	fl.BoolVar(&f.daemon, "daemon", false, "spawned mode (output to daemon.log)")
-	fl.BoolVar(&f.debug, "debug", false, "debug logging: level=debug, dev format, tee into <CCX_HOME>/logs/debug-<launch time>.log (providers.json daemon.debug makes the switcher pass this flag)")
+	fl.BoolVar(&f.daemon, "daemon", false, "spawned mode (output to daemon-<launch time>.log)")
+	fl.BoolVar(&f.debug, "debug", false, "debug logging: level=debug (format stays env-driven) and request dumps into <CCX_HOME>/logs/dump-<launch time>.log (providers.json daemon.debug makes the switcher pass this flag)")
 }
 
 // options validates the parsed flags and converts them to daemon options.
@@ -53,9 +53,10 @@ func (f *serveFlags) options(positional []string) (app.ServeOptions, error) {
 
 // newServeCmd — ccx serve [--daemon] [--debug] --provider <key> [--port N]:
 // run the daemon (foreground for debugging; --daemon is SpawnDetached's
-// internal mode, output already goes to daemon.log; --debug = debug/dev
-// logging teed into <LogDir>/debug-<launch time>.log). The route comes from
-// --provider — there is no in-daemon switching anymore.
+// internal mode, output already goes to daemon-<launch time>.log; --debug =
+// debug level plus request dumps into <LogDir>/dump-<launch time>.log, the
+// log format stays env-driven). The route comes from --provider — there is
+// no in-daemon switching anymore.
 func newServeCmd() *cobra.Command {
 	var f serveFlags
 	cmd := &cobra.Command{

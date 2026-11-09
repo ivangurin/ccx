@@ -104,9 +104,9 @@ func (s *Service) Active() (provider string, protocol models.Protocol, ok bool) 
 }
 
 // ServeMessages delegates /v1/messages to the route's translator. The raw
-// client body is peeked for an opt-in CCX_DUMP_DIR dump before delegation:
-// the exact payload a real client sends is the only reproduction for some
-// upstream bugs (see internal/pkg/reqdump).
+// client body is peeked for a dump when --debug enabled dumping (see
+// internal/pkg/reqdump): the exact payload a real client sends is the only
+// reproduction for some upstream bugs.
 func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
 	if reqdump.Enabled() {
 		body, err := io.ReadAll(r.Body)

@@ -2,9 +2,7 @@ package cli_test
 
 import (
 	"bytes"
-	"io"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,57 +12,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// debugLaunchTime — fixed launch time: the file name in the test must be
-// deterministic, in production it is time.Now().
+// debugLaunchTime — a fixed launch time: buildServeLogger ignores it (the
+// sink file is the parent's redirect job), but the seam keeps its shape.
 var debugLaunchTime = time.Date(2026, 11, 7, 15, 4, 5, 0, time.Local)
 
-func debugLogPath(sp *suite_provider.Provider) string {
-	return filepath.Join(sp.Config.LogDir(), "debug-"+debugLaunchTime.Format("20060102-150405")+".log")
-}
-
-func TestBuildServeLogger_DebugTeesToFile(t *testing.T) {
+func TestBuildServeLogger_DebugOverridesLevelOnly(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
+	sp.Config.LogLevel = "info" // suite default — the flag must beat it
+	sp.Config.LogFormat = "json"
 
 	var stderr bytes.Buffer
 	log, closeLog, err := cli.BuildServeLoggerForTest(sp.Config, app.ServeOptions{Debug: true}, &stderr, debugLaunchTime)
 	require.NoError(t, err)
 
-	log.Info("debug-hello")
+	log.Debug("debug-level-line") // level=info would swallow this
 	closeLog()
 
-	raw, err := os.ReadFile(debugLogPath(sp))
-	require.NoError(t, err)
-	require.Contains(t, string(raw), "msg=debug-hello")     // dev format in the file
-	require.Contains(t, stderr.String(), "msg=debug-hello") // tee: stderr keeps working
+	require.Contains(t, stderr.String(), `"level":"DEBUG"`) // level from the flag, json format (not dev)
+	// anti-tee regression: the logger must not create any file — a spawned
+	// daemon's log lands in the parent's redirect, a foreground run stays on
+	// stderr only
+	_, err = os.Stat(sp.Config.LogDir())
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestBuildServeLogger_DebugOverridesEnvLevelAndFormat(t *testing.T) {
+func TestBuildServeLogger_DebugKeepsEnvFormat(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	sp.Config.LogLevel = "error" // suite default — the flag must beat it
-	sp.Config.LogFormat = "json"
+	sp.Config.LogLevel = "info"
+	sp.Config.LogFormat = "dev"
 
-	log, closeLog, err := cli.BuildServeLoggerForTest(sp.Config, app.ServeOptions{Debug: true}, io.Discard, debugLaunchTime)
+	var stderr bytes.Buffer
+	log, closeLog, err := cli.BuildServeLoggerForTest(sp.Config, app.ServeOptions{Debug: true}, &stderr, debugLaunchTime)
 	require.NoError(t, err)
 
-	log.Debug("debug-level-line") // level=error would swallow this
+	log.Debug("debug-text-line")
 	closeLog()
 
-	raw, err := os.ReadFile(debugLogPath(sp))
-	require.NoError(t, err)
-	require.Contains(t, string(raw), "level=DEBUG") // level from the flag, dev format (not json)
-}
-
-func TestBuildServeLogger_DebugFilePermissions(t *testing.T) {
-	sp := suite_provider.NewProvider(t)
-	require.NoDirExists(t, sp.Config.LogDir()) // created on demand
-
-	_, closeLog, err := cli.BuildServeLoggerForTest(sp.Config, app.ServeOptions{Debug: true}, io.Discard, debugLaunchTime)
-	require.NoError(t, err)
-	closeLog()
-
-	info, err := os.Stat(debugLogPath(sp))
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	require.Contains(t, stderr.String(), "level=DEBUG") // dev format honored under --debug
 }
 
 func TestBuildServeLogger_NoDebugKeepsEnvConfig(t *testing.T) {
@@ -83,5 +67,5 @@ func TestBuildServeLogger_NoDebugKeepsEnvConfig(t *testing.T) {
 	require.Contains(t, stderr.String(), `"msg":"info-line"`) // env json format
 	require.NotContains(t, stderr.String(), "swallowed")      // env info level
 	_, err = os.Stat(sp.Config.LogDir())
-	require.ErrorIs(t, err, os.ErrNotExist) // no log dir or file without --debug
+	require.ErrorIs(t, err, os.ErrNotExist) // no log dir without --debug
 }

@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -27,6 +28,11 @@ type Deps struct {
 	Version string
 	Port    int    // the resolved listen port (reported by /admin/health)
 	Stop    func() // graceful shutdown (called from /admin/stop)
+	// Log receives one access line per /admin/* request: /admin/stop is the
+	// daemon's only fully silent exit, so every admin caller is logged
+	// (2026-11-09: the silent-death forensics had nothing to say about WHO
+	// stopped the daemon). nil disables logging (the in-process tester).
+	Log *slog.Logger
 }
 
 // New assembles a chi router: a loopback-Host guard on everything (DNS
@@ -47,6 +53,7 @@ func New(d Deps) http.Handler {
 
 	r.Group(func(pr chi.Router) {
 		pr.Use(requireAdminMarker)
+		pr.Use(adminAccessLog(d))
 		pr.Get("/admin/health", handleAdminHealth(d))
 		pr.Post("/admin/stop", handleAdminStop(d))
 	})

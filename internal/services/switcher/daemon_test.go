@@ -100,10 +100,47 @@ func TestHTTPDaemon_StopNotRunning(t *testing.T) {
 	require.NoError(t, d.Stop(context.Background()))
 }
 
+// The regression pin for the 2026-11-09 live incident: the port is a
+// machine-global namespace, CCX_HOME is not. A daemon answering on the
+// resolved port but with NO live pid in this home's daemon.pid is FOREIGN
+// (another home's — on a dev box the live one on 4567 while tests run in
+// their sandboxes). Stop used to admin-stop it sight unseen: every
+// `go test ./...` run killed the user's daemon and left Claude Code
+// sessions on ECONNREFUSED for a whole day (verified live — the admin
+// access log named the killer).
+func TestHTTPDaemon_StopRefusesForeignDaemon(t *testing.T) {
+	f := newFakeAdminDaemon(t, true) // would close on stop — must never get it
+
+	d := switcher.NewHTTPDaemon(f.config(t)) // no daemon.pid in this home
+	err := d.Stop(context.Background())
+
+	require.ErrorContains(t, err, "foreign")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	require.Nil(t, f.stopReq, "/admin/stop must not be sent to a foreign daemon")
+}
+
+// ownDaemonPid — a live pidfile naming a process the ownership gate ACCEPTS:
+// since the gate checks ownsCCX (ps comm == our binary — pid reuse by any
+// unrelated process must not pass), the pidfile must name a selfChild, not
+// an arbitrary /bin/sleep (that shape is covered by the foreign-refusal
+// tests).
+func ownDaemonPid(t *testing.T, cfg *config.Config) {
+	t.Helper()
+
+	sleep := selfChild(t)
+	require.NoError(t, os.MkdirAll(cfg.Home, 0o750))
+	require.NoError(t, os.WriteFile( //nolint:gosec // fixed path
+		filepath.Join(cfg.Home, "daemon.pid"), []byte(strconv.Itoa(sleep.Process.Pid)), 0o600,
+	))
+}
+
 func TestHTTPDaemon_StopPostsAndWaits(t *testing.T) {
 	f := newFakeAdminDaemon(t, true)
+	cfg := f.config(t)
+	ownDaemonPid(t, cfg) // this home owns the daemon — the stop may proceed
 
-	d := switcher.NewHTTPDaemon(f.config(t))
+	d := switcher.NewHTTPDaemon(cfg)
 	require.NoError(t, d.Stop(context.Background())) // returns after the port closes
 
 	f.mu.Lock()
@@ -115,12 +152,14 @@ func TestHTTPDaemon_StopPostsAndWaits(t *testing.T) {
 func TestHTTPDaemon_StopStillResponding(t *testing.T) {
 	f := newFakeAdminDaemon(t, false) // ignores the stop request
 	shortenWaits()
+	cfg := f.config(t)
+	ownDaemonPid(t, cfg) // owned: the ladder runs (and rightly spares the sleep pid)
 
 	// short deadline: the wait loop gives up via ctx instead of hanging
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 
-	d := switcher.NewHTTPDaemon(f.config(t))
+	d := switcher.NewHTTPDaemon(cfg)
 	err := d.Stop(ctx)
 	require.ErrorContains(t, err, "still responding")
 }
@@ -158,10 +197,13 @@ func TestHTTPDaemon_StopEscalatesToSignalWhenPortStaysOpen(t *testing.T) {
 	}
 }
 
-// A missing or garbage pidfile is best-effort, never an error in itself.
+// A missing or garbage pidfile is best-effort, never an error in itself
+// (with an OPEN port both now mean "not provably ours" — the foreign-daemon
+// refusal — which is an error the caller can act on, never a crash).
 func TestHTTPDaemon_StopMissingOrGarbagePidfile(t *testing.T) {
 	t.Run("closed port, no pidfile", func(t *testing.T) {
 		f := newFakeAdminDaemon(t, true)
+		f.srv.Close() // nothing is listening — the health gate answers first
 		cfg := f.config(t)
 
 		d := switcher.NewHTTPDaemon(cfg)
@@ -179,7 +221,7 @@ func TestHTTPDaemon_StopMissingOrGarbagePidfile(t *testing.T) {
 		defer cancel()
 		d := switcher.NewHTTPDaemon(cfg)
 		require.NotPanics(t, func() {
-			_ = d.Stop(ctx) // "still responding" — the pidfile was unusable, not a crash
+			_ = d.Stop(ctx) // foreign-daemon refusal — the pidfile was unusable, not a crash
 		})
 	})
 }
@@ -212,6 +254,7 @@ func TestHTTPDaemon_RestartStopsThenSpawnsThenWaitsHealth(t *testing.T) {
 			f := newFakeAdminDaemon(t, true) // the OLD daemon: closes on /admin/stop
 
 			cfg := f.config(t)
+			ownDaemonPid(t, cfg) // this home owns the old daemon — Restart's stop phase proceeds
 			oldPort := serverPort(t, f.srv)
 			cfg.DaemonStartTimeout = 2 * time.Second
 
@@ -261,6 +304,7 @@ func TestHTTPDaemon_RestartHealthTimeout(t *testing.T) {
 	shortenWaits()
 	f := newFakeAdminDaemon(t, true)
 	cfg := f.config(t)
+	ownDaemonPid(t, cfg) // owned old daemon: the stop phase proceeds, the health wait is what fails
 	cfg.DaemonStartTimeout = 300 * time.Millisecond
 
 	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) error { return nil }) // spawns nothing
@@ -268,7 +312,7 @@ func TestHTTPDaemon_RestartHealthTimeout(t *testing.T) {
 
 	d := switcher.NewHTTPDaemon(cfg)
 	err := d.Restart(context.Background(), "work", serverPort(t, f.srv), false)
-	require.ErrorContains(t, err, "daemon.log")
+	require.ErrorContains(t, err, "daemon-*.log")
 }
 
 // serverPort — the TCP port of a test server (errcheck-safe assertion).
@@ -343,7 +387,10 @@ func TestHTTPDaemon_StopSkipsSignalForForeignPid(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	d := switcher.NewHTTPDaemon(cfg)
-	require.ErrorContains(t, d.Stop(ctx), "still responding")
+	// the GATE already refuses a live-but-foreign pid (ownsCCX, not the bare
+	// signal-0 pidAlive): a reused pid must not pass the ownership check any
+	// more than it must be signaled by the ladder below
+	require.ErrorContains(t, d.Stop(ctx), "refusing to stop")
 
 	// alive = no death event within a grace window (a zombie would also
 	// answer kill(pid,0), so the assertion must observe the process, not the pid)

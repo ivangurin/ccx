@@ -79,7 +79,7 @@ func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int, 
 	}
 	base := baseURL(port)
 	if !app.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
-		return fmt.Errorf("daemon did not respond within %s (log: %s)", d.cfg.DaemonStartTimeout, d.cfg.LogDir()+"/daemon.log")
+		return fmt.Errorf("daemon did not respond within %s (logs: %s/daemon-*.log)", d.cfg.DaemonStartTimeout, d.cfg.LogDir())
 	}
 
 	return nil
@@ -118,11 +118,34 @@ func (d *HTTPDaemon) waitDrained(ctx context.Context) error {
 // not running; otherwise POST /admin/stop, then escalate — a lingering
 // listener would break the next spawn (port conflict), and a long SSE stream
 // can hold the graceful drain indefinitely.
+//
+// OWNERSHIP: the port is a machine-global namespace, CCX_HOME is not. A
+// daemon answering on the resolved port belongs to THIS home only when its
+// daemon.pid names a live process; anything else is a foreign daemon
+// (another home's — on a dev box, the live one on 4567 while tests run in
+// their sandboxes) and is REFUSED, not stopped: test-run Stops killed live
+// daemons and left Claude Code sessions on ECONNREFUSED for a whole day
+// before the admin access log named the killer (verified live 2026-11-09).
+// The refusal is an error so the caller decides: a direct-profile switch
+// prints a note and stays committed, Restart fails fast instead of losing
+// the bind race cryptically.
 func (d *HTTPDaemon) Stop(ctx context.Context) error {
 	port := config.ResolveDaemonPort(d.cfg, 0)
 	base := baseURL(port)
 	if !app.HealthCheck(base, time.Second) {
 		return nil
+	}
+	// ownsCCX, not pidAlive: signal-0 counts ANY live process as the owner
+	// (a foreign process even passes via EPERM), so pidAlive alone lets a
+	// stale pidfile whose pid was REUSED by an unrelated process pass the
+	// gate — /admin/stop would then reach a foreign daemon, the very
+	// incident class this gate exists for. A SIGKILLed daemon leaves its
+	// pidfile behind (its defer never runs), making stale pidfiles routine.
+	if pid, ok := d.readPid(); !ok || !ownsCCX(pid) {
+		return fmt.Errorf(
+			"refusing to stop the daemon on port %d: it is not owned by %s (no live pid in daemon.pid) — a foreign CCX_HOME's daemon",
+			port, d.cfg.Home,
+		)
 	}
 	d.postStop(ctx, base)
 
@@ -147,7 +170,7 @@ func (d *HTTPDaemon) Stop(ctx context.Context) error {
 		}
 	}
 
-	return fmt.Errorf("the daemon is still responding (log: %s)", d.cfg.LogDir()+"/daemon.log")
+	return fmt.Errorf("the daemon is still responding (logs: %s/daemon-*.log)", d.cfg.LogDir())
 }
 
 // postStop fires the graceful-shutdown request; the status is ignored — the

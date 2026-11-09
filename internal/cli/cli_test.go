@@ -69,7 +69,9 @@ func TestExecute_HelpFlag(t *testing.T) {
 // use, so a real provider applies just like via the explicit verb.
 func TestExecute_ShortcutAppliesUse(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	p := &models.Providers{Daemon: &models.Daemon{Port: 4567}}
+	// an ephemeral port — 4567 belongs to the machine (a live daemon may be
+	// serving on it; this test's best-effort Stop must never reach it)
+	p := &models.Providers{Daemon: &models.Daemon{Port: freePort(t)}}
 	p.Providers.Set(profZai, &models.Profile{
 		Name:     profZaiName,
 		Protocol: models.ProtocolAnthropic,
