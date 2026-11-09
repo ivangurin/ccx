@@ -67,7 +67,7 @@ jobs:
               sha256 "AMD_PLACEHOLDER"
             end
             def install
-              bin "ccx"
+              bin.install "ccx"
             end
             test do
               assert_match version.to_s, shell_output("#{bin}/ccx version")
