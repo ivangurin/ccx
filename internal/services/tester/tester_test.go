@@ -200,6 +200,61 @@ func TestTest_ModelError_ExtractsMessageFromJSON(t *testing.T) {
 	require.NotContains(t, errText, "invalid_request_error")
 }
 
+func TestTest_AnthropicBracketSuffixStripped(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	var requested []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		requested = append(requested, req.Model)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	t.Cleanup(srv.Close)
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(srv.URL,
+		models.Model{ID: "glm-5.3[1m]", Default: true},
+		models.Model{ID: "glm-5.3-flash[1m]"},
+	)).done())
+
+	report := tester.Run(sp.Context(), sp.Config, tester.Options{Version: testVersion})
+
+	require.NoError(t, report.Providers[0].Models[0].Err)
+	require.NoError(t, report.Providers[0].Models[1].Err)
+	// the bracket suffix never reaches the upstream: the probe goes out as
+	// the bare id (the [1m] marker is a client-side convention)
+	require.Equal(t, []string{"glm-5.3", "glm-5.3-flash"}, requested)
+	// the display keeps the configured id
+	require.Equal(t, "glm-5.3[1m]", report.Providers[0].Models[0].ID)
+}
+
+func TestTest_OpenAIBracketSuffixKept(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	var requested []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		requested = append(requested, req.Model)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"m[1m]","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	t.Cleanup(srv.Close)
+	writeProviders(t, sp, newProviders().With("x5", &models.Profile{
+		Name: "x5", Protocol: models.ProtocolOpenAI,
+		BaseURL: srv.URL, AuthToken: "s",
+		Models: []models.Model{{ID: "m[1m]", Default: true}},
+	}).done())
+
+	report := tester.Run(sp.Context(), sp.Config, tester.Options{Version: testVersion})
+
+	require.NoError(t, report.Providers[0].Models[0].Err)
+	// non-anthropic protocols keep the id verbatim
+	require.Equal(t, []string{"m[1m]"}, requested)
+}
+
 func TestTest_UnreachableUpstream(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeProviders(t, sp, newProviders().With("zai", anthropicProfile("http://127.0.0.1:1",
