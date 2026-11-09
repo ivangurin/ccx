@@ -40,12 +40,20 @@ go test ./internal/services/switcher/... -run TestName -count=1
 Releasing = push an annotated tag `v*` to origin: `.github/workflows/release.yml`
 triggers on the tag, bakes `GITHUB_REF_NAME` into `cli.Version` via ldflags
 (no version bump commit — the code itself only carries `dev`), attaches
-`ccx-mac-<arch>-<tag>.zip` for BOTH darwin/arm64 and darwin/amd64, and
-regenerates `Formula/ccx.rb` in `ivangurin/homebrew-tap` (pushed via the
-`TAP_DEPLOY_KEY` deploy key secret — a write-scoped key, not a PAT, because
-`GITHUB_TOKEN` cannot push outside its own repo and PATs cannot be minted via
-API); `brew install ivangurin/tap/ccx` tracks the latest release; tag
-messages are release-note style.
+`ccx-mac-<arch>-<tag>.zip` for BOTH darwin/arm64 and darwin/amd64 (the zip
+carries the binary AS `ccx` at its root — a per-arch build name at the zip
+root breaks the formula's `bin "ccx"` and install.sh; verified live,
+v0.4.0 first run), and regenerates `Formula/ccx.rb` in
+`ivangurin/homebrew-tap` (pushed via the `TAP_DEPLOY_KEY` deploy key
+secret — a write-scoped key, not a PAT, because `GITHUB_TOKEN` cannot push
+outside its own repo and PATs cannot be minted via API);
+`brew install ivangurin/tap/ccx` tracks the latest release; install.sh maps
+`uname -m` (arm64/x86_64) onto the asset arch; tag messages are release-note
+style. Re-releasing the same tag: delete the release AND the remote tag,
+re-tag, push — but note GitHub's CDN caches release assets by URL: the
+re-created release can serve STALE zip bytes for a while (verified live
+2026-11-09 — `?nocache=<timestamp>` on the download URL bypasses it; the
+API's `updated_at` tells fresh from stale).
 
 ## Architecture
 
