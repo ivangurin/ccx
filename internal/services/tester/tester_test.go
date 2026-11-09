@@ -179,6 +179,27 @@ func TestTest_ModelError(t *testing.T) {
 	require.Equal(t, 1, report.ModelsOK)
 }
 
+func TestTest_ModelError_ExtractsMessageFromJSON(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	// a verbose Anthropic-style error body — only its message must surface
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"1211","message":"[1211][Unknown Model, please check the model code.]"},"request_id":"req-123"}`))
+	}))
+	t.Cleanup(srv.Close)
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(srv.URL,
+		models.Model{ID: probeModelID, Default: true},
+	)).done())
+
+	report := tester.Run(sp.Context(), sp.Config, tester.Options{Version: testVersion})
+
+	errText := report.Providers[0].Models[0].Err.Error()
+	require.Contains(t, errText, "Unknown Model, please check the model code.")
+	require.NotContains(t, errText, "request_id")
+	require.NotContains(t, errText, "invalid_request_error")
+}
+
 func TestTest_UnreachableUpstream(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeProviders(t, sp, newProviders().With("zai", anthropicProfile("http://127.0.0.1:1",

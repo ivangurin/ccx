@@ -295,10 +295,32 @@ func probeModel(ctx context.Context, addr string, profile *models.Profile, model
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("upstream %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return fmt.Errorf("upstream %d: %s", resp.StatusCode, extractMessage(raw))
 	}
 
 	return nil
+}
+
+// extractMessage pulls the human-readable message out of an Anthropic-style
+// error body ({...,"error":{"message":"..."}}) or an OpenAI-style one
+// ({...,"error":{"message"...}} — same key): the raw JSON on the failure
+// line is noise (request ids, codes the user cannot act on). Falls back to
+// the trimmed body when it is not JSON or carries no message.
+func extractMessage(raw []byte) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return "empty error body"
+	}
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &body); err == nil && body.Error.Message != "" {
+		return body.Error.Message
+	}
+
+	return trimmed
 }
 
 // credential — the client credential the daemon expects (daemonEnv
