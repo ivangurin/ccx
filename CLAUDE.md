@@ -178,8 +178,11 @@ internal/
   reference is codex-rs `login/server.rs`: read it, don't pattern from
   memory; the flow is verifiable only in a real browser (Cloudflare blocks
   curl on auth.openai.com).
-- **Managed keys**: only `ANTHROPIC_*` keys and profile env keys are edited;
-  user variables (API_TIMEOUT_MS, MCP tokens) are preserved.
+- **Managed keys**: only `ANTHROPIC_*` keys, profile env keys, the
+  `max_context_tokens` trio (see Model pinning) and the always-env flags are
+  edited; user variables (API_TIMEOUT_MS, MCP tokens) are preserved — an
+  always-env key the user set by hand keeps its value (add-if-missing, never
+  overwrite).
 - **Byte-precise settings.json edits**: only the env block and the model pin
   change; everything else — key order, indentation, user blocks, the trailing
   newline — survives a switch byte-for-byte (`internal/pkg/jsonpatch`; a fresh
@@ -187,7 +190,18 @@ internal/
   Deliberately stricter than bash-ccx, whose jq round-trip reformatted the
   whole file.
 - **Model pinning**: `model`, `availableModels=[m]`, `enforceAvailableModels`,
-  all `ANTHROPIC_DEFAULT_*_MODEL` = the selected model.
+  and exactly ONE env pin `ANTHROPIC_MODEL` = the selected model (2026-11-10:
+  the legacy `ANTHROPIC_DEFAULT_*_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL`
+  multi-mapping is not written anymore — a leftover in settings.json dies on
+  the next switch via the `ANTHROPIC_*` stale sweep). A model entry may carry
+  `max_context_tokens` (providers.json): when set, the switch writes
+  `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS=<v>`,
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW=<v − 10%>`; when unset the trio is wiped —
+  the keys are ccx-owned, a manual value dies too. Always-env (add-if-missing,
+  never overwritten: a user value or a profile extra wins, a stale profile
+  extra being wiped falls back to the default): 
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`,
+  `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `CLAUDE_CODE_AUTO_MODE_SERVER=0`.
 - **`ANTHROPIC_BASE_URL`**: always the daemon for translated protocols (it
   never changes when switching between them); the upstream URL itself for
   direct anthropic profiles. The credential written alongside is the

@@ -20,12 +20,16 @@ const (
 
 // Model is a provider model: id is the real identifier (written to
 // settings.json), name is an alias without special suffixes for the CLI,
-// label is for the menu.
+// label is for the menu. MaxContextTokens (optional) caps the context window
+// Claude Code believes it has: the switcher derives the CLAUDE_CODE_* context
+// env from it; zero means unset.
 type Model struct {
 	ID      string `json:"id"`
 	Name    string `json:"name,omitempty"`
 	Label   string `json:"label,omitempty"`
 	Default bool   `json:"default,omitempty"`
+	// MaxContextTokens → CLAUDE_CODE_MAX_CONTEXT_TOKENS and friends on switch.
+	MaxContextTokens int `json:"max_context_tokens,omitempty"`
 }
 
 // Profile is a single provider. The connection fields sit at the top level
@@ -56,27 +60,39 @@ type Profile struct {
 	Models []Model           `json:"models"`
 }
 
-// ResolveModel finds a model by name or id and returns the real id
-// (bash-ccx semantics: the alias without brackets is what the user types,
-// the id is what gets applied).
-// model="" with exactly one default model → default; empty and no default → "".
-func (p *Profile) ResolveModel(model string) (string, bool) {
+// ResolveModelEntry finds a model by name or id and returns the whole entry
+// (the switcher needs max_context_tokens alongside the id).
+// model="" with exactly one default model → default; empty and no default → nil.
+func (p *Profile) ResolveModelEntry(model string) (*Model, bool) {
 	if model == "" {
-		for _, m := range p.Models {
-			if m.Default {
-				return m.ID, true
+		for i := range p.Models {
+			if p.Models[i].Default {
+				return &p.Models[i], true
 			}
 		}
 
-		return "", false
+		return nil, false
 	}
-	for _, m := range p.Models {
+	for i := range p.Models {
+		m := &p.Models[i]
 		if m.ID == model || (m.Name != "" && m.Name == model) {
-			return m.ID, true
+			return m, true
 		}
 	}
 
-	return "", false
+	return nil, false
+}
+
+// ResolveModel finds a model by name or id and returns the real id
+// (bash-ccx semantics: the alias without brackets is what the user types,
+// the id is what gets applied).
+func (p *Profile) ResolveModel(model string) (string, bool) {
+	m, ok := p.ResolveModelEntry(model)
+	if !ok {
+		return "", false
+	}
+
+	return m.ID, true
 }
 
 // DefaultModel returns the id of the model with default:true (first one if several).

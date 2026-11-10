@@ -26,6 +26,29 @@ func TestResolveModel(t *testing.T) {
 	require.False(t, ok)
 }
 
+// ResolveModelEntry returns the whole entry (id + max_context_tokens), not
+// just the id — the switcher derives the context-window env from it.
+func TestResolveModelEntry_MaxContextTokens(t *testing.T) {
+	raw := `{"models": [
+		{"id": "big", "name": "b", "max_context_tokens": 200000, "default": true},
+		{"id": "std"}
+	]}`
+	var p models.Profile
+	require.NoError(t, json.Unmarshal([]byte(raw), &p))
+
+	m, ok := p.ResolveModelEntry("")
+	require.True(t, ok)
+	require.Equal(t, "big", m.ID)
+	require.Equal(t, 200000, m.MaxContextTokens)
+
+	m, ok = p.ResolveModelEntry("std")
+	require.True(t, ok)
+	require.Zero(t, m.MaxContextTokens, "absent max_context_tokens is zero, not an error")
+
+	_, ok = p.ResolveModelEntry("nope")
+	require.False(t, ok)
+}
+
 func TestDefaultModel(t *testing.T) {
 	id, ok := (&models.Profile{Models: []models.Model{{ID: "m"}}}).DefaultModel()
 	require.False(t, ok)

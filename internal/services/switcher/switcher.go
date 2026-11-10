@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,7 +88,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 		return "", fmt.Errorf("ccx: unknown provider: %s (see ccx list)", profileKey)
 	}
 
-	model, ok := profile.ResolveModel(modelArg)
+	model, ok := profile.ResolveModelEntry(modelArg)
 	if !ok {
 		if modelArg == "" {
 			return "", fmt.Errorf("ccx: provider %s has no default model — specify one: ccx %s <model>", profileKey, profileKey)
@@ -114,17 +115,17 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 			fmt.Errorf("ccx: cancelled: daemon did not come up (%v)", err))
 	}
 
-	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model); err != nil {
+	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model.ID); err != nil {
 		return "", s.switchAborted(ctx, providers, port, debug, err)
 	}
-	if err := s.writeState(profileKey, model); err != nil {
+	if err := s.writeState(profileKey, model.ID); err != nil {
 		// no rollback here: the switch is already committed (the daemon and
 		// settings.json agree on the new provider) — only state.json lags,
 		// and respawning the previous daemon would contradict settings.json
 		return "", err
 	}
 
-	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model, baseURL(port)), nil
+	return fmt.Sprintf("Switched: %s · model %s · %s", profile.Name, model.ID, baseURL(port)), nil
 }
 
 // switchAborted reports a failed switch and makes the "you stay on the
@@ -183,21 +184,22 @@ func (s *Switcher) applyDirect(
 	ctx context.Context,
 	providers *models.Providers,
 	profile *models.Profile,
-	profileKey, model string,
+	profileKey string,
+	model *models.Model,
 ) (string, error) {
 	env, err := directEnv(profile, model)
 	if err != nil {
 		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous provider", err)
 	}
 
-	if err := s.writeSettings(providers, env, model); err != nil {
+	if err := s.writeSettings(providers, env, model.ID); err != nil {
 		return "", err
 	}
-	if err := s.writeState(profileKey, model); err != nil {
+	if err := s.writeState(profileKey, model.ID); err != nil {
 		return "", err
 	}
 
-	out := fmt.Sprintf("Switched: %s · model %s · %s (direct)", profile.Name, model, profile.BaseURL)
+	out := fmt.Sprintf("Switched: %s · model %s · %s (direct)", profile.Name, model.ID, profile.BaseURL)
 	if err := s.daemon.Stop(ctx); err != nil {
 		out += fmt.Sprintf("\nnote: the daemon is still running: %v (ccx stop)", err)
 	}
@@ -210,7 +212,7 @@ func (s *Switcher) applyDirect(
 // otherwise — exactly one credential var is written), extra_headers →
 // ANTHROPIC_CUSTOM_HEADERS (Name: Value, newline-separated, key-sorted for
 // deterministic output), plus the profile extras and model pinning.
-func directEnv(profile *models.Profile, model string) (map[string]string, error) {
+func directEnv(profile *models.Profile, model *models.Model) (map[string]string, error) {
 	if profile.BaseURL == "" {
 		return nil, fmt.Errorf("ccx: provider %s has no base_url — add it to providers.json", profile.Name)
 	}
@@ -229,9 +231,7 @@ func directEnv(profile *models.Profile, model string) (map[string]string, error)
 		}
 		env["ANTHROPIC_CUSTOM_HEADERS"] = strings.Join(parts, "\n")
 	}
-	for _, key := range pinnedKeys {
-		env[key] = model
-	}
+	pinModel(env, model)
 
 	return env, nil
 }
@@ -240,10 +240,8 @@ func directEnv(profile *models.Profile, model string) (map[string]string, error)
 // provider's own credential (Claude Code sends it; the daemon passes it
 // through — direct-path precedence: auth_token > api_key, else a
 // placeholder: Claude Code expects a credential, the daemon ignores it for
-// non-pass-through protocols), the profile's extras and model pinning across
-// all mappings (the haiku class points to the same model — Claude Code
-// background tasks stay on the selected one).
-func daemonEnv(profile *models.Profile, model string, port int) map[string]string {
+// non-pass-through protocols), the profile's extras and the model pinning.
+func daemonEnv(profile *models.Profile, model *models.Model, port int) map[string]string {
 	env := map[string]string{}
 	maps.Copy(env, profile.Env)
 	env["ANTHROPIC_BASE_URL"] = baseURL(port)
@@ -255,21 +253,53 @@ func daemonEnv(profile *models.Profile, model string, port int) map[string]strin
 	default:
 		env["ANTHROPIC_AUTH_TOKEN"] = "ccx"
 	}
-	for _, key := range pinnedKeys {
-		env[key] = model
-	}
+	pinModel(env, model)
 
 	return env
 }
 
+// pinModel writes the model pin; a model with max_context_tokens additionally
+// caps the window Claude Code believes it has: the 1M context is disabled,
+// the window pinned, the auto-compact threshold set 10% below the cap (room
+// to compact BEFORE the hard limit). No cap ⇒ the trio is not written;
+// writeSettings wipes any stale copy (the keys are ccx-owned).
+func pinModel(env map[string]string, model *models.Model) {
+	for _, key := range pinnedKeys {
+		env[key] = model.ID
+	}
+	if model.MaxContextTokens <= 0 {
+		return
+	}
+	window := model.MaxContextTokens
+	env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
+	env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.Itoa(window)
+	env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = strconv.Itoa(window - window/10)
+}
+
+// alwaysEnv — flags ccx guarantees on every switch: nonessential telemetry
+// traffic off, agent teams on, the auto-mode server off. Add-if-missing only
+// (see writeSettings): ccx never overwrites a value it does not own.
+var alwaysEnv = map[string]string{
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+	"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS":     "1",
+	"CLAUDE_CODE_AUTO_MODE_SERVER":             "0",
+}
+
+// contextKeys — the CLAUDE_CODE_* trio derived from max_context_tokens:
+// written only for a capped model, wiped otherwise (a manual value dies too —
+// the window cap is a per-model fact, not a user preference).
+var contextKeys = []string{
+	"CLAUDE_CODE_DISABLE_1M_CONTEXT",
+	"CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+	"CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+}
+
+// pinnedKeys — the model pin env vars. Deliberately a single mapping: the
+// legacy ANTHROPIC_DEFAULT_*_MODEL / ANTHROPIC_SMALL_FAST_MODEL siblings are
+// not written anymore, and a leftover one in settings.json dies on the next
+// switch via the ANTHROPIC_* stale sweep in writeSettings.
 var pinnedKeys = []string{
 	"ANTHROPIC_MODEL",
-	"ANTHROPIC_DEFAULT_MODEL",
-	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-	"ANTHROPIC_DEFAULT_SONNET_MODEL",
-	"ANTHROPIC_DEFAULT_OPUS_MODEL",
-	"ANTHROPIC_DEFAULT_FABLE_MODEL",
-	"ANTHROPIC_SMALL_FAST_MODEL",
 }
 
 // writeSettings: backup → surgical env patch (managed keys) → model pinning.
@@ -287,19 +317,24 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 		return err
 	}
 
-	// managed: env keys of all profiles (past extras go away) + ANTHROPIC_*
+	// managed: env keys of all profiles (past extras go away) + ANTHROPIC_* +
+	// the context trio (ccx-owned: written for a capped model, wiped otherwise)
 	managed := map[string]bool{}
 	for _, key := range providers.Providers.Keys {
 		for k := range providers.Providers.Get(key).Env {
 			managed[k] = true
 		}
 	}
+	for _, k := range contextKeys {
+		managed[k] = true
+	}
 	// stale = managed/ANTHROPIC_* keys that are present now but absent from
 	// the fresh block; all ANTHROPIC_* are wiped, not only managed ones (past
 	// profile keys and manual values must not survive a switch — parity with
 	// bash with_entries). User keys are not touched at all.
+	currentEnv := settings.Env()
 	var stale []string
-	for k := range settings.Env() {
+	for k := range currentEnv {
 		if _, keep := env[k]; keep {
 			continue
 		}
@@ -308,6 +343,21 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 		}
 	}
 	slices.Sort(stale)
+
+	// always-env: present in every block ccx writes, but added ONLY when the
+	// final env would lack the key — a value already in the file (the user's
+	// own) or in the fresh block (a profile extra) wins and is never
+	// overwritten; a stale profile extra being wiped this switch does not
+	// count as present, so the default comes back.
+	for k, v := range alwaysEnv {
+		if _, ok := env[k]; ok {
+			continue
+		}
+		if _, ok := currentEnv[k]; ok && !slices.Contains(stale, k) {
+			continue
+		}
+		env[k] = v
+	}
 
 	if err := settings.PatchEnv(stale, env); err != nil {
 		return fmt.Errorf("ccx: %w", err)

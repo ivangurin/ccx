@@ -108,12 +108,36 @@ func TestApply_DirectNoBaseURL(t *testing.T) {
 	require.NoFileExists(t, sp.Config.StatePath())
 }
 
-// pinnedKeysList — copy of switcher's pinned keys for assertions.
+// The context-window trio rides the direct path too: a direct anthropic
+// profile with a capped model gets the same CLAUDE_CODE_* env.
+func TestApply_DirectMaxContextTokens(t *testing.T) {
+	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
+		p.BaseURL, p.AuthToken = "https://up", "t"
+		p.Models[0].MaxContextTokens = 100000
+	})
+
+	_, err := sw.Apply(context.Background(), "p", "")
+	require.NoError(t, err)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "1", env["CLAUDE_CODE_DISABLE_1M_CONTEXT"])
+	require.Equal(t, "100000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+	require.Equal(t, "90000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
+}
+
+// pinnedKeysList — the model pin env vars ccx writes (just one: the legacy
+// ANTHROPIC_DEFAULT_*_MODEL / SMALL_FAST mappings are deliberately not
+// written anymore — a leftover in settings.json is wiped by the stale sweep).
 var pinnedKeysList = []string{
 	"ANTHROPIC_MODEL",
+}
+
+// legacyPinnedKeys — the old multi-mapping pin; a switch must REMOVE these
+// from settings.json when they are present.
+var legacyPinnedKeys = []string{
 	"ANTHROPIC_DEFAULT_MODEL",
 	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-	"ANTHROPIC_DEFAULT_SONNET_MODEL",
+	"ANTHROPIC_DEFAULT_SONET_MODEL",
 	"ANTHROPIC_DEFAULT_OPUS_MODEL",
 	"ANTHROPIC_DEFAULT_FABLE_MODEL",
 	"ANTHROPIC_SMALL_FAST_MODEL",
