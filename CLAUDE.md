@@ -99,7 +99,10 @@ internal/
                                          hint texts, cobra owns parsing/help/completion
   app/                                  app.Run(): serve mode: config→logger→lock→route(Build)→http
                                          spawn.go: detached daemon launch (Setsid, pidfile,
-                                         --provider/--port/--debug args)
+                                         --provider/--port/--debug args) via os.Executable():
+                                         the daemon always re-executes the very binary the
+                                         user invoked (dev ./bin/ccx or brew ccx), never a
+                                         PATH lookup (verified live 2026-11-11)
   config/                               env config + CCX_* paths + providers.json (load/save, 0600)
                                          Home=~/.ccx; settings.json default stays in ~/.claude
                                          providers.go: ResolveDaemonPort (flag > CCX_PORT >
