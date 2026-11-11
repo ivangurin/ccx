@@ -208,6 +208,21 @@ internal/
   provider's own (`auth_token` > `api_key` > placeholder `ccx`): for openai
   it is pass-through — Claude Code sends it, the daemon forwards it upstream
   unchanged.
+- **Env references in credential fields** (2026-11-11): `auth_token`/`api_key`
+  in providers.json may be a whole-value env reference `$NAME`/`${NAME}` —
+  the secret lives in the owner's environment (Claude Code's settings.json
+  `env` block does NO interpolation: values are copied as written, so a
+  reference there would reach the API as a literal `$NAME`). Expansion
+  happens ONLY at the points of consumption — `config.ExpandCredentials`:
+  switcher.applyLocked (BEFORE the daemon restart and any write — a missing
+  var must not kill the live daemon), tester.testProvider (before the
+  structural check — fa8099f semantics, no daemon lift), router.Build
+  (before listening) — never on load: LoadProviders' migration rewrite
+  (SaveProviders) would persist the expanded secret over the reference.
+  Unset or EMPTY variable = hard fail before any side effect; no recursion
+  (a var whose value is a reference comes back as that literal text); no
+  inline splices (`$NAME-x`, `pre-$NAME` are literal). providers.json keeps
+  the reference forever; only settings.json / the Bearer ever see the secret.
 - **`state.json`** `~/.ccx/state.json` `{profile, model, updated}` —
   format is 1:1 with bash-ccx's state file (statusline.sh reads it — point
   its path at `~/.ccx/state.json`; the JSON schema is unchanged). Renamed

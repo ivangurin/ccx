@@ -47,6 +47,14 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKe
 	if profile == nil {
 		return nil, fmt.Errorf("router: unknown provider: %s", providerKey)
 	}
+	// Credential fields may hold env references ($NAME / ${NAME}): expand
+	// them here — the daemon serves the expanded secret for its whole life.
+	// A missing variable aborts BEFORE listening, keeping the /health ==
+	// route-ready invariant honest. The providers object stays in memory
+	// only; the reference in providers.json is never rewritten.
+	if err := config.ExpandCredentials(profile); err != nil {
+		return nil, fmt.Errorf("router: provider %s: %w", providerKey, err)
+	}
 
 	tr, err := buildTranslator(cfg, providerKey, profile)
 	if err != nil {

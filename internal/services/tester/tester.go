@@ -171,6 +171,18 @@ func testProvider(
 
 		return res
 	}
+	// env references in the credential fields resolve before anything else:
+	// a missing variable is a provider-level failure (no daemon lift, no
+	// probe firing — the fa8099f structural-check semantics), and every
+	// later phase (validateProfile, the probe's Bearer) sees the expanded
+	// secret, never a literal "$NAME".
+	if err := config.ExpandCredentials(profile); err != nil {
+		res.Status = StatusFail
+		res.Err = err
+		notify()
+
+		return res
+	}
 	if err := validateProfile(profile); err != nil {
 		res.Status = StatusFail
 		res.Err = err

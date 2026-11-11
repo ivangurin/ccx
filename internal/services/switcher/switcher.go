@@ -97,6 +97,15 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 		return "", fmt.Errorf("ccx: model %s not found in provider %s (see ccx list)", modelArg, profileKey)
 	}
 
+	// Credential fields may hold env references ($NAME / ${NAME}): expand
+	// them BEFORE any side effect — a missing variable must fail the switch
+	// here, not after the daemon restart (which would kill the live daemon
+	// for nothing) and not as a literal "$NAME" in settings.json. providers
+	// is never saved back, so the reference stays on disk.
+	if err := config.ExpandCredentials(profile); err != nil {
+		return "", fmt.Errorf("ccx: provider %s: %w — settings.json untouched, you stay on the previous provider", profileKey, err)
+	}
+
 	// An anthropic passthrough goes direct: the upstream speaks the native
 	// protocol, so there is nothing to prepare (the anthropic translator's
 	// Ready is trivial) — running the daemon would only add a hop.
