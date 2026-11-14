@@ -99,7 +99,7 @@ func TestCommandList_OrdersByFile(t *testing.T) {
 	copilotPos := strings.Index(lines, "copilot")
 	require.Less(t, zaiPos, acmePos)
 	require.Less(t, acmePos, copilotPos)
-	require.Contains(t, lines, "zai-model")
+	require.Contains(t, lines, "Model "+profZai, "the model row shows the label, not the id")
 	require.Contains(t, lines, "default")
 }
 

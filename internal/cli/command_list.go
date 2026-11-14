@@ -38,15 +38,12 @@ func runList(_ []string, stdout io.Writer) int {
 	return 0
 }
 
-// modelLine — the model's list line: label, id (typed by the user),
-// default marker.
+// modelLine — the model's list line: the label only (the id is the fallback
+// when no label is set) + the default marker.
 func modelLine(m models.Model) string {
 	label := m.Label
 	if label == "" {
 		label = m.ID
-	}
-	if label != m.ID {
-		label += " · " + m.ID
 	}
 	if m.Default {
 		label += " [default]"

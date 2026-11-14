@@ -102,30 +102,125 @@ Stops the daemon (best-effort) and removes the binary only — `~/.ccx` with
 your providers, state and logs stays untouched, and so does the one-time
 settings backup `~/.claude/settings.json.bak`.
 
-<details>
-<summary>Upgrading from the pre-rename release?</summary>
-
-Data from the old release (kept in `~/.claude`) — providers.json, state, the
-Copilot token — is copied into `~/.ccx` automatically on the first run; your
-new files always win. The old copies can be deleted by hand once you're happy.
-
-</details>
-
 ## Quick start
 
 ```bash
 ccx init            # create ~/.ccx/providers.json: import + ready templates
+ccx edit            # edit your providers and models in $EDITOR
 ccx list            # see your providers and their models
-ccx auth copilot    # once — only if you're a Copilot subscriber
-ccx use copilot     # switch; the daemon starts by itself
+ccx                 # interactive menu: pick a provider, pick a model — done
 ccx status          # active provider · model
 ```
 
-Just `ccx` with no arguments opens an interactive menu: pick a provider, pick
-a model, done. To pin a specific model, add it: `ccx use work gpt-6-luna`.
 `ccx init` scaffolds three ready-made providers (OpenAI, Copilot, ChatGPT
-Codex) and imports what it can find in your current setup — edit them with
-`ccx edit` and add your keys.
+Codex) and imports what it can find in your current setup — add your keys
+with `ccx edit`. To switch without the menu: `ccx use <provider> [model]`
+(the daemon starts by itself).
+
+## Configuration
+
+Everything lives in `~/.ccx/providers.json`. Connection fields (`base_url`,
+`auth_token`, `api_key`, …) sit directly in the provider entry — no nested
+protocol blocks — and `protocol` decides which of them are meaningful:
+
+```jsonc
+{
+  "providers": {
+    "zai": {
+      "name": "z.ai",
+      "protocol": "anthropic",
+      "base_url": "https://api.z.ai/api/anthropic",
+      "auth_token": "<token>",
+      "models": [
+        {
+          "id": "glm-5.3", 
+          "label": "GLM 5.3",   
+          "default": true
+        },
+        {
+          "id": "glm-5.3-flash",   
+          "label": "GLM 5.3 Flash"
+        }
+      ]
+    },
+    "work": {
+      "name": "Work gateway",
+      "protocol": "openai",
+      "base_url": "https://…/v1",
+      "auth_token": "<token>",
+      "models": [
+        {
+          "id": "work model", 
+          "label": "Work Model", 
+          "default": true
+        }
+      ]
+    }
+  }
+}
+```
+
+### Fields
+
+**`daemon` block** — optional, top-level; read by the switcher, which spawns
+the daemon with these parameters:
+
+| Field | Type | Required | Default | Meaning |
+|---|---|---|---|---|
+| `port` | int | no | `4567` | daemon port; actual precedence: `--port` flag > `CCX_PORT` env > `daemon.port` > 4567 |
+| `debug` | bool | no | `false` | spawn the daemon with debug logging (debug-level records and request dumps in the daemon log) |
+
+**Provider** — the map key is what you type in `ccx use <key>`:
+
+| Field | Type | Required | Default | Meaning |
+|---|---|---|---|---|
+| `protocol` | string | **yes** | — | `anthropic` / `openai` / `copilot` / `codex` |
+| `name` | string | no | — | display name (menus, `ccx list`) |
+| `base_url` | string | for `anthropic` / `openai` | — | upstream URL; `copilot` / `codex` have fixed endpoints and don't use it |
+| `auth_token` | string | one of `auth_token` / `api_key` for `anthropic` / `openai` | — | credential; may be a whole-value env reference `$NAME` / `${NAME}`; for `copilot` / `codex` any placeholder works (they own the real one) |
+| `api_key` | string | (alternative to `auth_token`) | — | anthropic: sent as `x-api-key`; openai: `Authorization: Bearer`; `auth_token` wins on anthropic |
+| `extra_headers` | map | no | — | extra upstream headers (`anthropic` profiles: become `ANTHROPIC_CUSTOM_HEADERS`) |
+| `max_tokens_field` | string | no | `max_tokens` | openai: switch to `max_completion_tokens` for gateways that require it |
+| `reasoning_to_thinking` | bool | no | `false` | reserved, no effect yet (reasoning deltas already map to thinking blocks unconditionally) |
+| `env` | map | no | — | extra env keys written to settings.json on switch (your variables; `ANTHROPIC_*` stays ccx-managed) |
+| `models` | list | **yes** | — | the provider's models (see below) |
+
+**Model** — `label` is what menus and `ccx list` show, `id` is what
+`ccx use <provider> <model>` accepts (exact match):
+
+| Field | Type | Required | Default | Meaning |
+|---|---|---|---|---|
+| `id` | string | **yes** | — | the real model id: written to settings.json, accepted by `ccx use` |
+| `label` | string | no | the `id` | display text in the menu and `ccx list` |
+| `default` | bool | no | `false` | selected when no model is specified (`ccx use <provider>`, menu Enter) |
+| `max_context_tokens` | int | no | — | caps the context window Claude Code believes it has (drives the `CLAUDE_CODE_MAX_CONTEXT_TOKENS` env trio); unset → the trio is wiped |
+| `effort` | string | no | — | written to `CLAUDE_CODE_EFFORT_LEVEL` verbatim; unset → the key is wiped |
+
+## What ccx does with your settings.json
+
+Of Claude Code's home (`~/.claude`) only `settings.json` is ever touched —
+edited in place, never moved or reformatted (`CCX_SETTINGS` points it
+elsewhere). A switch changes exactly two things:
+
+- **The env block.** `ANTHROPIC_BASE_URL` + the credential (or the upstream
+  URL for a direct `anthropic` provider), the model pin `ANTHROPIC_MODEL`
+  and the ccx-owned context/effort keys. Stale `ANTHROPIC_*` keys are swept;
+  your own variables (`API_TIMEOUT_MS`, MCP tokens, …) survive untouched —
+  an always-env key you set by hand keeps its value.
+- **The model pin.** `model`, `availableModels=[m]` and
+  `enforceAvailableModels` at the top level.
+
+Everything else — key order, indentation, your own blocks, the trailing
+newline — survives a switch byte-for-byte: a fresh env key is appended at
+the end of the block, a replaced one keeps its line.
+
+**The one-time backup.** The first switch freezes the original file to
+`~/.claude/settings.json.bak` (0600) and later switches never overwrite it.
+`ccx restore` copies the backup back and stops the daemon.
+
+**Failure handling.** The file is edited only after the new daemon has
+passed its health check; if anything fails mid-switch, settings.json stays
+as it was and you remain on the previous provider.
 
 ## How it works
 
@@ -177,82 +272,21 @@ involved.
 
 </details>
 
-## Configuration
-
-Everything lives in `~/.ccx/providers.json`. Connection fields (`base_url`,
-`auth_token`, `api_key`, …) sit directly in the provider entry — no nested
-protocol blocks — and `protocol` decides which of them are meaningful:
-
-```jsonc
-{
-  "daemon": {"port": 4567},
-  "providers": {
-    "zai": {
-      "name": "z.ai (GLM)",
-      "protocol": "anthropic",
-      "base_url": "https://api.z.ai/api/anthropic",
-      "auth_token": "<key>",
-      "models": [{"id": "glm-5.3[1m]", "label": "GLM 5.3", "default": true}]
-    },
-    "work": {
-      "name": "Work gateway",
-      "protocol": "openai",
-      "base_url": "https://…/v1",
-      "auth_token": "<token>",
-      "models": […]
-    }
-  }
-}
-```
-
-Of Claude Code's home (`~/.claude`) only `settings.json` is ever touched —
-edited in place, never moved or reformatted.
-
-<details>
-<summary>Details: ports, legacy files, env overrides</summary>
-
-- **Daemon port precedence:** `--port` flag > `CCX_PORT` > `daemon.port` >
-  the default 4567. One daemon per `CCX_HOME` (`daemon.lock`); `ccx stop`
-  (or `CCX_PORT=<n> ccx stop` for a non-default port) stops it.
-- **Legacy files keep working.** Configs from older releases (a top-level
-  `profiles` key, `version`, `daemon.auth_token`) still load and are
-  rewritten in the current schema on the next save.
-- **The client masquerade is code, not config.** User-Agent, editor versions,
-  integration id, originator and the Copilot prefill fix live as constants
-  next to the translators — they change with the code, not with your config.
-- **Paths can be redirected:** `CCX_HOME` moves the ccx data root, `CCX_SETTINGS`
-  points at a different settings.json.
-
-</details>
-
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `ccx` | interactive menu: provider → model |
-| `ccx use <provider> [model]` | switch (alias: `ccx <provider> [model]`) |
-| `ccx list` | providers and models |
-| `ccx status` | active provider/model |
 | `ccx init [--force]` | create providers.json (import from settings/env) |
-| `ccx edit` | open providers.json in `$EDITOR` |
+| `ccx edit` | open providers.json in `$EDITOR` (alias: `ccx -e`) |
+| `ccx list` | providers and models — model rows show their labels (alias: `ccx -l`) |
+| `ccx status` | active provider/model (alias: `ccx -s`) |
+| `ccx use <provider> [model]` | switch (alias: `ccx <provider> [model]`) |
 | `ccx serve [--daemon] [--debug] --provider <key> [--port N]` | run the daemon in the foreground (`--debug`: debug-level logging — the format stays env-driven — and request dumps into the unified daemon log as `kind=reqdump` lines) |
 | `ccx stop` | stop the daemon |
 | `ccx restore` | restore the original settings.json from the one-time backup (`~/.claude/settings.json.bak`, frozen at the first switch); stops the daemon |
 | `ccx auth [provider]` | login flow for the provider's protocol (copilot device flow / codex OAuth); no argument — auth state of every provider |
-| `ccx version` / `ccx help` | version / help |
+| `ccx version` / `ccx help` | version (alias: `ccx -v`) / help |
 | `ccx completion <shell>` | shell completion script (zsh/bash/fish/powershell) |
-
-Single-dash aliases from bash-ccx also work: `ccx -l` (list), `ccx -s`
-(status), `ccx -e` (edit), `ccx -v` (version).
-
-## Development
-
-```bash
-make build       # build ./bin/ccx
-make test        # tests with coverage (threshold ≥ 80%)
-make lint        # golangci-lint on changed files
-make lint-full   # golangci-lint on all files
-make generate    # mocks + formatting
-```
 
 MIT License — see [LICENSE](LICENSE).

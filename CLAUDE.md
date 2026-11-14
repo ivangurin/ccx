@@ -165,8 +165,8 @@ internal/
   `name` alias field is GONE: `ResolveModelEntry` matches by exact id (a bare
   id without the `[1m]` suffix does NOT match the bracketed one), a legacy
   `name` in providers.json is ignored on load and dropped on the next save;
-  the model picker (`ccx` menu, TUI and fallback) renders the label only
-  (id as fallback), so the filter matches labels.
+  the model picker (`ccx` menu, TUI and fallback) and `ccx list` render the
+  label only (id as fallback), so the filter matches labels.
 - **Readiness before settings.json**: switching a translated profile
   (openai/copilot/codex) restarts the daemon with `--provider`/`--port`
   (plus `--debug` when `daemon.debug` is set) and waits for `/health` —
