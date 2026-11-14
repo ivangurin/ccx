@@ -1,4 +1,4 @@
-package cli
+package cli_test
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/cli"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
@@ -56,7 +57,7 @@ func TestStatus_DaemonDownForTranslatedProfile(t *testing.T) {
 	writeStatusFixture(t, sp, openAIProfile(), freeStatusPort(t))
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	require.Equal(t, 0, cli.Execute([]string{cmdStatus}, &out))
 
 	require.Contains(t, out.String(), "Daemon:")
 	require.Contains(t, out.String(), "down")
@@ -73,7 +74,7 @@ func TestStatus_DaemonUpForTranslatedProfile(t *testing.T) {
 	writeStatusFixture(t, sp, openAIProfile(), port)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	require.Equal(t, 0, cli.Execute([]string{cmdStatus}, &out))
 
 	require.Contains(t, out.String(), "Daemon:")
 	require.Contains(t, out.String(), "up")
@@ -93,7 +94,7 @@ func TestStatus_DaemonNotUsedForDirectAnthropic(t *testing.T) {
 	}, 0)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	require.Equal(t, 0, cli.Execute([]string{cmdStatus}, &out))
 
 	require.Contains(t, out.String(), "Daemon:")
 	require.Contains(t, out.String(), "not used")
