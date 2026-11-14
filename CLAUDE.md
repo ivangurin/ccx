@@ -118,9 +118,12 @@ internal/
                                          Execute(args, stdout) int is the stable seam — bodies
                                          runXxx(argv, stdout) int keep bash-ccx exit codes and
                                          hint texts, cobra owns parsing/help/completion
-  app/                                  app.Run(): serve mode: lock→route(GetRouteService)→http — the
-                                         App holds no cfg/log of its own, everything comes from
-                                         the service provider (internal/provider; 2026-11-14)
+  app/                                  app.New(cfg, log, usageLog) builds its own provider.New(cfg, log) —
+                                         callers never pass a ready provider; serve mode:
+                                         lock→route(GetRouteService)→http — the App holds no cfg/log of
+                                         its own, everything comes from the service provider (2026-11-14);
+                                         e2e_test.go (package app_test): the e2e daemon test over the
+                                         suite sandbox (test/e2e is gone)
   config/                               env config + CCX_* paths + providers.json (load/save, 0600)
                                          Home=~/.ccx; settings.json default stays in ~/.claude
                                          providers.go: ResolveDaemonPort (flag > CCX_PORT >
@@ -521,14 +524,21 @@ internal/
   and tests driving Stop/Restart write a live pid into the sandbox
   daemon.pid — the ownership gate refuses anything else by design.
 
-Tests use testify (`require`). **Tests live in the external package
-`<pkg>_test`, never in-package** (owner rule, 2026-11-14): an external test
-package may import the suite provider (which imports the whole daemon graph)
-without cycles; in-package test files that only test unexported helpers are
-legacy debt and migrate when touched (`reqdump.SeqForTest` is the export
-precedent). Upstreams are httptest fakes; SSE uses golden sequences in
-testdata. **Test coverage must be at least 80%** (`make test`,
-`-coverpkg=./...`).
+Tests use testify (`require`). **Every `_test.go` file lives in the external
+package `<pkg>_test`, never in-package** (owner rule, 2026-11-14; the tree is
+fully cleared — no in-package test file remains, and the in-package-style
+`test/e2e` package is gone too): an external test package may import the suite
+provider (which imports the whole daemon graph) without cycles. Unexported
+symbols that block an out-of-package move get seams in `export_test.go`
+(package-scoped, test-build only — `MenuStagesForTest`, `SetQuotaFetcherForTest`,
+`SetCopilotAuthClientForTest`, `SetCodexLoginForTest`, `LoginWithBaseForTest`,
+`EndpointsForTest`, the copilot/tui re-export blocks); `reqdump.SeqForTest`
+remains the production-file variant of the same idea. **MANDATE**: any test
+that composes daemon-graph dependencies MUST build them through the suite
+provider (`suite_provider.NewProvider(t)`) — hand-composition of
+services/daemons in tests is recorded debt, not an option. Upstreams are
+httptest fakes; SSE uses golden sequences in testdata. **Test coverage must be
+at least 80%** (`make test`, `-coverpkg=./...`).
 
 **Mocks are mockery** (`.mockery.yaml`, the reference template — `make
 gen-mocks`, config appeared 2026-11-14): `switcher/mocks.Daemon`,
@@ -538,9 +548,10 @@ gen-mocks`, config appeared 2026-11-14): `switcher/mocks.Daemon`,
 these interfaces. Suite tests get them via the suite provider
 (`sp.GetDaemonMock().EXPECT()...` → `sp.GetSwitcherService()`); the switcher tests'
 `wireDaemon` helper arms recording defaults via `RunAndReturn` closures —
-`mock.MatchBy` does not compile with this testify version. In-package
-translator tests (codex/copilot) cannot import the suite (cycle:
-suite → … → codex) — they keep hand stubs until they move out-of-package.
+`mock.MatchBy` does not compile with this testify version. **Suite boundary**:
+the suite composes the daemon graph only — `clients/*` objects and pure leaf
+packages keep hand-built tests by design (the codex/copilot translator tests
+stay on hand stubs + httptest fakes even out-of-package).
 
 ### Manual daemon verification (live, without touching settings.json)
 
@@ -615,8 +626,11 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
   reference. Services are constructor-built (`switcher.NewService`,
   `router.NewService`, `tester.NewService` — the reference constructor idiom;
   base files are `service.go`). Consumers: `ccx
-  use`/`restore`/`test`/`stop` (`provider.NewEnv()`; config-only commands
-  stay on `config.NewFromEnv`) and `app.Run` (2026-11-14: the App
+  use`/`restore`/`test`/`stop` and `app.Run` — the provider stays the
+  composition root: non-serve CLI commands via `provider.NewEnv()`
+  (config-only commands stay on `config.NewFromEnv`), the daemon via
+  `app.New(cfg, log, usageLog)` which builds its own `provider.New(cfg, log)`
+  internally — callers never pass a ready provider (2026-11-14: the App
   holds no cfg/log of its own — `GetConfig`/`GetLogger`/`GetRouteService` come from
   the provider). `GetRouteService(ctx, key)` is the one keyed getter, deliberately
   single-slot: the daemon serves exactly one provider per process
