@@ -294,8 +294,9 @@ func pinModel(env map[string]string, model *models.Model) {
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = strconv.Itoa(window - window/10)
 	}
 	// after the context block, and independent of it: a model may carry
-	// effort without a context cap (the early return of the trio must not
-	// swallow this write)
+	// effort without a context cap (the trio used to early-return here,
+	// which made this write dead code for uncapped models — keep the
+	// blocks independent)
 	if model.Effort != "" {
 		env[effortKey] = model.Effort
 	}

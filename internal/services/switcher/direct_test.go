@@ -135,7 +135,7 @@ func TestApply_DirectEffortLevel(t *testing.T) {
 	})
 
 	// no effort on m1 → a pre-existing manual value is wiped by the switch
-	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"}}`), 0o600)) //nolint:gosec // test sandbox
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"}}`), 0o600))
 	_, err := sw.Apply(context.Background(), "p", "")
 	require.NoError(t, err)
 	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
