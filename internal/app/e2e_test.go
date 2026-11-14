@@ -1,13 +1,11 @@
-package e2e
+package app_test
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,56 +14,40 @@ import (
 	"github.com/ivangurin/ccx/internal/app"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/logger"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
-// freePort — a free TCP port for the test daemon.
-func freePort(t *testing.T) int {
-	t.Helper()
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	tcpAddr, ok := lis.Addr().(*net.TCPAddr)
-	require.True(t, ok)
-	port := tcpAddr.Port
-	require.NoError(t, lis.Close())
-
-	return port
-}
+// e2eProviderKey — the fixture provider key ("zai" is already at the
+// package's goconst threshold: the sibling app tests carry its remaining
+// occurrences).
+const e2eProviderKey = "zai"
 
 // End-to-end: the daemon launched with --provider zai proxies without any
 // client token (pass-through; localhost-only surface).
 func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	port := freePort(t)
+
 	// fake upstream of an Anthropic-compatible provider
 	upstream := startFakeUpstream(t)
 
-	// CCX_HOME sandbox + providers.json with a live upstream
-	home := t.TempDir()
-	port := freePort(t)
-	t.Setenv("CCX_HOME", home)
-	t.Setenv("CCX_PORT", strconv.Itoa(port))
-
-	providers := &models.Providers{
-		Daemon: &models.Daemon{Port: port},
-	}
-	providers.Providers.Set("zai", &models.Profile{
+	// suite sandbox (CCX_HOME + CCX_SETTINGS pinned) + providers.json with
+	// a live upstream
+	providers := &models.Providers{}
+	providers.Providers.Set(e2eProviderKey, &models.Profile{
 		Name:      "z.ai (fake)",
 		Protocol:  models.ProtocolAnthropic,
 		BaseURL:   upstream.URL,
 		AuthToken: "up-secret",
 		Models:    []models.Model{{ID: "glm-5.3[1m]", Default: true}},
 	})
-	cfg, err := config.NewFromEnv()
-	require.NoError(t, err)
-	require.NoError(t, config.SaveProviders(cfg.ProvidersPath(), providers))
-
-	log, err := logger.New(os.Stderr, "error", "json")
-	require.NoError(t, err)
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), providers))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() {
-		_ = app.New(cfg, log, nil).Run(ctx, app.ServeOptions{Provider: "zai", Port: port})
+		_ = app.New(sp.Config, sp.GetLogger(), nil).Run(ctx, app.ServeOptions{Provider: e2eProviderKey, Port: port})
 	}()
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
