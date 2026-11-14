@@ -47,7 +47,12 @@ v0.4.0 first run), and regenerates `Formula/ccx.rb` in
 `ivangurin/homebrew-tap` (pushed via the `TAP_DEPLOY_KEY` deploy key
 secret — a write-scoped key, not a PAT, because `GITHUB_TOKEN` cannot push
 outside its own repo and PATs cannot be minted via API);
-`brew install ivangurin/tap/ccx` tracks the latest release; install.sh maps
+`brew install ivangurin/tap/ccx` tracks the latest release; the formula's
+`version` strips the tag's leading `v` (brew convention — upgrade lines read
+0.8.0 -> 0.9.0 like everywhere else; URLs/assets re-attach it via
+`v#{version}`, and Homebrew's Version cmp rates 0.9.0 > v0.8.0, so the
+one-time prefix transition upgrades cleanly; verified via workflow dry-run +
+`brew ruby`, 2026-11-14, first live proof v0.9.0); install.sh maps
 `uname -m` (arm64/x86_64) onto the asset arch; tag messages are release-note
 style. Re-releasing the same tag: delete the release AND the remote tag,
 re-tag, push — but note GitHub's CDN caches release assets by URL: the

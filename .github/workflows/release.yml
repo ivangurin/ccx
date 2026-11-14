@@ -2,8 +2,11 @@
 # attaches them to a generated GitHub Release as ccx-mac-<arch>-<tag>.zip
 # (tag verbatim, "v" included), then regenerates Formula/ccx.rb in the
 # ivangurin/homebrew-tap repository so `brew install ivangurin/tap/ccx`
-# tracks the latest release. Cross-compiled on ubuntu — Go needs no macOS
-# runner for this, and macOS minutes cost 10x.
+# tracks the latest release. The formula's version field strips the leading
+# "v" — the brew convention, so upgrade lines read 0.8.0 -> 0.9.0 like every
+# other formula; the tag, the asset names and `ccx version` keep it.
+# Cross-compiled on ubuntu — Go needs no macOS runner for this, and macOS
+# minutes cost 10x.
 name: release
 
 on:
@@ -52,6 +55,10 @@ jobs:
           ARM_SHA=$(sha256sum "ccx-mac-arm64-${GITHUB_REF_NAME}.zip" | cut -d' ' -f1)
           AMD_SHA=$(sha256sum "ccx-mac-amd64-${GITHUB_REF_NAME}.zip" | cut -d' ' -f1)
           mkdir -p Formula
+          # brew convention: the formula version carries no leading "v" (the
+          # upgrade line reads 0.8.0 -> 0.9.0 like every other formula); the
+          # tag and the asset names keep it, so the URLs re-attach it
+          VERSION="${GITHUB_REF_NAME#v}"
           # quoted heredoc delimiter: #{version} must stay literal Ruby
           cat > Formula/ccx.rb <<'EOF'
           class Ccx < Formula
@@ -59,11 +66,11 @@ jobs:
             homepage "https://github.com/ivangurin/ccx"
             version "TAG_PLACEHOLDER"
             on_arm do
-              url "https://github.com/ivangurin/ccx/releases/download/#{version}/ccx-mac-arm64-#{version}.zip"
+              url "https://github.com/ivangurin/ccx/releases/download/v#{version}/ccx-mac-arm64-v#{version}.zip"
               sha256 "ARM_PLACEHOLDER"
             end
             on_intel do
-              url "https://github.com/ivangurin/ccx/releases/download/#{version}/ccx-mac-amd64-#{version}.zip"
+              url "https://github.com/ivangurin/ccx/releases/download/v#{version}/ccx-mac-amd64-v#{version}.zip"
               sha256 "AMD_PLACEHOLDER"
             end
             def install
@@ -74,7 +81,7 @@ jobs:
             end
           end
           EOF
-          sed -i.bak "s/TAG_PLACEHOLDER/${GITHUB_REF_NAME}/; s/ARM_PLACEHOLDER/${ARM_SHA}/; s/AMD_PLACEHOLDER/${AMD_SHA}/" Formula/ccx.rb
+          sed -i.bak "s/TAG_PLACEHOLDER/${VERSION}/; s/ARM_PLACEHOLDER/${ARM_SHA}/; s/AMD_PLACEHOLDER/${AMD_SHA}/" Formula/ccx.rb
           rm -f Formula/ccx.rb.bak
           # the secret is an OpenSSH ed25519 deploy key: bake it to disk
           # for ssh (printenv preserves its line structure)
