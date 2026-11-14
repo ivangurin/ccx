@@ -3,7 +3,6 @@ package suite_provider
 import (
 	"bytes"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -53,10 +52,4 @@ func (c *Capture) Lines(t *testing.T) []map[string]any {
 	}
 
 	return lines
-}
-
-// JSONLogger builds an info-level JSON slog.Logger over the capture — the
-// shape the daemon's unified log has in production.
-func JSONLogger(c *Capture) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(c, &slog.HandlerOptions{Level: slog.LevelInfo}))
 }
