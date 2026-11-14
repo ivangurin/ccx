@@ -3,4 +3,6 @@ coverage.out*
 .env
 *.log
 .DS_Store
+.claude
 .zcode
+.superpowers
