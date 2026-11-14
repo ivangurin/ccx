@@ -1,4 +1,4 @@
-package codex
+package codex_test
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/stretchr/testify/require"
 )
@@ -92,7 +93,9 @@ func (lf *loginFixture) authorizeBase() string {
 func skipIfLoginPortsBusy(t *testing.T, ports ...int) {
 	t.Helper()
 	if len(ports) == 0 {
-		ports = []int{loginPort, loginFallbackPort}
+		// 1455/1457 and the callback paths are protocol constants from
+		// codex-rs login/server.rs, pinned by the allow-list invariant.
+		ports = []int{1455, 1457}
 	}
 	for _, port := range ports {
 		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
@@ -108,13 +111,13 @@ func skipIfLoginPortsBusy(t *testing.T, ports ...int) {
 func (lf *loginFixture) startLogin(t *testing.T) chan error {
 	t.Helper()
 	if lf.occupyDefaultPort {
-		skipIfLoginPortsBusy(t, loginFallbackPort)
+		skipIfLoginPortsBusy(t, 1457)
 	} else {
 		skipIfLoginPortsBusy(t)
 	}
 	errs := make(chan error, 1)
 	go func() {
-		errs <- loginWithBase(context.Background(), lf.authorizeBase(), lf.tokenSrv.URL, lf.authPath,
+		errs <- codex.LoginWithBaseForTest(context.Background(), lf.authorizeBase(), lf.tokenSrv.URL, lf.authPath,
 			func(u string) error {
 				lf.authorizeCh <- u
 
@@ -171,7 +174,7 @@ func TestLogin_HappyPath(t *testing.T) {
 	require.True(t, lf.exchangeHit)
 	require.Equal(t, "authorization_code", lf.exchangeForm.Get("grant_type"))
 	require.Equal(t, "c1", lf.exchangeForm.Get("code"))
-	require.Equal(t, ClientID, lf.exchangeForm.Get("client_id"))
+	require.Equal(t, codex.ClientID, lf.exchangeForm.Get("client_id"))
 	require.Len(t, lf.exchangeForm.Get("code_verifier"), 43)
 	require.Equal(t, lf.authorizeURL.Query().Get("redirect_uri"), lf.exchangeForm.Get("redirect_uri"))
 
@@ -207,7 +210,7 @@ func TestLogin_AuthorizeURLParams(t *testing.T) {
 	require.Equal(t, "code", q.Get("response_type"))
 	require.Equal(t, "S256", q.Get("code_challenge_method"))
 	require.Equal(t, "openid profile email offline_access api.connectors.read api.connectors.invoke", q.Get("scope"))
-	require.Equal(t, ClientID, q.Get("client_id"))
+	require.Equal(t, codex.ClientID, q.Get("client_id"))
 	require.NotEmpty(t, q.Get("code_challenge"))
 	// The issuer's redirect-URI allow-list is exact (Hydra): the registered
 	// URI is http://localhost:1455/auth/callback — anything else completes
@@ -229,7 +232,7 @@ func TestLogin_ProductionAuthorizeURL(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errs := make(chan error, 1)
 	go func() {
-		errs <- Login(ctx, filepath.Join(t.TempDir(), "auth", "cx.json"), func(u string) error {
+		errs <- codex.Login(ctx, filepath.Join(t.TempDir(), "auth", "cx.json"), func(u string) error {
 			urlCh <- u
 
 			return nil
@@ -240,7 +243,7 @@ func TestLogin_ProductionAuthorizeURL(t *testing.T) {
 	case raw := <-urlCh:
 		parsed, err := url.Parse(raw)
 		require.NoError(t, err)
-		require.Equal(t, AuthBase+"/oauth/authorize", parsed.Scheme+"://"+parsed.Host+parsed.Path)
+		require.Equal(t, codex.AuthBase+"/oauth/authorize", parsed.Scheme+"://"+parsed.Host+parsed.Path)
 		require.Equal(t, "http://localhost:1455/auth/callback", parsed.Query().Get("redirect_uri"))
 	case <-time.After(5 * time.Second):
 		t.Fatal("openBrowser was never called")
@@ -285,8 +288,8 @@ func TestLogin_CancelEndpoint(t *testing.T) {
 		func(w http.ResponseWriter, _ url.Values) { _, _ = w.Write([]byte(`{}`)) })
 	errs := lf.startLogin(t)
 
-	base := strings.TrimSuffix(lf.authorizeURL.Query().Get("redirect_uri"), loginCallbackPath)
-	resp, err := http.Get(base + loginCancelPath) //nolint:gosec // local test server
+	base := strings.TrimSuffix(lf.authorizeURL.Query().Get("redirect_uri"), "/auth/callback")
+	resp, err := http.Get(base + "/cancel") //nolint:gosec // local test server
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -328,7 +331,7 @@ func TestLogin_ForeignPathGets404(t *testing.T) {
 		})
 	errs := lf.startLogin(t)
 
-	base := strings.TrimSuffix(lf.authorizeURL.Query().Get("redirect_uri"), loginCallbackPath)
+	base := strings.TrimSuffix(lf.authorizeURL.Query().Get("redirect_uri"), "/auth/callback")
 	resp, err := http.Get(base + "/favicon.ico") //nolint:gosec // local test server
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
@@ -419,7 +422,7 @@ func TestLogin_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errs := make(chan error, 1)
 	go func() {
-		errs <- loginWithBase(ctx, lf.authorizeBase(), lf.tokenSrv.URL, lf.authPath, func(string) error { return nil })
+		errs <- codex.LoginWithBaseForTest(ctx, lf.authorizeBase(), lf.tokenSrv.URL, lf.authPath, func(string) error { return nil })
 	}()
 	time.Sleep(100 * time.Millisecond) // let the listener come up
 	cancel()
