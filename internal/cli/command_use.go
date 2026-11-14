@@ -26,7 +26,7 @@ func runUse(args []string, stdout io.Writer) int {
 		model = args[2]
 	}
 
-	out, err := p.GetSwitcher().Apply(context.Background(), args[1], model)
+	out, err := p.GetSwitcherService().Apply(context.Background(), args[1], model)
 	if err != nil {
 		fmt.Fprintf(stdout, "%v\n", err)
 

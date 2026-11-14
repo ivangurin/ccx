@@ -36,9 +36,9 @@ func TestGetSwitcher_LazySingleton(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := provider.New(sp.Config, nil)
 
-	sw := p.GetSwitcher()
+	sw := p.GetSwitcherService()
 	require.NotNil(t, sw)
-	require.Same(t, sw, p.GetSwitcher())
+	require.Same(t, sw, p.GetSwitcherService())
 }
 
 // GetRoute builds the daemon's single route over the sandbox (an anthropic
@@ -56,15 +56,15 @@ func TestGetRoute_SingleSlot(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	prv := provider.New(sp.Config, nil)
-	svc, err := prv.GetRoute(context.Background(), "zai")
+	svc, err := prv.GetRouteService(context.Background(), "zai")
 	require.NoError(t, err)
 	require.NotNil(t, svc)
 
-	same, err := prv.GetRoute(context.Background(), "zai")
+	same, err := prv.GetRouteService(context.Background(), "zai")
 	require.NoError(t, err)
 	require.Same(t, svc, same)
 
-	_, err = prv.GetRoute(context.Background(), "acme")
+	_, err = prv.GetRouteService(context.Background(), "acme")
 	require.ErrorContains(t, err, "one provider per daemon process")
 }
 
@@ -73,7 +73,7 @@ func TestGetTester_LazySingleton(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := provider.New(sp.Config, nil)
 
-	tr := p.GetTester()
+	tr := p.GetTesterService()
 	require.NotNil(t, tr)
-	require.Same(t, tr, p.GetTester())
+	require.Same(t, tr, p.GetTesterService())
 }

@@ -91,7 +91,7 @@ func TestTest_AllHealthy(t *testing.T) {
 		models.Model{ID: "glm-4-air"},
 	)).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.Len(t, report.Providers, 1)
 	res := report.Providers[0]
@@ -115,7 +115,7 @@ func TestTest_APIKeyOnlyLegacyProfile(t *testing.T) {
 		"api_key": "native-key", "models": [{"id": %q, "default": true}]}}}`,
 		up.URL, probeModelID), 0o600))
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	res := report.Providers[0]
 	require.Equal(t, "old", res.Key)
@@ -132,7 +132,7 @@ func TestTest_ProviderError_Structural(t *testing.T) {
 		Models: []models.Model{{ID: "gpt", Default: true}},
 	}).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	res := report.Providers[0]
 	require.Equal(t, "broken", res.Key)
@@ -153,7 +153,7 @@ func TestTest_ProviderError_NoCredential(t *testing.T) {
 		Models: []models.Model{{ID: "gpt", Default: true}},
 	}).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	res := report.Providers[0]
 	require.ErrorContains(t, res.Err, "auth_token is empty")
@@ -168,7 +168,7 @@ func TestTest_ProviderError_UnknownProtocol(t *testing.T) {
 		Models:   []models.Model{{ID: "m", Default: true}},
 	}).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.ErrorContains(t, report.Providers[0].Err, "unknown protocol")
 }
@@ -182,7 +182,7 @@ func TestTest_ProviderError_StructuralModels(t *testing.T) {
 			models.Model{ID: "", Default: true},
 		)).done())
 
-		report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+		report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 		require.ErrorContains(t, report.Providers[0].Err, "no id")
 	})
@@ -195,7 +195,7 @@ func TestTest_ProviderError_StructuralModels(t *testing.T) {
 			models.Model{ID: probeModelID},
 		)).done())
 
-		report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+		report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 		require.ErrorContains(t, report.Providers[0].Err, "duplicate")
 	})
@@ -210,7 +210,7 @@ func TestTest_ModelError(t *testing.T) {
 		models.Model{ID: "glm-4-air"},
 	)).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	res := report.Providers[0]
 	require.NoError(t, res.Err)
@@ -235,7 +235,7 @@ func TestTest_ModelError_ExtractsMessageFromJSON(t *testing.T) {
 		models.Model{ID: probeModelID, Default: true},
 	)).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	errText := report.Providers[0].Models[0].Err.Error()
 	require.Contains(t, errText, "Unknown Model, please check the model code.")
@@ -262,7 +262,7 @@ func TestTest_AnthropicBracketSuffixStripped(t *testing.T) {
 		models.Model{ID: "glm-5.3-flash[1m]"},
 	)).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.NoError(t, report.Providers[0].Models[0].Err)
 	require.NoError(t, report.Providers[0].Models[1].Err)
@@ -292,7 +292,7 @@ func TestTest_OpenAIBracketSuffixKept(t *testing.T) {
 		Models: []models.Model{{ID: "m[1m]", Default: true}},
 	}).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.NoError(t, report.Providers[0].Models[0].Err)
 	// non-anthropic protocols keep the id verbatim
@@ -306,7 +306,7 @@ func TestTest_UnreachableUpstream(t *testing.T) {
 		models.Model{ID: probeModelID, Default: true},
 	)).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	res := report.Providers[0]
 	// provider itself is structurally fine — the failure is on the model probe
@@ -323,7 +323,7 @@ func TestTest_ProviderFilter(t *testing.T) {
 	p.Providers.Set("other", anthropicProfile(up.URL, models.Model{ID: "m", Default: true}))
 	writeProviders(t, sp, p)
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Provider: "zai"})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Provider: "zai"})
 
 	require.Len(t, report.Providers, 1)
 	require.Equal(t, "zai", report.Providers[0].Key)
@@ -334,7 +334,7 @@ func TestTest_ProviderFilter_Unknown(t *testing.T) {
 	up := anthropicUpstream(t, "")
 	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(up.URL, models.Model{ID: probeModelID, Default: true})).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Provider: "nope"})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Provider: "nope"})
 
 	require.Len(t, report.Providers, 1)
 	require.ErrorContains(t, report.Providers[0].Err, "unknown provider")
@@ -351,7 +351,7 @@ func TestTest_ProbeCarriesCredential(t *testing.T) {
 	t.Cleanup(srv.Close)
 	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(srv.URL, models.Model{ID: probeModelID, Default: true})).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.NoError(t, report.Providers[0].Models[0].Err)
 	require.Equal(t, "Bearer secret", gotAuth)
@@ -368,7 +368,7 @@ func TestTest_ProbeBody(t *testing.T) {
 	t.Cleanup(srv.Close)
 	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(srv.URL, models.Model{ID: probeModelID, Default: true})).done())
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.NoError(t, report.Providers[0].Models[0].Err)
 	require.Equal(t, probeModelID, body["model"])
@@ -396,7 +396,7 @@ func TestTest_ReportCounts(t *testing.T) {
 	})
 	writeProviders(t, sp, p)
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.Equal(t, 2, report.TotalProviders)
 	require.Equal(t, 1, report.ProvidersOK)
@@ -410,7 +410,7 @@ func TestTest_NoProvidersFile(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	_ = os.Remove(filepath.Join(sp.Config.Home, "providers.json"))
 
-	report := sp.GetTester().Run(sp.Context(), tester.Options{Version: testVersion})
+	report := sp.GetTesterService().Run(sp.Context(), tester.Options{Version: testVersion})
 
 	require.Len(t, report.Providers, 1)
 	require.ErrorContains(t, report.Providers[0].Err, "providers.json")

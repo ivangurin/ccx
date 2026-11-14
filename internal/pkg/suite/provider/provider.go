@@ -3,7 +3,7 @@
 // suite_provider shape): lazy GetX getters grouped per concern
 // (clients.go, services.go), real production objects built over mocks at
 // the leaves — tests wire expectations on the leaf mock and drive the real
-// service (sp.GetDaemonMock().EXPECT()... → sp.GetSwitcher()).
+// service (sp.GetDaemonMock().EXPECT()... → sp.GetSwitcherService()).
 // The live ~/.claude is unreachable by construction (an invariant after the
 // CCR incidents in bash-ccx: tests never touch real settings).
 //

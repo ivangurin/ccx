@@ -22,7 +22,7 @@ func ResetLockRetryForTest() { lockRetry = 5 * time.Second }
 // acquireLock takes daemon.lock with a bounded retry: the previous daemon may
 // hold it for a moment while its graceful shutdown drains in-flight requests.
 func (a *App) acquireLock() (*flock.Lock, error) {
-	home := a.p.GetConfig().Home
+	home := a.sp.GetConfig().Home
 	// a fresh install may not have the ccx home yet — the lock lives there
 	_ = os.MkdirAll(home, 0o750)
 

@@ -63,9 +63,9 @@ func TestGetDaemon_MockByDefault(t *testing.T) {
 func TestGetSwitcher_LazySingleton(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 
-	sw := sp.GetSwitcher()
+	sw := sp.GetSwitcherService()
 	require.NotNil(t, sw)
-	require.Same(t, sw, sp.GetSwitcher())
+	require.Same(t, sw, sp.GetSwitcherService())
 }
 
 // The codex client seam is the mockery mock by default; the expecter wires
@@ -108,9 +108,9 @@ func TestGetRoute_PerKeyCache(t *testing.T) {
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc := sp.GetRoute("zai")
+	svc := sp.GetRouteService("zai")
 	require.NotNil(t, svc)
-	require.Same(t, svc, sp.GetRoute("zai"))
+	require.Same(t, svc, sp.GetRouteService("zai"))
 
 	p2, _, ok := svc.Active()
 	require.True(t, ok)
@@ -118,14 +118,14 @@ func TestGetRoute_PerKeyCache(t *testing.T) {
 
 	require.PanicsWithValue(t,
 		`suite provider: route "nope": router: unknown provider: nope`,
-		func() { sp.GetRoute("nope") })
+		func() { sp.GetRouteService("nope") })
 }
 
 // GetTester is a lazy singleton over the sandbox config.
 func TestGetTester_LazySingleton(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 
-	tr := sp.GetTester()
+	tr := sp.GetTesterService()
 	require.NotNil(t, tr)
-	require.Same(t, tr, sp.GetTester())
+	require.Same(t, tr, sp.GetTesterService())
 }

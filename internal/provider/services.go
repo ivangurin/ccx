@@ -17,8 +17,8 @@ type services struct {
 	tester   *tester.Service
 }
 
-// GetSwitcher — the profile switcher (lazy singleton), built over GetDaemon().
-func (p *Provider) GetSwitcher() *switcher.Service {
+// GetSwitcherService — the profile switcher (lazy singleton), built over GetDaemon().
+func (p *Provider) GetSwitcherService() *switcher.Service {
 	if p.services.switcher == nil {
 		p.services.switcher = switcher.NewService(p.cfg, p.GetDaemon())
 	}
@@ -26,13 +26,13 @@ func (p *Provider) GetSwitcher() *switcher.Service {
 	return p.services.switcher
 }
 
-// GetRoute — the daemon's single route (lazy singleton): router.Build loads
+// GetRouteService — the daemon's single route (lazy singleton): router.Build loads
 // providers.json, resolves the profile, builds the translator and runs its
 // readiness check — Ready-before-listening lives here, so /health answering
 // means the route is ready. providerKey pins the slot: the daemon serves
 // exactly one provider per process, a second key on the same provider is a
 // caller bug and errors out.
-func (p *Provider) GetRoute(ctx context.Context, providerKey string) (*router.Service, error) {
+func (p *Provider) GetRouteService(ctx context.Context, providerKey string) (*router.Service, error) {
 	if p.services.route != nil {
 		if p.services.routeKey != providerKey {
 			return nil, fmt.Errorf("provider: route already built for %q — one provider per daemon process", p.services.routeKey)
@@ -49,10 +49,10 @@ func (p *Provider) GetRoute(ctx context.Context, providerKey string) (*router.Se
 	return svc, nil
 }
 
-// GetTester — the ccx test engine (lazy singleton) over the provider's
+// GetTesterService — the ccx test engine (lazy singleton) over the provider's
 // config; run parameters (the --provider filter, Version, the live-view
 // callback) stay per-call in Options.
-func (p *Provider) GetTester() *tester.Service {
+func (p *Provider) GetTesterService() *tester.Service {
 	if p.services.tester == nil {
 		p.services.tester = tester.NewService(p.cfg)
 	}

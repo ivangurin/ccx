@@ -40,7 +40,7 @@ func runTest(argv []string, stdout io.Writer) int {
 	render := tester.NewRenderer(stdout, tty)
 	opts.OnUpdate = render.Update
 
-	report := p.GetTester().Run(context.Background(), *opts)
+	report := p.GetTesterService().Run(context.Background(), *opts)
 	render.Finish(report)
 
 	if report.ProvidersOK < report.TotalProviders || report.ModelsOK < report.TotalModels {

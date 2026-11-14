@@ -37,7 +37,7 @@ func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.
 
 	rec := wireDaemon(sp.GetDaemonMock())
 
-	return sp.GetSwitcher(), rec, sp
+	return sp.GetSwitcherService(), rec, sp
 }
 
 func TestApply_DirectAnthropic(t *testing.T) {

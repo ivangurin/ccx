@@ -19,7 +19,7 @@ func runRestore(_ []string, stdout io.Writer) int {
 
 		return 1
 	}
-	out, err := p.GetSwitcher().RestoreOriginal(context.Background())
+	out, err := p.GetSwitcherService().RestoreOriginal(context.Background())
 	if err != nil {
 		fmt.Fprintf(stdout, "%v\n", err)
 

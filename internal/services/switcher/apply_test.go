@@ -124,7 +124,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Service, *daemonRec, *suite_provid
 
 	rec := wireDaemon(sp.GetDaemonMock())
 
-	return sp.GetSwitcher(), rec, sp
+	return sp.GetSwitcherService(), rec, sp
 }
 
 func settingsEnv(t *testing.T, path string) map[string]string {
@@ -298,7 +298,7 @@ func TestApply_MissingSettingsFails(t *testing.T) {
 	p.Providers.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	_, err := sp.GetSwitcher().Apply(context.Background(), "zai", "")
+	_, err := sp.GetSwitcherService().Apply(context.Background(), "zai", "")
 	require.ErrorContains(t, err, "settings.json")
 }
 

@@ -118,7 +118,7 @@ internal/
                                          Execute(args, stdout) int is the stable seam — bodies
                                          runXxx(argv, stdout) int keep bash-ccx exit codes and
                                          hint texts, cobra owns parsing/help/completion
-  app/                                  app.Run(): serve mode: lock→route(GetRoute)→http — the
+  app/                                  app.Run(): serve mode: lock→route(GetRouteService)→http — the
                                          App holds no cfg/log of its own, everything comes from
                                          the service provider (internal/provider; 2026-11-14)
   config/                               env config + CCX_* paths + providers.json (load/save, 0600)
@@ -149,11 +149,11 @@ internal/
                                          HTTP layer) → one short probe per model; three-level report
                                          provider → models → per-model errors, settings.json untouched
   provider/                             the service provider (idp-kube shape): lazy singletons over
-                                         one config — GetDaemon (HTTPDaemon), GetSwitcher (over the
-                                         daemon), GetRoute (the daemon's single route, router.Build
+                                         one config — GetDaemon (HTTPDaemon), GetSwitcherService (over the
+                                         daemon), GetRouteService (the daemon's single route, router.Build
                                          + Ready inside, single slot pinned by the --provider key —
                                          a second key errors: one provider per daemon process),
-                                         GetTester (ccx test — per-call run params stay in Options),
+                                         GetTesterService (ccx test — per-call run params stay in Options),
                                          GetConfig/GetLogger; NewEnv() for the CLI, New(cfg, log) for
                                          the daemon runtime; consumers are ccx use/restore/test/stop
                                          AND app.Run (2026-11-14 — the daemon launch primitives live
@@ -189,8 +189,8 @@ internal/
                                          reference), lazy GetX getters per concern: clients.go
                                          (GetDaemon/GetDaemonMock, GetCodexAuth(Mock),
                                          GetCopilotToken(Mock) — mockery mocks at the leaves,
-                                         mock-by-default seams), services.go (GetSwitcher — the
-                                         REAL switcher over the mock daemon; GetRoute(key) — the
+                                         mock-by-default seams), services.go (GetSwitcherService — the
+                                         REAL switcher over the mock daemon; GetRouteService(key) — the
                                          real route per key via router.Build, cached per key and
                                          Cleaner-closed, panics on a build failure — the fixture-bug
                                          contract of the reference suite; unlike the production
@@ -536,7 +536,7 @@ gen-mocks`, config appeared 2026-11-14): `switcher/mocks.Daemon`,
 — the client seams; concrete clients (`clients/codex.Client`,
 `clients/copilot.Client`) stay unmocked — their consumption boundaries ARE
 these interfaces. Suite tests get them via the suite provider
-(`sp.GetDaemonMock().EXPECT()...` → `sp.GetSwitcher()`); the switcher tests'
+(`sp.GetDaemonMock().EXPECT()...` → `sp.GetSwitcherService()`); the switcher tests'
 `wireDaemon` helper arms recording defaults via `RunAndReturn` closures —
 `mock.MatchBy` does not compile with this testify version. In-package
 translator tests (codex/copilot) cannot import the suite (cycle:
@@ -611,14 +611,14 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
 - **internal/provider — the service provider** (2026-11-14, the idp-kube
   `service_provider` shape): lazy singletons over one config, getters
   grouped per concern (`clients.go`: `GetDaemon`, `services.go`:
-  `GetSwitcher`, `GetRoute`, `GetTester`), `GetX` naming mirrors the
+  `GetSwitcherService`, `GetRouteService`, `GetTesterService`), `GetX` naming mirrors the
   reference. Services are constructor-built (`switcher.NewService`,
   `router.NewService`, `tester.NewService` — the idp-kube constructor idiom;
   base files are `service.go`). Consumers: `ccx
   use`/`restore`/`test`/`stop` (`provider.NewEnv()`; config-only commands
   stay on `config.NewFromEnv`) and `app.Run` (2026-11-14: the App
-  holds no cfg/log of its own — `GetConfig`/`GetLogger`/`GetRoute` come from
-  the provider). `GetRoute(ctx, key)` is the one keyed getter, deliberately
+  holds no cfg/log of its own — `GetConfig`/`GetLogger`/`GetRouteService` come from
+  the provider). `GetRouteService(ctx, key)` is the one keyed getter, deliberately
   single-slot: the daemon serves exactly one provider per process
   (switching = daemon restart), a second key errors instead of silently
   replacing; Ready-before-listening lives inside it (`router.NewService`).

@@ -50,7 +50,7 @@ type ServeOptions struct {
 // logger and the route all come from it (GetRoute carries the
 // Ready-before-listening invariant inside).
 type App struct {
-	p        *provider.Provider
+	sp       *provider.Provider
 	usageLog *slog.Logger
 }
 
@@ -59,12 +59,12 @@ type App struct {
 // buildServeLogger so a warn/error CCX_LOG_LEVEL daemon keeps recording (a
 // nil usageLog falls back to the provider's logger; tests pass the suite's
 // silent logger for both).
-func New(p *provider.Provider, usageLog *slog.Logger) *App {
+func New(sp *provider.Provider, usageLog *slog.Logger) *App {
 	if usageLog == nil {
-		usageLog = p.GetLogger()
+		usageLog = sp.GetLogger()
 	}
 
-	return &App{p: p, usageLog: usageLog}
+	return &App{sp: sp, usageLog: usageLog}
 }
 
 // Run blocks until a signal/ctx cancel (or /admin/stop). The route is built
@@ -77,8 +77,8 @@ func New(p *provider.Provider, usageLog *slog.Logger) *App {
 // runServe turns it into a non-zero exit so scripts never mistake a failed
 // start for a healthy daemon.
 func (a *App) Run(ctx context.Context, opts ServeOptions) error {
-	log := a.p.GetLogger()
-	cfg := a.p.GetConfig()
+	log := a.sp.GetLogger()
+	cfg := a.sp.GetConfig()
 
 	lock, err := a.acquireLock()
 	if err != nil {
@@ -119,7 +119,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 	// request may already dump.
 	reqdump.Configure(reqdump.Options{Enabled: opts.Debug, Logger: log})
 
-	svc, err := a.p.GetRoute(ctx, opts.Provider)
+	svc, err := a.sp.GetRouteService(ctx, opts.Provider)
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
 	}

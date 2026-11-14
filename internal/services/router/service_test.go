@@ -63,7 +63,7 @@ func TestBuild_ActivatesRoute(t *testing.T) {
 	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc := sp.GetRoute("zai")
+	svc := sp.GetRouteService("zai")
 
 	provider, protocol, ok := svc.Active()
 	require.True(t, ok)
@@ -90,7 +90,7 @@ func TestBuild_OpenAIProfileReady(t *testing.T) {
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc := sp.GetRoute("work")
+	svc := sp.GetRouteService("work")
 
 	provider, protocol, ok := svc.Active()
 	require.True(t, ok)
@@ -119,7 +119,7 @@ func TestServeMessages_DelegatesToActive(t *testing.T) {
 	require.NoError(t, err)
 	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-	svc := sp.GetRoute("zai")
+	svc := sp.GetRouteService("zai")
 
 	rec := httptest.NewRecorder()
 	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"m":1}`)))
@@ -142,7 +142,7 @@ func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	require.NoError(t, err)
 	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-	svc := sp.GetRoute("zai")
+	svc := sp.GetRouteService("zai")
 
 	buf := &capture.Capture{}
 	reqdump.ResetForTest()
@@ -228,7 +228,7 @@ func TestBuild_CodexProfile_PersonalStore(t *testing.T) {
 	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc := sp.GetRoute("cx")
+	svc := sp.GetRouteService("cx")
 
 	provider, _, ok := svc.Active()
 	require.True(t, ok)
@@ -251,7 +251,7 @@ func TestBuild_CopilotProfile_PersonalStore(t *testing.T) {
 	p.Providers.Set("gh", &models.Profile{Name: "GitHub", Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc := sp.GetRoute("gh")
+	svc := sp.GetRouteService("gh")
 
 	provider, _, ok := svc.Active()
 	require.True(t, ok)
