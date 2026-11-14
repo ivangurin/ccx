@@ -1,4 +1,4 @@
-package copilot
+package copilot_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,11 +20,12 @@ import (
 // for confirmation..." regardless of the user's confirmation — verified
 // live three times).
 func TestNew_DeviceFlowTokenURLOnGithubDotCom(t *testing.T) {
-	c := New(filepath.Join(t.TempDir(), "copilot-auth.json"))
+	c := copilot.New(filepath.Join(t.TempDir(), "copilot-auth.json"))
+	tokenURL, exURL := c.EndpointsForTest()
 
-	require.True(t, strings.HasPrefix(c.tokenURL, GitHubBase), "token endpoint must be on github.com, got %s", c.tokenURL)
-	require.NotContains(t, c.tokenURL, "api.github.com")
-	require.True(t, strings.HasPrefix(c.exURL, APIBase), "the exchange stays on api.github.com")
+	require.True(t, strings.HasPrefix(tokenURL, copilot.GitHubBase), "token endpoint must be on github.com, got %s", tokenURL)
+	require.NotContains(t, tokenURL, "api.github.com")
+	require.True(t, strings.HasPrefix(exURL, copilot.APIBase), "the exchange stays on api.github.com")
 }
 
 // A non-2xx poll response must surface as an error, not loop silently —
@@ -36,7 +38,7 @@ func TestPollDeviceFlow_Non2xxIsError(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	c := NewWithBase(up.URL, up.URL, up.URL, filepath.Join(t.TempDir(), "copilot-auth.json"))
+	c := copilot.NewWithBase(up.URL, up.URL, up.URL, filepath.Join(t.TempDir(), "copilot-auth.json"))
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second) // > the first 5s poll tick
 	defer cancel()
 
