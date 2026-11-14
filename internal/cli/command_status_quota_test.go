@@ -1,4 +1,4 @@
-package cli
+package cli_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/cli"
 	"github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
@@ -35,8 +36,7 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	setStatusState(t, sp.Config, "work")
 
 	var gotStore string
-	old := copilotQuota
-	copilotQuota = func(store string) (*copilot.QuotaInfo, error) {
+	restore := cli.SetQuotaFetcherForTest(func(store string) (*copilot.QuotaInfo, error) {
 		gotStore = store
 
 		return &copilot.QuotaInfo{
@@ -45,11 +45,12 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 				Entitlement: 300, Remaining: 37, ResetDate: "2026-12-01",
 			},
 		}, nil
-	}
-	t.Cleanup(func() { copilotQuota = old })
+	})
+	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	code := cli.Execute([]string{cmdStatus}, &out)
+	require.Equal(t, 0, code)
 
 	require.Equal(t, sp.Config.AuthStorePath("work"), gotStore)
 	require.Contains(t, out.String(), "Copilot quota")
@@ -68,14 +69,14 @@ func TestStatus_LocalLinesPrintBeforeQuotaPanel(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
-	old := copilotQuota
-	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+	restore := cli.SetQuotaFetcherForTest(func(string) (*copilot.QuotaInfo, error) {
 		return &copilot.QuotaInfo{CopilotPlan: "INDIVIDUAL"}, nil
-	}
-	t.Cleanup(func() { copilotQuota = old })
+	})
+	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	code := cli.Execute([]string{cmdStatus}, &out)
+	require.Equal(t, 0, code)
 
 	outStr := out.String()
 	require.Less(t, strings.Index(outStr, "Model:"), strings.Index(outStr, "Copilot quota"),
@@ -91,7 +92,8 @@ func TestStatus_NoQuotaForOtherProtocols(t *testing.T) {
 	setStatusState(t, sp.Config, "relay")
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	code := cli.Execute([]string{cmdStatus}, &out)
+	require.Equal(t, 0, code)
 
 	require.NotContains(t, out.String(), "Copilot quota")
 }
@@ -104,14 +106,14 @@ func TestStatus_QuotaFailureIsAWarning(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
-	old := copilotQuota
-	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+	restore := cli.SetQuotaFetcherForTest(func(string) (*copilot.QuotaInfo, error) {
 		return nil, context.DeadlineExceeded
-	}
-	t.Cleanup(func() { copilotQuota = old })
+	})
+	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	code := cli.Execute([]string{cmdStatus}, &out)
+	require.Equal(t, 0, code)
 
 	require.Contains(t, out.String(), "Copilot quota:  unavailable")
 }
@@ -124,17 +126,17 @@ func TestStatus_QuotaUnlimited(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
-	old := copilotQuota
-	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+	restore := cli.SetQuotaFetcherForTest(func(string) (*copilot.QuotaInfo, error) {
 		return &copilot.QuotaInfo{
 			CopilotPlan:         "INDIVIDUAL",
 			PremiumInteractions: &copilot.PremiumQuota{Unlimited: true},
 		}, nil
-	}
-	t.Cleanup(func() { copilotQuota = old })
+	})
+	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	code := cli.Execute([]string{cmdStatus}, &out)
+	require.Equal(t, 0, code)
 
 	require.Contains(t, out.String(), "ai credits: unlimited")
 	require.NotContains(t, out.String(), "0/0")
@@ -149,14 +151,14 @@ func TestStatus_QuotaWithoutPool(t *testing.T) {
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
-	old := copilotQuota
-	copilotQuota = func(string) (*copilot.QuotaInfo, error) {
+	restore := cli.SetQuotaFetcherForTest(func(string) (*copilot.QuotaInfo, error) {
 		return &copilot.QuotaInfo{CopilotPlan: "BUSINESS"}, nil
-	}
-	t.Cleanup(func() { copilotQuota = old })
+	})
+	t.Cleanup(restore)
 
 	var out bytes.Buffer
-	require.Equal(t, 0, runStatus(nil, &out))
+	code := cli.Execute([]string{cmdStatus}, &out)
+	require.Equal(t, 0, code)
 
 	require.Contains(t, out.String(), "BUSINESS")
 	require.Contains(t, out.String(), "ai credits: no pool reported")
