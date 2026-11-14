@@ -59,7 +59,7 @@ func TestCommandUse_NoDefaultModel(t *testing.T) {
 	require.Contains(t, out.String(), "no default model")
 }
 
-// A successful direct switch with an explicit model alias: settings.json and
+// A successful direct switch with an explicit model id: settings.json and
 // state are written inside the sandbox home.
 func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
@@ -72,15 +72,15 @@ func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  "https://api.z.ai/api/anthropic",
 		Models: []models.Model{
-			{ID: "glm-5.3[1m]", Name: "glm-5.3", Default: true},
-			{ID: "glm-flash", Name: "flash"},
+			{ID: "glm-5.3[1m]", Default: true},
+			{ID: "glm-flash"},
 		},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
 	var out bytes.Buffer
 
-	code := cli.Execute([]string{cmdUse, "zai", "flash"}, &out)
+	code := cli.Execute([]string{cmdUse, "zai", "glm-flash"}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "direct")

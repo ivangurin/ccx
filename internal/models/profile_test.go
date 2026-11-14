@@ -10,7 +10,7 @@ import (
 
 func TestResolveModel(t *testing.T) {
 	p := &models.Profile{Models: []models.Model{
-		{ID: "glm-5.3[1m]", Name: "glm-5.3", Default: true},
+		{ID: "glm-5.3[1m]", Default: true},
 		{ID: "glm-flash"},
 	}}
 
@@ -18,9 +18,12 @@ func TestResolveModel(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "glm-5.3[1m]", id, "empty input resolves to the default")
 
-	id, ok = p.ResolveModel("glm-5.3")
+	id, ok = p.ResolveModel("glm-flash")
 	require.True(t, ok)
-	require.Equal(t, "glm-5.3[1m]", id, "the alias maps to the real id")
+	require.Equal(t, "glm-flash", id, "the id is matched exactly")
+
+	_, ok = p.ResolveModel("glm-5.3")
+	require.False(t, ok, "a bare id without the [1m] suffix is not an alias — models match by id only")
 
 	_, ok = p.ResolveModel("nope")
 	require.False(t, ok)
@@ -30,7 +33,7 @@ func TestResolveModel(t *testing.T) {
 // just the id — the switcher derives the context-window env from it.
 func TestResolveModelEntry_MaxContextTokens(t *testing.T) {
 	raw := `{"models": [
-		{"id": "big", "name": "b", "max_context_tokens": 200000, "default": true},
+		{"id": "big", "max_context_tokens": 200000, "default": true},
 		{"id": "std"}
 	]}`
 	var p models.Profile

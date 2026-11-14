@@ -91,15 +91,15 @@ func TestExecute_ShortcutAppliesUse(t *testing.T) {
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  "https://api.z.ai/api/anthropic",
 		Models: []models.Model{
-			{ID: "glm-5.3[1m]", Name: "glm-5.3", Default: true},
-			{ID: modelGLMFlash, Name: modelFlash},
+			{ID: "glm-5.3[1m]", Default: true},
+			{ID: modelGLMFlash},
 		},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
 	var out bytes.Buffer
 
-	code := cli.Execute([]string{profZai, modelFlash}, &out)
+	code := cli.Execute([]string{profZai, modelGLMFlash}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), modelGLMFlash)

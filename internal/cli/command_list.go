@@ -39,7 +39,7 @@ func runList(_ []string, stdout io.Writer) int {
 }
 
 // modelLine — the model's list line: label, id (typed by the user),
-// default and alias markers.
+// default marker.
 func modelLine(m models.Model) string {
 	label := m.Label
 	if label == "" {
@@ -50,9 +50,6 @@ func modelLine(m models.Model) string {
 	}
 	if m.Default {
 		label += " [default]"
-	}
-	if m.Name != "" && m.Name != m.ID {
-		label += " (" + m.Name + ")"
 	}
 	if m.Default {
 		return "★ " + label

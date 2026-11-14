@@ -91,7 +91,7 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 		AuthToken: "sk-z",
 		Env:       map[string]string{},
 		Models: []models.Model{
-			{ID: "glm-5.3[1m]", Name: "glm-5.3", Label: "GLM 5.3", Default: true},
+			{ID: "glm-5.3[1m]", Label: "GLM 5.3", Default: true},
 			{ID: "glm-flash", Label: "Flash"},
 		},
 	})
@@ -446,12 +446,18 @@ func TestApply_RestartFailureLeavesSettingsUntouched(t *testing.T) {
 	require.NoFileExists(t, sp.Config.StatePath())
 }
 
-func TestApply_ModelByNameAlias(t *testing.T) {
+// Models resolve by exact id (the name alias is gone): a bare id without
+// the [1m] suffix must not match the bracketed one, the full id applies.
+func TestApply_ModelMatchesIDOnly(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 
-	out, err := sw.Apply(context.Background(), "zai", "glm-5.3") // name without the suffix
+	_, err := sw.Apply(context.Background(), "zai", "glm-5.3") // no [1m] suffix
+	require.ErrorContains(t, err, "not found")
+	require.NoFileExists(t, sp.Config.StatePath())
+
+	out, err := sw.Apply(context.Background(), "zai", "glm-5.3[1m]")
 	require.NoError(t, err)
-	require.Contains(t, out, "glm-5.3[1m]") // the real id was applied
+	require.Contains(t, out, "glm-5.3[1m]")
 
 	st := readState(t, sp.Config.StatePath())
 	require.Equal(t, "glm-5.3[1m]", st.Model)

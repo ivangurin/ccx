@@ -21,7 +21,6 @@ const (
 	cmdEdit       = "edit"
 	profZai       = "zai"
 	profZaiName   = "z.ai"
-	modelFlash    = "flash"
 	modelGLMFlash = "glm-flash"
 )
 

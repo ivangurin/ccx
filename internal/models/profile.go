@@ -19,13 +19,13 @@ const (
 )
 
 // Model is a provider model: id is the real identifier (written to
-// settings.json), name is an alias without special suffixes for the CLI,
-// label is for the menu. MaxContextTokens (optional) caps the context window
-// Claude Code believes it has: the switcher derives the CLAUDE_CODE_* context
-// env from it; zero means unset.
+// settings.json and matched exactly — the historical "name" alias is gone,
+// a legacy name field in providers.json is ignored on load and dropped on
+// the next save), label is the menu text. MaxContextTokens (optional) caps
+// the context window Claude Code believes it has: the switcher derives the
+// CLAUDE_CODE_* context env from it; zero means unset.
 type Model struct {
 	ID      string `json:"id"`
-	Name    string `json:"name,omitempty"`
 	Label   string `json:"label,omitempty"`
 	Default bool   `json:"default,omitempty"`
 	// MaxContextTokens → CLAUDE_CODE_MAX_CONTEXT_TOKENS and friends on switch.
@@ -63,8 +63,8 @@ type Profile struct {
 	Models []Model           `json:"models"`
 }
 
-// ResolveModelEntry finds a model by name or id and returns the whole entry
-// (the switcher needs max_context_tokens alongside the id).
+// ResolveModelEntry finds a model by id (exact match) and returns the whole
+// entry (the switcher needs max_context_tokens alongside the id).
 // model="" with exactly one default model → default; empty and no default → nil.
 func (p *Profile) ResolveModelEntry(model string) (*Model, bool) {
 	if model == "" {
@@ -78,7 +78,7 @@ func (p *Profile) ResolveModelEntry(model string) (*Model, bool) {
 	}
 	for i := range p.Models {
 		m := &p.Models[i]
-		if m.ID == model || (m.Name != "" && m.Name == model) {
+		if m.ID == model {
 			return m, true
 		}
 	}
@@ -86,9 +86,8 @@ func (p *Profile) ResolveModelEntry(model string) (*Model, bool) {
 	return nil, false
 }
 
-// ResolveModel finds a model by name or id and returns the real id
-// (bash-ccx semantics: the alias without brackets is what the user types,
-// the id is what gets applied).
+// ResolveModel finds a model by id and returns it (the id is both what the
+// user types and what gets applied).
 func (p *Profile) ResolveModel(model string) (string, bool) {
 	m, ok := p.ResolveModelEntry(model)
 	if !ok {

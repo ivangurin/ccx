@@ -95,7 +95,9 @@ func profileMenuItems(providers *models.Providers) []tui.Item {
 	return items
 }
 
-// modelMenuItems — the profile's model menu entries.
+// modelMenuItems — the profile's model menu entries: the label only (the id
+// is the fallback when no label is set) — the id never rides the row, the
+// filter matches labels.
 func modelMenuItems(profile *models.Profile) []tui.Item {
 	items := make([]tui.Item, 0, len(profile.Models))
 	for _, m := range profile.Models {
@@ -103,7 +105,7 @@ func modelMenuItems(profile *models.Profile) []tui.Item {
 		if label == "" {
 			label = m.ID
 		}
-		items = append(items, tui.Item{Label: label, Detail: m.ID})
+		items = append(items, tui.Item{Label: label})
 	}
 
 	return items
