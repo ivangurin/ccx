@@ -37,7 +37,7 @@ func writeStatusFixture(t *testing.T, sp *suite_provider.Provider, prof *models.
 
 func openAIProfile() *models.Profile {
 	return &models.Profile{
-		Name:     "x5",
+		Name:     "acme",
 		Protocol: models.ProtocolOpenAI,
 		BaseURL:  "https://example.invalid",
 		Models:   []models.Model{{ID: "copilot-code-large", Label: "Large", Default: true}},

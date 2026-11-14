@@ -18,7 +18,7 @@ type services struct {
 
 // GetSwitcherService — the real profile switcher over GetDaemon() (the mock by
 // default): tests wire the daemon expectations and drive the production
-// switcher — the idp-kube GetHelmService-over-GetHelmClient pattern.
+// switcher — the reference Service-over-mocked-getter pattern.
 func (p *Provider) GetSwitcherService() *switcher.Service {
 	if p.services.switcher == nil {
 		p.services.switcher = switcher.NewService(p.Config, p.GetDaemon())

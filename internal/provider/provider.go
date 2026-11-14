@@ -1,6 +1,6 @@
 // Package provider — the service provider: lazy singletons built over one
 // config, grouped per concern (clients.go, services.go). The shape mirrors
-// idp-kube's internal/service_provider. Consumers: the CLI commands (use /
+// the reference service_provider. Consumers: the CLI commands (use /
 // restore / stop via NewEnv) and the daemon runtime — app.Run is built over
 // the provider too (GetConfig / GetLogger / GetRoute), which is why the
 // daemon launch primitives live in the leaf internal/pkg/spawn (otherwise

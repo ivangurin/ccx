@@ -286,8 +286,8 @@ func TestTest_OpenAIBracketSuffixKept(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"m[1m]","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
 	}))
 	t.Cleanup(srv.Close)
-	writeProviders(t, sp, newProviders().With("x5", &models.Profile{
-		Name: "x5", Protocol: models.ProtocolOpenAI,
+	writeProviders(t, sp, newProviders().With("acme", &models.Profile{
+		Name: "acme", Protocol: models.ProtocolOpenAI,
 		BaseURL: srv.URL, AuthToken: "s",
 		Models: []models.Model{{ID: "m[1m]", Default: true}},
 	}).done())

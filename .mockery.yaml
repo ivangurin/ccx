@@ -1,4 +1,4 @@
-# Mockery config — the idp-kube template (the team's reference): mocks live
+# Mockery config — the reference template (the team's standard): mocks live
 # next to their interface under mocks/, carry the interface's name and get
 # typed expecters (with-expecter). The listed packages are the CLIENT SEAMS:
 # the daemon contract and the two OAuth client contracts the translators

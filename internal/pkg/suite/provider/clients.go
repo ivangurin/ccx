@@ -11,7 +11,7 @@ import (
 
 // clients — the lazy client seams: mocks at the leaves. A real HTTPDaemon
 // spawns processes and the OAuth clients hit real upstreams — the unit tier
-// substitutes the mocks (idp-kube's GetKubeClientMock/GetKubeClient pair);
+// substitutes the mocks (the reference GetXMock/GetX getter pair);
 // the real implementations are built by hand in the daemon/cluster-tier
 // tests that own them.
 type clients struct {
@@ -25,7 +25,7 @@ type clients struct {
 
 // GetDaemonMock — the daemon mock (lazy singleton), bare by default: tests
 // wire their own EXPECT()s (RunAndReturn closures for call recording —
-// mock.MatchBy does not compile with this testify, the idp-kube recipe).
+// mock.MatchBy does not compile with this testify, the reference recipe).
 func (p *Provider) GetDaemonMock() *switcher_mocks.Daemon {
 	if p.clients.daemonMock == nil {
 		p.clients.daemonMock = switcher_mocks.NewDaemon(p.t)

@@ -1,5 +1,5 @@
 // Package suite_provider — the test composition root, the mirror of the
-// production internal/provider over a sandboxed CCX_HOME (the idp-kube
+// production internal/provider over a sandboxed CCX_HOME (the reference
 // suite_provider shape): lazy GetX getters grouped per concern
 // (clients.go, services.go), real production objects built over mocks at
 // the leaves — tests wire expectations on the leaf mock and drive the real

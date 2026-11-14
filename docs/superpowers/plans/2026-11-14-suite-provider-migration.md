@@ -445,6 +445,47 @@ Three in-package tui files (`escjoin`, `frame`, `interactive`) test unexported h
   git commit -m "ccx: the tui esc/frame/session tests move to package tui_test — export_test.go re-exports the helpers and wraps session construction/key handling (unexported fields cannot be literalized externally)"
   ```
 
+### Task 14: Purge internal project names from the tree (executed BETWEEN Task 12 and Task 13)
+
+The working tree must carry no mention of two internal reference names (call
+them NAME-A and NAME-B in this plan — the plan file is committed and must not
+carry them either): NAME-B is the internal reference project referenced in
+comments/docs as the shape this codebase mirrors; NAME-A appears once as a
+narrative reference and twice as a test fixture provider key.
+
+**Files:**
+- Modify: `.mockery.yaml` (1 comment mention of NAME-B)
+- Modify: `CLAUDE.md` (7 NAME-B mentions + 1 NAME-A narrative mention at "LIVE … daemon")
+- Modify: `internal/provider/provider.go` (1 NAME-B comment mention)
+- Modify: `internal/pkg/suite/provider/provider.go` (1), `clients.go` (2), `services.go` (1) — NAME-B comment mentions
+- Modify: `internal/cli/command_status_test.go` (fixture provider key/name NAME-A:39)
+- Modify: `internal/services/tester/service_test.go` (fixture provider key/name NAME-A:289-290)
+- NEVER touch: `go.sum` (its NAME-A grep hits are base64 hash fragments, false positives)
+
+**Interfaces:**
+- Consumes: nothing from other tasks. Runs AFTER Task 12 (command_status_test.go
+  is already in package cli_test by then) and BEFORE Task 13 (whose verification
+  covers this sweep).
+- Produces: a tree where `grep -ri NAME-A/NAME-B` (excluding go.sum and
+  .git) returns zero matches.
+
+- [ ] **Step 1: Grep both names yourself** (`grep -rin 'NAME-A\|NAME-B' . --exclude-dir=.git --exclude-dir=.superpowers --exclude=go.sum` — the literal names arrive in the dispatch prompt; this plan file must never carry them) and reconcile against the file list above — new occurrences added by Tasks 5-12 (e.g. moved/cloned fixture lines) are in scope too.
+
+- [ ] **Step 2: Rewrite comment/doc mentions meaning-preserving.** NAME-B references become neutral shape references — "the reference suite_provider shape", "the reference template", "the reference getter pattern" as fits each sentence. The NAME-A narrative mention ("LIVE … daemon") drops the name, keeps the fact ("the developer's LIVE daemon"). Every rewritten sentence must still parse as English and keep its technical content.
+
+- [ ] **Step 3: Rename the fixture provider key in the two test files** from NAME-A to `acme` — the key, the Name field, and EVERY assertion in the same file that references the key (report key equality checks, filter options) — consistently.
+
+- [ ] **Step 4: Verify.** Run: `grep -rin 'NAME-A\|NAME-B' . --exclude-dir=.git --exclude-dir=.superpowers --exclude=go.sum` (expect empty) `&& go build ./... && go test ./internal/cli/ ./internal/services/tester/ -count=1 && make lint`
+  Expected: grep empty; tests PASS; lint 0.
+
+- [ ] **Step 5: Commit** — the commit message must NOT contain either name; this plan file rides along (it carries only the placeholders):
+  ```bash
+  git add .mockery.yaml CLAUDE.md internal/provider/provider.go internal/pkg/suite/provider/ internal/cli/command_status_test.go internal/services/tester/service_test.go docs/superpowers/plans/2026-11-14-suite-provider-migration.md
+  git commit -m "ccx: scrub internal project references from comments, docs and test fixtures — the reference-shape mentions are reworded to neutral phrasing, the fixture provider key becomes acme; no behavior change"
+  ```
+
+---
+
 ### Task 13: CLAUDE.md sync + final verification
 
 **Files:**
@@ -456,6 +497,7 @@ Three in-package tui files (`escjoin`, `frame`, `interactive`) test unexported h
   - `app.New(cfg, log, usageLog)` builds its own `provider.New(cfg, log)` — the provider stays the composition root for the non-serve CLI commands (`provider.NewEnv()`); callers never pass a ready provider.
   - The e2e daemon test lives in `internal/app/e2e_test.go` (package `app_test`) over the suite sandbox; `test/e2e` is gone.
   - Suite boundary: the suite composes the daemon graph only — `clients/*` objects and pure leaf packages keep hand-built tests by design.
+  - The MANDATE (owner directive): any test that composes daemon-graph dependencies MUST build them through the suite provider (`suite_provider.NewProvider(t)` — sandbox + seams + real services); hand-composition of services/daemons in tests is recorded debt, not an option. Write this as a rule in the Testing section, one line.
 
 - [ ] **Step 2: Full verification.** Run:
   ```bash

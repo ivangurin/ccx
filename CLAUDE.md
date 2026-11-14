@@ -148,7 +148,7 @@ internal/
                                          throwaway daemon on a free port (router.NewService + the full
                                          HTTP layer) → one short probe per model; three-level report
                                          provider → models → per-model errors, settings.json untouched
-  provider/                             the service provider (idp-kube shape): lazy singletons over
+  provider/                             the service provider (the reference service_provider shape): lazy singletons over
                                          one config — GetDaemon (HTTPDaemon), GetSwitcherService (over the
                                          daemon), GetRouteService (the daemon's single route, router.Build
                                          + Ready inside, single slot pinned by the --provider key —
@@ -182,7 +182,7 @@ internal/
     sse/                                upstream SSE reader + AnthropicWriter
     tui/                                interactive menu (arrows/filter/fallback)
     suite/
-      provider/                         the TEST composition root, the idp-kube suite_provider
+      provider/                         the TEST composition root, the reference suite_provider
                                          shape (2026-11-14): sandbox (temp CCX_HOME, CCX_SETTINGS
                                          pinned inside — the live ~/.claude unreachable; the
                                          deliberate NewProvider(t) difference from the bare
@@ -314,7 +314,7 @@ internal/
   neither be signaled nor admin-stopped. Root cause of the 2026-11-09
   "daemon dies silently, ECONNREFUSED, only model re-selection helps" day:
   `go test`/`make test` runs from parallel Claude Code sessions killed the
-  LIVE x5 daemon — the suite sandboxes CCX_HOME/CCX_SETTINGS but not the
+  developer's LIVE daemon — the suite sandboxes CCX_HOME/CCX_SETTINGS but not the
   port, fixtures pinned 4567, and the old health-gated Stop trusted
   whatever answered there (verified live: the /admin/* access log named the
   killer — `POST /admin/stop` seconds after `go test ./...`; every death of
@@ -530,7 +530,7 @@ precedent). Upstreams are httptest fakes; SSE uses golden sequences in
 testdata. **Test coverage must be at least 80%** (`make test`,
 `-coverpkg=./...`).
 
-**Mocks are mockery** (`.mockery.yaml`, the idp-kube template — `make
+**Mocks are mockery** (`.mockery.yaml`, the reference template — `make
 gen-mocks`, config appeared 2026-11-14): `switcher/mocks.Daemon`,
 `translators/codex/mocks.AuthSource`, `translators/copilot/mocks.TokenSource`
 — the client seams; concrete clients (`clients/codex.Client`,
@@ -594,7 +594,7 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
 ## Conventions
 
 - **One file per service method / handler / client call / translator step**
-  (the idp-kube convention, applied tree-wide 2026-11-14): one exported
+  (the reference convention, applied tree-wide 2026-11-14): one exported
   operation — `switcher/apply.go`, `tester/probe_id.go`,
   `clients/codex/save_cas.go`, `router/serve_messages.go`,
   `handlers/admin_stop.go`. Follow this split when adding operations. The
@@ -605,15 +605,15 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
   type whose API IS the package (`readguard.Guard`, `streamState`,
   `app.Run`'s orchestrator body) is one operation and is not split
   mechanically. Tests mirror: `foo.go` → `foo_test.go`; aspect files are
-  fine (idp-kube precedent: `apply_locked_test.go` ← envref, `daemon_test.go`),
+  fine (reference precedent: `apply_locked_test.go` ← envref, `daemon_test.go`),
   shared test helpers live in the base operation's test file
   (`apply_test.go` holds `fakeDaemon`/`newTestSwitcher`).
-- **internal/provider — the service provider** (2026-11-14, the idp-kube
+- **internal/provider — the service provider** (2026-11-14, the reference
   `service_provider` shape): lazy singletons over one config, getters
   grouped per concern (`clients.go`: `GetDaemon`, `services.go`:
   `GetSwitcherService`, `GetRouteService`, `GetTesterService`), `GetX` naming mirrors the
   reference. Services are constructor-built (`switcher.NewService`,
-  `router.NewService`, `tester.NewService` — the idp-kube constructor idiom;
+  `router.NewService`, `tester.NewService` — the reference constructor idiom;
   base files are `service.go`). Consumers: `ccx
   use`/`restore`/`test`/`stop` (`provider.NewEnv()`; config-only commands
   stay on `config.NewFromEnv`) and `app.Run` (2026-11-14: the App
