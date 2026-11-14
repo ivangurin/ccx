@@ -12,7 +12,6 @@ import (
 
 	"github.com/ivangurin/ccx/internal/app"
 	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -97,7 +96,7 @@ func runServe(opts app.ServeOptions) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.New(provider.New(cfg, logs.Diagnostics), logs.Usage).Run(ctx, opts); err != nil {
+	if err := app.New(cfg, logs.Diagnostics, logs.Usage).Run(ctx, opts); err != nil {
 		logs.Diagnostics.Error("daemon exited with error", "err", err)
 
 		return 1

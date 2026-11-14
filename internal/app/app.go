@@ -1,9 +1,11 @@
 // Package app — daemon wiring for ccx serve: config → logger → lock →
 // route (Ready before listening) → http → signals → graceful shutdown. The
-// wiring goes through the service provider (internal/provider): the App
-// holds no config or logger of its own — GetConfig/GetLogger/GetRoute come
-// from the provider, so the daemon process and the CLI commands compose
-// their singletons the same way.
+// wiring goes through the service provider (internal/provider), which the
+// App constructs itself: New(cfg, log, usageLog) builds provider.New(cfg,
+// log) internally — the daemon process owns its provider; the CLI switching
+// commands compose their own via provider.NewEnv(). Inside Run the config,
+// logger and route still come from the provider
+// (GetConfig/GetLogger/GetRouteService).
 //
 // One operation per file: app.go (the App type + Run, the startup
 // orchestrator), acquire_lock.go, pidfile.go, self_check.go,
@@ -22,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ivangurin/ccx/internal/api/handlers"
+	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/pkg/closer"
 	"github.com/ivangurin/ccx/internal/pkg/httpserver"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
@@ -46,25 +49,29 @@ type ServeOptions struct {
 	Debug bool
 }
 
-// App — the daemon. p is the composition root: config, the diagnostics
-// logger and the route all come from it (GetRoute carries the
-// Ready-before-listening invariant inside).
+// App — the daemon. sp is the composition root, built by New over the
+// constructor arguments: config, the diagnostics logger and the route all
+// come from it (GetRouteService carries the Ready-before-listening
+// invariant inside).
 type App struct {
 	sp       *provider.Provider
 	usageLog *slog.Logger
 }
 
-// New creates an App over the provider. usageLog is the usage stream over
-// the same sink — usage is DATA, not diagnostics: pinned to info+json by
-// buildServeLogger so a warn/error CCX_LOG_LEVEL daemon keeps recording (a
-// nil usageLog falls back to the provider's logger; tests pass the suite's
-// silent logger for both).
-func New(sp *provider.Provider, usageLog *slog.Logger) *App {
+// New creates an App and its service provider: the App owns its provider
+// construction — provider.New(cfg, log) is built internally, callers pass
+// the config and the diagnostics logger, not a ready provider. usageLog is
+// the usage stream over the same sink — usage is DATA, not diagnostics:
+// pinned to info+json by buildServeLogger so a warn/error CCX_LOG_LEVEL
+// daemon keeps recording (a nil usageLog falls back to the provider's
+// logger; tests pass the suite's silent logger for both).
+func New(cfg *config.Config, log *slog.Logger, usageLog *slog.Logger) *App {
+	p := provider.New(cfg, log)
 	if usageLog == nil {
-		usageLog = sp.GetLogger()
+		usageLog = p.GetLogger()
 	}
 
-	return &App{sp: sp, usageLog: usageLog}
+	return &App{sp: p, usageLog: usageLog}
 }
 
 // Run blocks until a signal/ctx cancel (or /admin/stop). The route is built

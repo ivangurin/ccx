@@ -18,7 +18,6 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccx/internal/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,7 +68,7 @@ func TestRun_ContextCancelLogsStopping(t *testing.T) {
 	ctx, cancel := context.WithCancel(sp.Context())
 	cancel() // pre-cancelled: the select must take ctx.Done immediately
 
-	err := app.New(provider.New(sp.Config, recordingLogger(&buf)), nil).Run(ctx, app.ServeOptions{
+	err := app.New(sp.Config, recordingLogger(&buf), nil).Run(ctx, app.ServeOptions{
 		Provider: "zai",
 		Port:     freePort(t),
 	})
@@ -98,7 +97,7 @@ func TestRun_SighupGracefulShutdown(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		err := app.New(provider.New(sp.Config, recordingLogger(&buf)), nil).Run(sp.Context(), app.ServeOptions{
+		err := app.New(sp.Config, recordingLogger(&buf), nil).Run(sp.Context(), app.ServeOptions{
 			Provider: "zai",
 			Port:     port,
 		})

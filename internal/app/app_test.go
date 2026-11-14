@@ -10,7 +10,6 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/flock"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
-	"github.com/ivangurin/ccx/internal/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +24,7 @@ func TestRun_LockHeldReturnsError(t *testing.T) {
 	app.SetLockRetryForTest(200 * time.Millisecond)
 	t.Cleanup(app.ResetLockRetryForTest)
 
-	err = app.New(provider.New(sp.Config, sp.GetLogger()), nil).Run(sp.Context(), app.ServeOptions{Provider: "work"})
+	err = app.New(sp.Config, sp.GetLogger(), nil).Run(sp.Context(), app.ServeOptions{Provider: "work"})
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already running")
