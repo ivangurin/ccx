@@ -2,10 +2,13 @@
 // Claude Code and /admin/* for the CLI. One port, localhost-only; no auth
 // middleware — upstream credentials are pass-through (openai) or owned by the
 // translator (copilot/codex), so the daemon has no secret of its own.
+//
+// One handler per file: handlers.go (the Deps contract + route assembly),
+// health.go, models.go, admin_health.go, admin_stop.go; guard.go is the
+// loopback/marker middleware, write_json.go the shared response writer.
 package handlers
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -35,11 +38,12 @@ type Deps struct {
 	Log *slog.Logger
 }
 
+// statusField — the shared JSON status key of the trivial responses.
+const statusField = "status"
+
 // New assembles a chi router: a loopback-Host guard on everything (DNS
 // rebinding) and the X-Ccx marker on /admin/* (browser drive-by); no token
 // — pass-through auth owns /v1/*, the surface is localhost-only.
-const statusField = "status"
-
 func New(d Deps) http.Handler {
 	r := chi.NewRouter()
 
@@ -59,59 +63,4 @@ func New(d Deps) http.Handler {
 	})
 
 	return r
-}
-
-func handleHealth(d Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]string{statusField: "ok", "version": d.Version})
-	}
-}
-
-func handleModels(rt Routerer) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		profileModels := rt.Models()
-		data := make([]map[string]string, 0, len(profileModels))
-		for _, m := range profileModels {
-			data = append(data, map[string]string{"id": m.ID, "display_name": m.Label})
-		}
-		writeJSON(w, map[string]any{"data": data})
-	}
-}
-
-func handleAdminHealth(d Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		provider, protocol, active := d.Router.Active()
-		resp := map[string]any{
-			"version": d.Version,
-			// /health answering already implies the route is ready (Build ran
-			// before listening); kept as a constant for probe compatibility.
-			"ready":  true,
-			"port":   d.Port,
-			"active": nil,
-		}
-		if active {
-			resp["active"] = map[string]string{"provider": provider, "protocol": string(protocol)}
-		}
-		writeJSON(w, resp)
-	}
-}
-
-func handleAdminStop(d Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]string{statusField: "stopping"})
-		if d.Stop != nil {
-			go d.Stop()
-		}
-	}
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	data, err := json.Marshal(v)
-	if err != nil {
-		data = []byte(`{"error":"marshal"}`)
-	}
-	_, _ = w.Write(data)
-	_, _ = w.Write([]byte("\n"))
 }

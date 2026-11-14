@@ -2,22 +2,22 @@
 // (--provider) is resolved from providers.json once at startup; the built
 // translator serves for the daemon's whole life (switching = daemon restart
 // with new launch params, owned by the CLI switcher).
+//
+// One operation per file: router.go (the Service type + Build + the
+// protocol→translator registry), active.go, serve_messages.go,
+// serve_count_tokens.go, models.go, close.go.
 package router
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 
 	"github.com/ivangurin/ccx/internal/clients/codex"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
-	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/translators"
 	"github.com/ivangurin/ccx/internal/translators/anthropic"
 	codex_tr "github.com/ivangurin/ccx/internal/translators/codex"
@@ -99,74 +99,4 @@ func buildTranslator(cfg *config.Config, providerKey string, profile *models.Pro
 	default:
 		return nil, fmt.Errorf("router: unknown protocol %q", profile.Protocol)
 	}
-}
-
-// Active — (provider key, protocol, whether a route exists; always true for a
-// Service returned by Build).
-func (s *Service) Active() (provider string, protocol models.Protocol, ok bool) {
-	if s == nil || s.translator == nil {
-		return "", "", false
-	}
-
-	return s.profile, s.protocol, true
-}
-
-// ServeMessages delegates /v1/messages to the route's translator. The raw
-// client body is peeked for a dump when --debug enabled dumping (see
-// internal/pkg/reqdump): the exact payload a real client sends is the only
-// reproduction for some upstream bugs.
-func (s *Service) ServeMessages(w http.ResponseWriter, r *http.Request) {
-	if reqdump.Enabled() {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeReadErr(w)
-
-			return
-		}
-		reqdump.Write("anthropic-req", body)
-		r.Body = io.NopCloser(bytes.NewReader(body))
-	}
-	s.translator.ServeMessages(w, r)
-}
-
-// ServeCountTokens delegates /v1/messages/count_tokens (same dump treatment:
-// its payload mirrors /v1/messages).
-func (s *Service) ServeCountTokens(w http.ResponseWriter, r *http.Request) {
-	if reqdump.Enabled() {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeReadErr(w)
-
-			return
-		}
-		reqdump.Write("anthropic-count-tokens", body)
-		r.Body = io.NopCloser(bytes.NewReader(body))
-	}
-	s.translator.ServeCountTokens(w, r)
-}
-
-// writeReadErr — a half-read body cannot be re-delivered; fail loudly rather
-// than hand the translator a truncated stream.
-func writeReadErr(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"read request body"}}`))
-}
-
-// Models — /v1/models from the launched profile's models.
-func (s *Service) Models() []models.Model {
-	providers, err := config.LoadProviders(s.providersPath)
-	if err != nil {
-		return nil
-	}
-	if p := providers.Providers.Get(s.profile); p != nil {
-		return p.Models
-	}
-
-	return nil
-}
-
-// Close quenches the translator.
-func (s *Service) Close(ctx context.Context) error {
-	return s.translator.Close(ctx)
 }
