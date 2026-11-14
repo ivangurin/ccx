@@ -40,25 +40,17 @@ func ExpandRef(v string) (string, error) {
 }
 
 // ExpandCredentials expands environment references in the profile's
-// credential fields (auth_token, api_key) in place. Called at the points of
+// credential field (auth_token) in place. Called at the points of
 // consumption (switcher/tester/router) — never on load: LoadProviders'
 // best-effort migration rewrite must keep persisting the reference, not the
 // expanded secret. The error names the offending field so the fix points at
 // providers.json.
 func ExpandCredentials(p *models.Profile) error {
-	for _, field := range []struct {
-		name string
-		ref  *string
-	}{
-		{"auth_token", &p.AuthToken},
-		{"api_key", &p.APIKey},
-	} {
-		val, err := ExpandRef(*field.ref)
-		if err != nil {
-			return fmt.Errorf("%s: %w", field.name, err)
-		}
-		*field.ref = val
+	val, err := ExpandRef(p.AuthToken)
+	if err != nil {
+		return fmt.Errorf("auth_token: %w", err)
 	}
+	p.AuthToken = val
 
 	return nil
 }

@@ -124,7 +124,7 @@ new Claude Code session after switching.
 ## Configuration
 
 Everything lives in `~/.ccx/providers.json`. Connection fields (`base_url`,
-`auth_token`, `api_key`, …) sit directly in the provider entry — no nested
+`auth_token`, …) sit directly in the provider entry — no nested
 protocol blocks — and `protocol` decides which of them are meaningful:
 
 ```jsonc
@@ -166,7 +166,7 @@ protocol blocks — and `protocol` decides which of them are meaningful:
 
 ### Credentials from environment variables
 
-For `anthropic` and `openai`, `auth_token` and `api_key` can reference an
+For `anthropic` and `openai`, `auth_token` can reference an
 exported environment variable instead of containing the secret:
 
 ```json
@@ -190,13 +190,12 @@ the resolved credential is written to Claude Code's `settings.json`.
 | `protocol` | string | **yes** | — | `anthropic` / `openai` / `copilot` / `codex` |
 | `name` | string | no | — | display name (menus, `ccx list`) |
 | `base_url` | string | for `anthropic` / `openai` | — | upstream URL; `copilot` / `codex` have fixed endpoints and don't use it |
-| `auth_token` | string | one of `auth_token` / `api_key` for `anthropic` / `openai` | — | credential; may be a whole-value env reference `$NAME` / `${NAME}`; for `copilot` / `codex` any placeholder works (they own the real one) |
-| `api_key` | string | (alternative to `auth_token`) | — | anthropic: sent as `x-api-key`; openai: `Authorization: Bearer`; `auth_token` wins on anthropic |
-| `extra_headers` | map | no | — | extra upstream headers (`anthropic` profiles: become `ANTHROPIC_CUSTOM_HEADERS`) |
-| `max_tokens_field` | string | no | `max_tokens` | openai: switch to `max_completion_tokens` for gateways that require it |
-| `reasoning_to_thinking` | bool | no | `false` | reserved, no effect yet (reasoning deltas already map to thinking blocks unconditionally) |
-| `env` | map | no | — | extra env keys written to settings.json on switch (your variables; `ANTHROPIC_*` stays ccx-managed) |
+| `auth_token` | string | for `anthropic` / `openai` | — | the credential — the only one; sent upstream as `Authorization: Bearer`, written to settings.json on switch; may be a whole-value env reference `$NAME` / `${NAME}`; for `copilot` / `codex` any placeholder works (they own the real one) |
 | `models` | list | **yes** | — | the provider's models (see below) |
+
+Removed fields (`api_key`, `extra_headers`, `env`, `max_tokens_field`,
+`reasoning_to_thinking`) are schema history: a providers.json still carrying
+them loads cleanly, and the fields are dropped on the next save.
 
 **Model** — `label` is what menus and `ccx list` show, `id` is what
 `ccx use <provider> <model>` accepts (exact match):

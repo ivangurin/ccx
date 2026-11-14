@@ -27,12 +27,11 @@ func addBeta(t *testing.T, sp interface {
 	p, err := config.LoadProviders(sp.ProvidersPath())
 	require.NoError(t, err)
 	p.Providers.Set("beta", &models.Profile{
-		Name:     "Beta",
-		Protocol: models.ProtocolOpenAI,
-		BaseURL:  "https://gw2",
-		APIKey:   "k2",
-		Env:      map[string]string{},
-		Models:   []models.Model{{ID: "beta-model", Default: true}},
+		Name:      "Beta",
+		Protocol:  models.ProtocolOpenAI,
+		BaseURL:   "https://gw2",
+		AuthToken: "k2",
+		Models:    []models.Model{{ID: "beta-model", Default: true}},
 	})
 	require.NoError(t, config.SaveProviders(sp.ProvidersPath(), p))
 }

@@ -94,7 +94,7 @@ func TestDeviceFlow_Auth(t *testing.T) {
 	// user token saved
 	var saved map[string]any
 	require.NoError(t, jsonfile.ReadJSON(store, &saved))
-	require.Equal(t, "gho_user", saved["user_access_token"])
+	require.Equal(t, "gho_user", saved[userTokenKey])
 }
 
 func TestToken_LazyExchangeAndCache(t *testing.T) {
@@ -123,9 +123,9 @@ func TestToken_RefreshOnExpiry(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	// copilot-token already expired
 	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{
-		"user_access_token": "gho_user",
-		"copilot_token":     "tid_old",
-		"expires_at":        time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		userTokenKey:    "gho_user",
+		"copilot_token": "tid_old",
+		"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
 	}, 0o600))
 
 	client := newClient(t, gh, store)
@@ -176,7 +176,7 @@ func TestStore_Permissions600(t *testing.T) {
 	gh := httptest.NewServer((&fakeGitHub{}).handler(t))
 	t.Cleanup(gh.Close)
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
-	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{"user_access_token": "x"}, 0o600))
+	require.NoError(t, jsonfile.WriteAtomicJSON(store, map[string]any{userTokenKey: "x"}, 0o600))
 
 	client := newClient(t, gh, store)
 	_, err := client.Token(context.Background())
@@ -250,9 +250,9 @@ func TestExchange_ErrorIncludesBodyMessage(t *testing.T) {
 func TestAuthenticated(t *testing.T) {
 	dir := t.TempDir()
 	valid := filepath.Join(dir, "ok.json")
-	require.NoError(t, jsonfile.WriteAtomicJSON(valid, map[string]string{"user_access_token": "u"}, 0o600))
+	require.NoError(t, jsonfile.WriteAtomicJSON(valid, map[string]string{userTokenKey: "u"}, 0o600))
 	empty := filepath.Join(dir, "empty.json")
-	require.NoError(t, jsonfile.WriteAtomicJSON(empty, map[string]string{"user_access_token": ""}, 0o600))
+	require.NoError(t, jsonfile.WriteAtomicJSON(empty, map[string]string{userTokenKey: ""}, 0o600))
 
 	require.True(t, copilot.Authenticated(valid))
 	require.False(t, copilot.Authenticated(empty))

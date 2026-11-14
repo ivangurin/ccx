@@ -98,19 +98,6 @@ func TestServeCountTokens_Estimate(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "input_tokens")
 }
 
-func TestSerialize_MaxTokensField(t *testing.T) {
-	chat := &models.ChatRequest{Model: "m", MaxTokens: 42}
-
-	out, err := openai.SerializeForTest(chat, "max_completion_tokens")
-	require.NoError(t, err)
-	require.Contains(t, string(out), `"max_completion_tokens":42`)
-	require.NotContains(t, string(out), `"max_tokens":42`)
-
-	out2, err := openai.SerializeForTest(chat, "max_tokens")
-	require.NoError(t, err)
-	require.Contains(t, string(out2), `"max_tokens":42`)
-}
-
 // passThroughServer is an upstream that records the Authorization header and
 // answers a minimal chat completion.
 func passThroughServer(t *testing.T) (*httptest.Server, *string) {

@@ -77,34 +77,8 @@ func (t *Translator) do(ctx context.Context, src *http.Request, body []byte) (*h
 	// "Forbidden to use automatization") — masquerade as opencode's CLI;
 	// verbatim UA of opencode 2.2.5.
 	req.Header.Set("User-Agent", DefaultUserAgent)
-	for k, v := range t.profile.Headers {
-		req.Header.Set(k, v)
-	}
 
 	return t.http.Do(req)
-}
-
-// SerializeForTest exports serialize for tests of the max_tokens_field field.
-var SerializeForTest = serialize
-
-// serialize serializes a ChatRequest with max_tokens_field accounted for.
-func serialize(chat *models.ChatRequest, field string) ([]byte, error) {
-	raw, err := json.Marshal(chat) //nolint:errchkjson // RawMessage is valid JSON by construction
-	if err != nil {
-		return nil, err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil { //nolint:errchkjson // map for field renaming
-		return nil, err
-	}
-	if field == "max_completion_tokens" {
-		if v, ok := m["max_tokens"]; ok {
-			m["max_completion_tokens"] = v
-			delete(m, "max_tokens")
-		}
-	}
-
-	return json.Marshal(m)
 }
 
 // ServeMessages: POST /v1/messages (stream and non-stream).
@@ -126,11 +100,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		usagelog.Record(entry)
 	}()
 
-	field := t.profile.MaxTokensField
-	if field == "" {
-		field = "max_tokens"
-	}
-	body, err := serialize(BuildChatRequest(&req, field), field)
+	body, err := json.Marshal(BuildChatRequest(&req)) //nolint:errchkjson // RawMessage is valid JSON by construction
 	if err != nil {
 		relay.WriteErr(w, http.StatusInternalServerError, err.Error())
 

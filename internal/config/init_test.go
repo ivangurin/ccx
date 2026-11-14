@@ -41,7 +41,7 @@ func TestInit_NoVersionNoTokenWritten(t *testing.T) {
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), `"version":`)
-	require.NotContains(t, string(raw), "auth_token")
+	require.NotContains(t, string(raw), `"api_key"`) // the removed field is never written
 	require.NotContains(t, string(raw), `"profiles"`)
 	require.Contains(t, string(raw), `"providers"`)
 	// the masquerade is code constants now — init never writes it
@@ -81,14 +81,17 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	require.Equal(t, "glm-5.3[1m]", zai.Models[0].ID)
 	require.True(t, zai.Models[0].Default)
 	require.Equal(t, "glm-haiku", zai.Models[1].ID)
-	// user keys from settings.json are NOT carried into the profile
-	require.NotContains(t, zai.Env, "API_TIMEOUT_MS")
 
 	work := p.Providers.Get("work")
 	require.NotNil(t, work)
 	require.Equal(t, "https://api-copilot.work.example/aigw", work.BaseURL)
-	// carry-extras: non-ANTHROPIC keys of env.json move over
-	require.Equal(t, map[string]string{keyDisableThinking: "true"}, work.Env)
+
+	// profiles carry no env extras anymore: user keys stay in settings.json /
+	// env.json, never copied into the profile schema
+	raw2, err := os.ReadFile(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.NotContains(t, string(raw2), "API_TIMEOUT_MS")
+	require.NotContains(t, string(raw2), keyDisableThinking)
 
 	for _, key := range []string{profOpenAI, profCopilot, "codex"} {
 		require.NotNil(t, p.Providers.Get(key), "template profile %s", key)
@@ -117,4 +120,30 @@ func TestInitProviders_SettingsUntouched(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(data, &raw))
 	require.Equal(t, "https://x", raw.Env["ANTHROPIC_BASE_URL"])
+}
+
+// An old settings.json carrying only ANTHROPIC_API_KEY (no AUTH_TOKEN)
+// imports a credential-less profile: auth_token is the only credential field
+// now, and the dead api_key value is neither lifted nor written — the user
+// fills auth_token in.
+func TestInitProviders_APIKeyOnlySettingsImportsNoCredential(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
+		"env": {"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic", "ANTHROPIC_API_KEY": "sk-ant-legacy"}
+	}`), 0o600))
+
+	_, err := config.InitProviders(sp.Config, false)
+	require.NoError(t, err)
+
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	zai := p.Providers.Get("zai")
+	require.NotNil(t, zai)
+	require.Equal(t, "https://api.z.ai/api/anthropic", zai.BaseURL)
+	require.Empty(t, zai.AuthToken)
+
+	raw, err := os.ReadFile(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), `"api_key"`)
+	require.NotContains(t, string(raw), "sk-ant-legacy")
 }

@@ -72,30 +72,29 @@ func TestApply_DirectAnthropic(t *testing.T) {
 }
 
 func TestApply_DirectStopFailureNonFatal(t *testing.T) {
-	sw, d, sp := newDirectSwitcher(t, func(p *models.Profile) { p.BaseURL, p.AuthToken = "https://up", "t" })
+	sw, d, sp := newDirectSwitcher(t, func(p *models.Profile) { p.BaseURL, p.AuthToken = envRefUpstream, "t" })
 	d.stopErr = errors.New("daemon did not stop")
 
 	out, err := sw.Apply(context.Background(), "p", "")
 	require.NoError(t, err) // the switch is already committed
 	require.Contains(t, out, "still running")
-	require.Equal(t, "https://up", settingsEnv(t, sp.Config.SettingsPath())["ANTHROPIC_BASE_URL"])
+	require.Equal(t, envRefUpstream, settingsEnv(t, sp.Config.SettingsPath())["ANTHROPIC_BASE_URL"])
 	require.Equal(t, 1, d.stopN)
 }
 
-func TestApply_DirectAPIKeyAndHeaders(t *testing.T) {
+// A direct profile without auth_token writes NO credential var (the legacy
+// api_key fallback is gone — auth_token is the only credential field).
+func TestApply_DirectNoCredentialVar(t *testing.T) {
 	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
-		p.BaseURL = "https://up"
-		p.APIKey = "sk-ant"
-		p.Headers = map[string]string{"X-Trace": "1", "X-Org": "acme"}
+		p.BaseURL = envRefUpstream
 	})
 
 	_, err := sw.Apply(context.Background(), "p", "")
 	require.NoError(t, err)
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
-	require.Equal(t, "sk-ant", env["ANTHROPIC_API_KEY"])
-	require.NotContains(t, env, "ANTHROPIC_AUTH_TOKEN") // proxy precedence: one credential wins
-	require.Equal(t, "X-Org: acme\nX-Trace: 1", env["ANTHROPIC_CUSTOM_HEADERS"])
+	require.NotContains(t, env, "ANTHROPIC_API_KEY")
+	require.NotContains(t, env, "ANTHROPIC_AUTH_TOKEN")
 }
 
 func TestApply_DirectNoBaseURL(t *testing.T) {
@@ -112,7 +111,7 @@ func TestApply_DirectNoBaseURL(t *testing.T) {
 // profile with a capped model gets the same CLAUDE_CODE_* env.
 func TestApply_DirectMaxContextTokens(t *testing.T) {
 	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
-		p.BaseURL, p.AuthToken = "https://up", "t"
+		p.BaseURL, p.AuthToken = envRefUpstream, "t"
 		p.Models[0].MaxContextTokens = 100000
 	})
 
@@ -131,7 +130,7 @@ func TestApply_DirectMaxContextTokens(t *testing.T) {
 // a stale manual value included.
 func TestApply_DirectEffortLevel(t *testing.T) {
 	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
-		p.BaseURL, p.AuthToken = "https://up", "t"
+		p.BaseURL, p.AuthToken = envRefUpstream, "t"
 	})
 
 	// no effort on m1 → a pre-existing manual value is wiped by the switch

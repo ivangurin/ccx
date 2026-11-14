@@ -2,6 +2,7 @@ package tester_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -84,7 +85,8 @@ func anthropicProfile(baseURL string, ms ...models.Model) *models.Profile {
 func TestTest_AllHealthy(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	up := anthropicUpstream(t, "")
-	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(up.URL,
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+		up.URL,
 		models.Model{ID: probeModelID, Default: true},
 		models.Model{ID: "glm-4-air"},
 	)).done())
@@ -100,6 +102,25 @@ func TestTest_AllHealthy(t *testing.T) {
 	require.NoError(t, res.Models[1].Err)
 	require.Equal(t, 1, report.ProvidersOK)
 	require.Equal(t, 2, report.ModelsOK)
+}
+
+// The api_key field is schema history: an api_key-only legacy profile has no
+// credential — the structural check names auth_token, and the dead field's
+// value never reaches the probe.
+func TestTest_APIKeyOnlyLegacyProfile(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	up := anthropicUpstream(t, "")
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), fmt.Appendf(nil,
+		`{"providers": {"old": {"name": "Old", "protocol": "anthropic", "base_url": %q,
+		"api_key": "native-key", "models": [{"id": %q, "default": true}]}}}`,
+		up.URL, probeModelID), 0o600))
+
+	report := tester.Run(sp.Context(), sp.Config, tester.Options{Version: testVersion})
+
+	res := report.Providers[0]
+	require.Equal(t, "old", res.Key)
+	require.ErrorContains(t, res.Err, "auth_token is empty")
+	require.Empty(t, res.Models)
 }
 
 func TestTest_ProviderError_Structural(t *testing.T) {
@@ -156,7 +177,8 @@ func TestTest_ProviderError_StructuralModels(t *testing.T) {
 	t.Run("no id", func(t *testing.T) {
 		sp := suite_provider.NewProvider(t)
 		up := anthropicUpstream(t, "")
-		writeProviders(t, sp, newProviders().With("zai", anthropicProfile(up.URL,
+		writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+			up.URL,
 			models.Model{ID: "", Default: true},
 		)).done())
 
@@ -167,7 +189,8 @@ func TestTest_ProviderError_StructuralModels(t *testing.T) {
 	t.Run("duplicate id", func(t *testing.T) {
 		sp := suite_provider.NewProvider(t)
 		up := anthropicUpstream(t, "")
-		writeProviders(t, sp, newProviders().With("zai", anthropicProfile(up.URL,
+		writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+			up.URL,
 			models.Model{ID: probeModelID},
 			models.Model{ID: probeModelID},
 		)).done())
@@ -181,7 +204,8 @@ func TestTest_ProviderError_StructuralModels(t *testing.T) {
 func TestTest_ModelError(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	up := anthropicUpstream(t, "glm-4-air")
-	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(up.URL,
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+		up.URL,
 		models.Model{ID: probeModelID, Default: true},
 		models.Model{ID: "glm-4-air"},
 	)).done())
@@ -206,7 +230,8 @@ func TestTest_ModelError_ExtractsMessageFromJSON(t *testing.T) {
 		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"1211","message":"[1211][Unknown Model, please check the model code.]"},"request_id":"req-123"}`))
 	}))
 	t.Cleanup(srv.Close)
-	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(srv.URL,
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+		srv.URL,
 		models.Model{ID: probeModelID, Default: true},
 	)).done())
 
@@ -231,7 +256,8 @@ func TestTest_AnthropicBracketSuffixStripped(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
 	}))
 	t.Cleanup(srv.Close)
-	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(srv.URL,
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+		srv.URL,
 		models.Model{ID: "glm-5.3[1m]", Default: true},
 		models.Model{ID: "glm-5.3-flash[1m]"},
 	)).done())
@@ -275,7 +301,8 @@ func TestTest_OpenAIBracketSuffixKept(t *testing.T) {
 
 func TestTest_UnreachableUpstream(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
-	writeProviders(t, sp, newProviders().With("zai", anthropicProfile("http://127.0.0.1:1",
+	writeProviders(t, sp, newProviders().With("zai", anthropicProfile(
+		"http://127.0.0.1:1",
 		models.Model{ID: probeModelID, Default: true},
 	)).done())
 
@@ -358,7 +385,8 @@ func TestTest_ReportCounts(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	up := anthropicUpstream(t, "glm-4-air")
 	p := &models.Providers{Providers: models.ProfileMap{}}
-	p.Providers.Set("zai", anthropicProfile(up.URL,
+	p.Providers.Set("zai", anthropicProfile(
+		up.URL,
 		models.Model{ID: probeModelID, Default: true},
 		models.Model{ID: "glm-4-air"},
 	))

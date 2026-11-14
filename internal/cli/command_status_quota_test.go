@@ -21,12 +21,16 @@ func setStatusState(t *testing.T, cfg *config.Config, profile string) {
 	}, 0o600))
 }
 
+// quotaWorkName — the display name every quota test hangs on the "work"
+// copilot profile.
+const quotaWorkName = "Work Copilot"
+
 // The quota panel shows up exactly when the ACTIVE provider speaks copilot —
 // the pool is meaningless for every other protocol.
 func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	p.Providers.Set("work", &models.Profile{Name: quotaWorkName, Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
@@ -34,6 +38,7 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 	old := copilotQuota
 	copilotQuota = func(store string) (*copilot.QuotaInfo, error) {
 		gotStore = store
+
 		return &copilot.QuotaInfo{
 			CopilotPlan: "INDIVIDUAL",
 			PremiumInteractions: &copilot.PremiumQuota{
@@ -59,7 +64,7 @@ func TestStatus_CopilotQuotaShownForCopilotProvider(t *testing.T) {
 func TestStatus_LocalLinesPrintBeforeQuotaPanel(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	p.Providers.Set("work", &models.Profile{Name: quotaWorkName, Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
@@ -95,7 +100,7 @@ func TestStatus_NoQuotaForOtherProtocols(t *testing.T) {
 func TestStatus_QuotaFailureIsAWarning(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	p.Providers.Set("work", &models.Profile{Name: quotaWorkName, Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
@@ -115,7 +120,7 @@ func TestStatus_QuotaFailureIsAWarning(t *testing.T) {
 func TestStatus_QuotaUnlimited(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	p.Providers.Set("work", &models.Profile{Name: quotaWorkName, Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 
@@ -140,7 +145,7 @@ func TestStatus_QuotaUnlimited(t *testing.T) {
 func TestStatus_QuotaWithoutPool(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	p := &models.Providers{}
-	p.Providers.Set("work", &models.Profile{Name: "Work Copilot", Protocol: models.ProtocolCopilot})
+	p.Providers.Set("work", &models.Profile{Name: quotaWorkName, Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	setStatusState(t, sp.Config, "work")
 

@@ -139,22 +139,32 @@ func (s *session) handleKey(key []byte, next NextStage) (done bool, path []int, 
 	case key[0] == 27 && len(key) >= 3 && (key[1] == '[' || key[1] == 'O'):
 		s.arrow(key[2])
 	case key[0] == 127 || key[0] == 8:
-		if top := s.top(); top.query != "" {
-			// drop the whole last rune, not a byte: multi-byte UTF-8 input
-			// (Cyrillic labels) must not decay into invalid halves
-			_, size := utf8.DecodeLastRuneInString(top.query)
-			top.query = top.query[:len(top.query)-size]
-		}
+		s.backspace()
 	case key[0] >= 32:
-		// the whole read chunk is printable runes (escape sequences were
-		// matched above); appending a single byte corrupted multi-byte UTF-8
-		// input — the filter then never matched the typed label
-		if utf8.Valid(key) {
-			s.top().query += string(key)
-		}
+		s.appendRune(key)
+	default:
+		// an unhandled control byte — ignore
 	}
 
 	return false, nil, nil
+}
+
+// backspace — BS/DEL: drop the whole last rune, not a byte: multi-byte UTF-8
+// input (Cyrillic labels) must not decay into invalid halves.
+func (s *session) backspace() {
+	if top := s.top(); top.query != "" {
+		_, size := utf8.DecodeLastRuneInString(top.query)
+		top.query = top.query[:len(top.query)-size]
+	}
+}
+
+// appendRune — the whole read chunk is printable runes (escape sequences
+// were matched in handleKey); appending a single byte corrupted multi-byte
+// UTF-8 input — the filter then never matched the typed label.
+func (s *session) appendRune(key []byte) {
+	if utf8.Valid(key) {
+		s.top().query += string(key)
+	}
 }
 
 // cancel — Esc/Ctrl-C: one level up; from the first level — cancel the session.

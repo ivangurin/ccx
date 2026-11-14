@@ -158,7 +158,7 @@ func (t *Translator) ServeMessages(w http.ResponseWriter, r *http.Request) {
 		usagelog.Record(entry)
 	}()
 
-	chat := openai.BuildChatRequest(&req, "max_tokens")
+	chat := openai.BuildChatRequest(&req)
 	payload, err := json.Marshal(chat) //nolint:errchkjson // RawMessage is valid by construction
 	if err != nil {
 		relay.WriteErr(w, http.StatusInternalServerError, err.Error())

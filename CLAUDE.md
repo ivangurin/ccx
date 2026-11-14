@@ -94,8 +94,14 @@ previous provider" promise a lie). The pre-rename one-time data move from `~/.cl
 (2026-11-07): fresh installs start from `ccx init`; old-world data, if any,
 must be copied by hand. providers.json is unversioned, flat — the map sits
 under the `providers`
-key, connection fields `base_url`/`api_key`/… sit directly in the provider
-entry, `protocol` decides which of them are meaningful; the client
+key, connection fields `base_url`/`auth_token`/… sit directly in the provider
+entry (2026-11-14: auth_token is the ONLY credential field — api_key,
+extra_headers, env, max_tokens_field, reasoning_to_thinking are removed from
+the schema; a legacy field in providers.json is ignored on load and dropped
+on the next save; the openai translator ALWAYS sends `max_tokens` — the
+max_completion_tokens rename died with `max_tokens_field`, newer
+api.openai.com models that reject `max_tokens` are unsupported now, owner
+decision), `protocol` decides which of them are meaningful; the client
 masquerade — UA, editor versions, integration id, originator, prefill — is
 code constants, not config; the `daemon` block (`port`, `debug`) is
 optional and SWITCHER-OWNED — the switcher reads it and spawns the daemon
@@ -204,9 +210,10 @@ internal/
   reference is codex-rs `login/server.rs`: read it, don't pattern from
   memory; the flow is verifiable only in a real browser (Cloudflare blocks
   curl on auth.openai.com).
-- **Managed keys**: only `ANTHROPIC_*` keys, profile env keys, the
+- **Managed keys**: only `ANTHROPIC_*` keys, the
   `max_context_tokens` trio and the `effort` key (see Model pinning) and the
-  always-env flags are edited; user variables (API_TIMEOUT_MS, MCP tokens)
+  always-env flags are edited (profile env keys are gone — the profile schema
+  has no env map anymore); user variables (API_TIMEOUT_MS, MCP tokens)
   are preserved — an always-env key the user set by hand keeps its value
   (add-if-missing, never overwrite).
 - **Byte-precise settings.json edits**: only the env block and the model pin
@@ -227,17 +234,16 @@ internal/
   carry `effort` → `CLAUDE_CODE_EFFORT_LEVEL`, written verbatim (no
   validation); when unset the key is wiped — ccx-owned, a manual value dies
   too. Always-env (add-if-missing,
-  never overwritten: a user value or a profile extra wins, a stale profile
-  extra being wiped falls back to the default): 
+  never overwritten: a user value in settings.json wins): 
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`,
   `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `CLAUDE_CODE_AUTO_MODE_SERVER=0`.
 - **`ANTHROPIC_BASE_URL`**: always the daemon for translated protocols (it
   never changes when switching between them); the upstream URL itself for
   direct anthropic profiles. The credential written alongside is the
-  provider's own (`auth_token` > `api_key` > placeholder `ccx`): for openai
+  provider's own (`auth_token`, else the placeholder `ccx`): for openai
   it is pass-through — Claude Code sends it, the daemon forwards it upstream
   unchanged.
-- **Env references in credential fields** (2026-11-11): `auth_token`/`api_key`
+- **Env references in credential fields** (2026-11-11): `auth_token`
   in providers.json may be a whole-value env reference `$NAME`/`${NAME}` —
   the secret lives in the owner's environment (Claude Code's settings.json
   `env` block does NO interpolation: values are copied as written, so a
@@ -464,7 +470,17 @@ internal/
   Same trap shape: a package-level const initialized from an identically
   named const (`probeModelID = probeModelID`) is an initialization cycle
   after a mechanical perl rename — check the const block after scripted
-  edits (verified live, 2026-11-09, ccx test work).
+  edits (verified live, 2026-11-09, ccx test work; hit twice more on
+  2026-11-14 — perl `s/"lit"/CONST/g` replaces the literal INSIDE its own
+  const definition; anchor the substitution away from the const block or fix
+  it right after).
+- musttag walks NESTED types of a json.Marshal/Unmarshal argument: an
+  anonymous struct with all fields tagged still fails the check when a
+  nested type's field lacks a tag (`PremiumQuota.Unlimited` — the
+  annotation names the Unmarshal call site, not the offending struct;
+  verified live 2026-11-14). Adding the tag is wire-visible: a previously
+  untagged field under its Go name starts parsing the snake_case key it
+  was silently missing.
 
 ## Testing
 

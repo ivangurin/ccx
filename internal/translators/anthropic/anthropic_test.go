@@ -87,10 +87,14 @@ func TestPassthrough_UpstreamAuthFromProfile(t *testing.T) {
 	require.Empty(t, gotKey)
 }
 
-func TestPassthrough_ApiKeyProfile(t *testing.T) {
-	var gotKey string
+// A profile without auth_token sends NO upstream credential: auth_token is
+// the only credential field, and an empty one means both client headers stay
+// deleted (the user must fill auth_token — the legacy api_key branch is
+// gone).
+func TestPassthrough_ApiKeyLegacyProfileNoCredential(t *testing.T) {
+	var gotAuth, gotKey string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotKey = r.Header.Get("X-Api-Key")
+		gotAuth, gotKey = r.Header.Get("Authorization"), r.Header.Get("X-Api-Key")
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(up.Close)
@@ -98,14 +102,15 @@ func TestPassthrough_ApiKeyProfile(t *testing.T) {
 	tr := anthropic.New(&models.Profile{
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  up.URL,
-		APIKey:   "native-key",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer client-token")
 	rec := httptest.NewRecorder()
 
 	tr.ServeMessages(rec, req)
 
-	require.Equal(t, "native-key", gotKey)
+	require.Empty(t, gotAuth)
+	require.Empty(t, gotKey)
 }
 
 func TestPassthrough_SSEStreamRelayed(t *testing.T) {

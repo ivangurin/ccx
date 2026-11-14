@@ -34,7 +34,12 @@ func chunk(delta models.ChatChunkDelta, finish *string) *models.ChatChunk {
 
 func strp(s string) *string { return &s }
 
-const evDeltaBlock = "content_block_delta"
+const (
+	evDeltaBlock = "content_block_delta"
+	evBlockStart = "content_block_start"
+	evBlockStop  = "content_block_stop"
+	evMsgDelta   = "message_delta"
+)
 
 func names(events []models.AnthropicEvent) []string {
 	out := make([]string, 0, len(events))
@@ -53,8 +58,8 @@ func TestStream_TextFlow(t *testing.T) {
 	})
 
 	require.Equal(t, []string{
-		"message_start", "content_block_start", evDeltaBlock, evDeltaBlock,
-		"content_block_stop", "message_delta", "message_stop",
+		"message_start", evBlockStart, evDeltaBlock, evDeltaBlock,
+		evBlockStop, evMsgDelta, "message_stop",
 	}, names(events))
 
 	// message_start carries the model
@@ -73,11 +78,11 @@ func TestStream_FragmentedToolCalls(t *testing.T) {
 
 	// structure: message_start, text block, tool_use block, finale
 	got := names(events)
-	require.Contains(t, got, "content_block_start")
+	require.Contains(t, got, evBlockStart)
 	// tool_use block: content_block_start with tool_use, input_json_delta deltas
 	var toolStart, jsonDeltas int
 	for _, e := range events {
-		if e.Type == "content_block_start" && e.ContentBlock != nil && e.ContentBlock.Type == "tool_use" {
+		if e.Type == evBlockStart && e.ContentBlock != nil && e.ContentBlock.Type == "tool_use" {
 			toolStart++
 		}
 		if e.Type == evDeltaBlock && e.Delta != nil && e.Delta.Type == "input_json_delta" {
@@ -89,7 +94,7 @@ func TestStream_FragmentedToolCalls(t *testing.T) {
 	// stop_reason tool_use
 	var lastDelta *models.AnthropicEvent
 	for i := range events {
-		if events[i].Type == "message_delta" {
+		if events[i].Type == evMsgDelta {
 			lastDelta = &events[i]
 		}
 	}
@@ -106,7 +111,7 @@ func TestStream_ReasoningToThinking(t *testing.T) {
 
 	var thinkingStart, thinkingDelta bool
 	for _, e := range events {
-		if e.Type == "content_block_start" && e.ContentBlock != nil && e.ContentBlock.Type == "thinking" {
+		if e.Type == evBlockStart && e.ContentBlock != nil && e.ContentBlock.Type == "thinking" {
 			thinkingStart = true
 		}
 		if e.Type == evDeltaBlock && e.Delta != nil && e.Delta.Type == "thinking_delta" {
@@ -136,13 +141,13 @@ func TestStream_TextAfterToolOpensNewTextBlock(t *testing.T) {
 
 	require.Equal(t, []string{
 		"message_start",
-		"content_block_start", evDeltaBlock, // text "before" → block 0
-		"content_block_stop",                // block 0 stops before the tool block opens
-		"content_block_start",               // tool_use → block 1
-		evDeltaBlock,                        // input_json_delta → block 1
-		"content_block_start", evDeltaBlock, // text "after" → a NEW block 2
-		"content_block_stop", "content_block_stop", // finish closes 1 and 2
-		"message_delta", "message_stop",
+		evBlockStart, evDeltaBlock, // text "before" → block 0
+		evBlockStop,                // block 0 stops before the tool block opens
+		evBlockStart,               // tool_use → block 1
+		evDeltaBlock,               // input_json_delta → block 1
+		evBlockStart, evDeltaBlock, // text "after" → a NEW block 2
+		evBlockStop, evBlockStop, // finish closes 1 and 2
+		evMsgDelta, "message_stop",
 	}, names(events))
 
 	// the post-tool text targets the new block (2), not the old one (0)
@@ -164,7 +169,7 @@ func TestStream_UsageFromFinalChunk(t *testing.T) {
 
 	var msgDelta *models.AnthropicEvent
 	for i := range events {
-		if events[i].Type == "message_delta" {
+		if events[i].Type == evMsgDelta {
 			msgDelta = &events[i]
 		}
 	}

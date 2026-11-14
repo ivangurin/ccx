@@ -28,7 +28,7 @@ func TestOrphanToolResultBecomesUserText(t *testing.T) {
 		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t1","name":"bash","input":{"cmd":"ls"}}]`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t_gone","content":"stale output"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	// system absent; [user hi, assistant+tool_call, user "stale output"]
 	require.Len(t, chat.Messages, 3)
@@ -44,7 +44,7 @@ func TestPairedToolResultStaysToolMessage(t *testing.T) {
 		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t1","name":"bash","input":{}}]`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	require.Len(t, chat.Messages, 2)
 	require.Equal(t, "tool", chat.Messages[1].Role)
@@ -57,7 +57,7 @@ func TestParallelToolResultsPairByIDSet(t *testing.T) {
 		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t2","name":"a","input":{}},{"type":"tool_use","id":"t1","name":"b","input":{}}]`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"},{"type":"tool_result","tool_use_id":"t2","content":"two"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	require.Len(t, chat.Messages, 3)
 	require.Equal(t, "tool", chat.Messages[1].Role)
@@ -73,7 +73,7 @@ func TestEmptyOrphanDropped(t *testing.T) {
 		models.Message{Role: tRoleAssistant, Content: json.RawMessage(`[{"type":"tool_use","id":"t1","name":"bash","input":{}}]`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t_gone","content":""}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	require.Len(t, chat.Messages, 1)
 }
@@ -83,7 +83,7 @@ func TestToolResultWithoutAnyAssistantIsOrphan(t *testing.T) {
 	req := chatBody(
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"resumed session"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	require.Len(t, chat.Messages, 1)
 	require.Equal(t, tRoleUser, chat.Messages[0].Role)
@@ -99,7 +99,7 @@ func TestSplitParallelToolResultsStayToolMessages(t *testing.T) {
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"}]`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t2","content":"two"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	require.Len(t, chat.Messages, 3)
 	require.Equal(t, "tool", chat.Messages[1].Role)
@@ -116,7 +116,7 @@ func TestSystemBetweenCallsAndResultsKeepsPairing(t *testing.T) {
 		models.Message{Role: "system", Content: json.RawMessage(`"hook-context"`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	// [assistant+call, system hook, tool result] — the hook rides along,
 	// the result stays a tool message
@@ -135,7 +135,7 @@ func TestMixedMessageKeepsPendingForSplitResults(t *testing.T) {
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t1","content":"one"},{"type":"text","text":"hook output"}]`)},
 		models.Message{Role: tRoleUser, Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"t2","content":"two"}]`)},
 	)
-	chat := openai.BuildChatRequest(req, "max_tokens")
+	chat := openai.BuildChatRequest(req)
 
 	// [assistant, user text (hook), tool one, tool two] — every call answered
 	tools := 0

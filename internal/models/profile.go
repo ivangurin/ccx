@@ -1,7 +1,9 @@
 // Package models holds ccx domain DTOs. Profile v3: upstream connection
-// fields (base_url, api_key, …) live directly in the profile — Protocol
-// determines which of them are meaningful; env holds only user extras for
-// settings.json (not ANTHROPIC_*).
+// fields (base_url, auth_token) live directly in the profile — Protocol
+// determines which of them are meaningful. auth_token is the only credential
+// field (the api_key/extra_headers/env/max_tokens_field/reasoning_to_thinking
+// fields are gone: a legacy field in providers.json is ignored on load and
+// dropped on the next save).
 package models
 
 // Protocol is the provider's upstream protocol; it determines the daemon's translator.
@@ -45,22 +47,14 @@ type Profile struct {
 	Name     string   `json:"name"`
 	Protocol Protocol `json:"protocol"`
 
-	// Connection (anthropic, openai).
-	BaseURL string `json:"base_url,omitempty"`
-	// anthropic: Authorization: Bearer — wins over api_key (proxy.go precedence).
+	// Connection (anthropic, openai). auth_token is the only credential
+	// field — sent as Authorization: Bearer upstream (anthropic passthrough)
+	// and written to settings.json on switch (the "ccx" placeholder when
+	// empty on the daemon path).
+	BaseURL   string `json:"base_url,omitempty"`
 	AuthToken string `json:"auth_token,omitempty"`
-	// anthropic: x-api-key (native Anthropic); openai: Authorization: Bearer.
-	APIKey string `json:"api_key,omitempty"`
-	// anthropic/openai: extra upstream headers.
-	Headers map[string]string `json:"extra_headers,omitempty"`
 
-	// openai: max_tokens vs max_completion_tokens request field.
-	MaxTokensField string `json:"max_tokens_field,omitempty"`
-	// openai: map reasoning_content deltas to thinking blocks (reserved).
-	ReasoningToThinking bool `json:"reasoning_to_thinking,omitempty"`
-
-	Env    map[string]string `json:"env,omitempty"`
-	Models []Model           `json:"models"`
+	Models []Model `json:"models"`
 }
 
 // ResolveModelEntry finds a model by id (exact match) and returns the whole

@@ -79,17 +79,16 @@ func TestOrderedMap_HasGet(t *testing.T) {
 }
 
 // A flat profile round-trips through JSON: connection fields on the profile
-// root, no protocol-named block, no masquerade (it lives in code constants).
+// root, no protocol-named block, no masquerade (it lives in code constants),
+// no removed fields (api_key/extra_headers/env/max_tokens_field/
+// reasoning_to_thinking are schema history).
 func TestProfile_FlatJSONRoundTrip(t *testing.T) {
 	in := &models.Profile{
-		Name:           "work",
-		Protocol:       models.ProtocolCopilot,
-		BaseURL:        "https://gw/v1",
-		APIKey:         "k",
-		MaxTokensField: "max_completion_tokens",
-		Headers:        map[string]string{"X-Org": "acme"},
-		Env:            map[string]string{"A": "1"},
-		Models:         []models.Model{{ID: "m", Default: true}},
+		Name:      "work",
+		Protocol:  models.ProtocolCopilot,
+		BaseURL:   "https://gw/v1",
+		AuthToken: "k",
+		Models:    []models.Model{{ID: "m", Default: true}},
 	}
 
 	raw, err := json.Marshal(in) //nolint:gosec // test fixture, no real secrets
@@ -97,6 +96,9 @@ func TestProfile_FlatJSONRoundTrip(t *testing.T) {
 	require.NotContains(t, string(raw), `"anthropic"`, "no protocol blocks in the flat layout")
 	require.NotContains(t, string(raw), `"copilot":{`)
 	require.NotContains(t, string(raw), "user_agent", "the masquerade is not schema")
+	for _, field := range []string{"api_key", "extra_headers", "env", "max_tokens_field", "reasoning_to_thinking"} {
+		require.NotContains(t, string(raw), `"`+field+`"`, field)
+	}
 
 	var out models.Profile
 	require.NoError(t, json.Unmarshal(raw, &out))

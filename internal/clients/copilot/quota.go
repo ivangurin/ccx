@@ -29,7 +29,7 @@ type PremiumQuota struct {
 	// Unlimited marks an uncounted pool: the schema reports it for the chat
 	// and completions snapshots, so a premium pool may report it on some
 	// plans — printing 0/0 for it would invent numbers.
-	Unlimited bool
+	Unlimited bool `json:"unlimited"`
 }
 
 // QuotaSnapshot is one entry of the account's quota_snapshots map (chat,

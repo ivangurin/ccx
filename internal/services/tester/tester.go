@@ -112,21 +112,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) *Report {
 		return report
 	}
 
-	keys := []string{}
-	profiles := map[string]*models.Profile{}
-	for _, key := range providers.Providers.Keys {
-		if opts.Provider != "" && key != opts.Provider {
-			continue
-		}
-		keys = append(keys, key)
-		profiles[key] = providers.Providers.Get(key)
-	}
-
-	// A --provider filter naming an unknown key must not print an empty
-	// report: surface it the same way an unknown provider would fail.
-	if len(keys) == 0 && opts.Provider != "" {
-		keys = []string{opts.Provider}
-	}
+	keys, profiles := selectKeys(providers, opts.Provider)
 
 	live.Total = len(keys)
 	for _, key := range keys {
@@ -138,22 +124,47 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) *Report {
 		live.Providers = append(live.Providers, &res)
 		notify()
 		finish := testProvider(ctx, cfg, opts, key, profile, &res, notify)
-		report.Providers = append(report.Providers, *finish)
-		report.TotalProviders++
-		report.TotalModels += len(finish.Models)
-		if finish.Err == nil {
-			report.ProvidersOK++
-		}
-		for _, m := range finish.Models {
-			if m.Err == nil {
-				report.ModelsOK++
-			}
-		}
+		tally(report, finish)
 		live.Done++
 		notify()
 	}
 
 	return report
+}
+
+// selectKeys — the provider keys Run covers: all of them, or just the
+// --provider filter's key. A filter naming an unknown key must not produce
+// an empty selection: it is surfaced the same way an unknown provider fails.
+func selectKeys(providers *models.Providers, filter string) ([]string, map[string]*models.Profile) {
+	keys := []string{}
+	profiles := map[string]*models.Profile{}
+	for _, key := range providers.Providers.Keys {
+		if filter != "" && key != filter {
+			continue
+		}
+		keys = append(keys, key)
+		profiles[key] = providers.Providers.Get(key)
+	}
+	if len(keys) == 0 && filter != "" {
+		keys = []string{filter}
+	}
+
+	return keys, profiles
+}
+
+// tally — fold one finished provider result into the report counters.
+func tally(report *Report, res *ProviderResult) {
+	report.Providers = append(report.Providers, *res)
+	report.TotalProviders++
+	report.TotalModels += len(res.Models)
+	if res.Err == nil {
+		report.ProvidersOK++
+	}
+	for _, m := range res.Models {
+		if m.Err == nil {
+			report.ModelsOK++
+		}
+	}
 }
 
 // testProvider — one provider: structural validation → daemon on a free
@@ -258,7 +269,7 @@ func validateProfile(p *models.Profile) error {
 		if p.BaseURL == "" {
 			return errors.New("base_url is empty")
 		}
-		if p.AuthToken == "" && p.APIKey == "" {
+		if p.AuthToken == "" {
 			return errors.New("auth_token is empty — no credential to probe with")
 		}
 	case models.ProtocolCopilot, models.ProtocolCodex:
@@ -358,14 +369,11 @@ func probeID(protocol models.Protocol, id string) string {
 	return id
 }
 
-// credential — the client credential the daemon expects (daemonEnv
-// precedence: auth_token > api_key > the "ccx" placeholder).
+// credential — the client credential the daemon expects (auth_token, or the
+// "ccx" placeholder when the profile carries none).
 func credential(p *models.Profile) string {
-	switch {
-	case p.AuthToken != "":
+	if p.AuthToken != "" {
 		return p.AuthToken
-	case p.APIKey != "":
-		return p.APIKey
 	}
 
 	return "ccx"

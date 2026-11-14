@@ -11,12 +11,10 @@ import (
 
 func builtinOpenAIProfile() *models.Profile {
 	return &models.Profile{
-		Name:           "OpenAI (API)",
-		Protocol:       models.ProtocolOpenAI,
-		BaseURL:        "https://api.openai.com/v1",
-		APIKey:         "<sk-...>",
-		MaxTokensField: "max_completion_tokens",
-		Env:            map[string]string{},
+		Name:      "OpenAI (API)",
+		Protocol:  models.ProtocolOpenAI,
+		BaseURL:   "https://api.openai.com/v1",
+		AuthToken: "<sk-...>",
 		Models: []models.Model{
 			{ID: "gpt-6.1-sol", Label: "GPT-6.1 Sol · current workhorse model", Default: true},
 			{ID: "gpt-6-astra", Label: "GPT-6 Astra · maximum intelligence"},
@@ -34,7 +32,6 @@ func builtinCopilotProfile() *models.Profile {
 	return &models.Profile{
 		Name:     "GitHub Copilot (personal)",
 		Protocol: models.ProtocolCopilot,
-		Env:      map[string]string{},
 		Models: []models.Model{
 			{ID: "claude-sonnet-5.5", Label: "Claude Sonnet 5.5", Default: true},
 			{ID: "gpt-6-luna", Label: "GPT-6 Luna"},
@@ -57,7 +54,6 @@ func builtinCodexProfile() *models.Profile {
 		Name:     "ChatGPT Codex (subscription)",
 		Protocol: models.ProtocolCodex,
 		// login: ccx auth codex — credentials live in <CCX_HOME>/auth/codex.json
-		Env: map[string]string{},
 		Models: []models.Model{
 			{ID: "gpt-6.1-codex", Label: "GPT-6.1 Codex", Default: true},
 			{ID: "gpt-6.1-terra", Label: "GPT-6.1 Terra"},

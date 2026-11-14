@@ -21,6 +21,7 @@ const (
 	cmdEdit       = "edit"
 	profZai       = "zai"
 	profZaiName   = "z.ai"
+	profWork      = "work"
 	modelGLMFlash = "glm-flash"
 )
 
@@ -59,11 +60,20 @@ func TestCommandInit_ForceRegenerates(t *testing.T) {
 	raw, err := os.ReadFile(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	// the regenerated file is the current schema: no version, no daemon
-	// token, the map under "providers" (never the legacy "profiles" key)
+	// token, no removed fields, the map under "providers" (never the legacy
+	// "profiles" key); the openai template's credential placeholder is the
+	// only auth_token present
 	require.NotContains(t, string(raw), `"version":`)
-	require.NotContains(t, string(raw), "auth_token")
+	require.NotContains(t, string(raw), `"port": 1`)
+	require.NotContains(t, string(raw), `"api_key"`)
 	require.NotContains(t, string(raw), `"profiles"`)
 	require.Contains(t, string(raw), `"providers"`)
+
+	// the openai template's credential placeholder moved to auth_token (the
+	// only credential field)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.Equal(t, "<sk-...>", p.Providers.Get("openai").AuthToken)
 }
 
 func writeProviders(t *testing.T, path string, keysInOrder []string) {
@@ -205,25 +215,25 @@ func TestServe_RequiresProvider(t *testing.T) {
 	code := cli.Execute([]string{"serve"}, &out)
 
 	require.Equal(t, 1, code)
-	require.Contains(t, out.String(), "--provider")
+	require.Contains(t, out.String(), flagProvider)
 }
 
 func TestServe_FlagParsing(t *testing.T) {
-	opts, err := cli.ParseServeForTest([]string{"--provider", "work", "--port", "4600", "--daemon"})
+	opts, err := cli.ParseServeForTest([]string{flagProvider, profWork, "--port", "4600", "--daemon"})
 	require.NoError(t, err)
-	require.Equal(t, "work", opts.Provider)
+	require.Equal(t, profWork, opts.Provider)
 	require.Equal(t, 4600, opts.Port)
 	require.False(t, opts.Debug)
 }
 
 func TestServe_FlagParsing_Debug(t *testing.T) {
-	opts, err := cli.ParseServeForTest([]string{"--provider", "work", "--debug"})
+	opts, err := cli.ParseServeForTest([]string{flagProvider, profWork, "--debug"})
 	require.NoError(t, err)
 	require.True(t, opts.Debug)
 }
 
 func TestServe_FlagParsing_UnknownFlagFails(t *testing.T) {
-	_, err := cli.ParseServeForTest([]string{"--provider", "work", "--nonsense"})
+	_, err := cli.ParseServeForTest([]string{flagProvider, profWork, "--nonsense"})
 	require.Error(t, err)
 }
 
@@ -232,10 +242,10 @@ func TestServe_FlagParsing_UnknownFlagFails(t *testing.T) {
 // opaque net.Listen bind error after the logger and lock are already up.
 func TestServe_FlagParsing_PortOutOfRangeFails(t *testing.T) {
 	for _, bad := range []string{"70000", "-1", "65536"} { //nolint:paralleltest // table shares nothing
-		_, err := cli.ParseServeForTest([]string{"--provider", "work", "--port", bad})
+		_, err := cli.ParseServeForTest([]string{flagProvider, profWork, "--port", bad})
 		require.Error(t, err, "port %s must be rejected", bad)
 	}
-	opts, err := cli.ParseServeForTest([]string{"--provider", "work", "--port", "0"})
+	opts, err := cli.ParseServeForTest([]string{flagProvider, profWork, "--port", "0"})
 	require.NoError(t, err)
 	require.Equal(t, 0, opts.Port) // 0 = resolve (CCX_PORT > daemon.port > 4567)
 }

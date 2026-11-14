@@ -58,6 +58,32 @@ func TestLoadProviders_MigratesLegacyFileOnDisk(t *testing.T) {
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
+// The removed profile fields (api_key, extra_headers, env, max_tokens_field,
+// reasoning_to_thinking — the schema slimmed to auth_token-only credentials)
+// are ignored on load and dropped on the next save: providers.json only ever
+// carries fields the schema knows, same clean-drop semantics as the legacy
+// profile "name" alias.
+func TestLoadProviders_RemovedProfileFieldsDroppedOnSave(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	writeLegacyFile(t, sp, `{"providers": {"zai": {"name": "z.ai", "protocol": "anthropic",
+		"base_url": "https://z.example", "auth_token": "z-secret",
+		"api_key": "legacy-key", "extra_headers": {"X-Trace": "1"},
+		"env": {"API_TIMEOUT_MS": "1"}, "max_tokens_field": "max_completion_tokens",
+		"reasoning_to_thinking": true}}}`)
+
+	loaded, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.Equal(t, "z-secret", loaded.Providers.Get(zaiKey).AuthToken)
+
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), loaded))
+
+	raw, err := os.ReadFile(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	for _, field := range []string{"api_key", "extra_headers", "env", "max_tokens_field", "reasoning_to_thinking"} {
+		require.NotContains(t, string(raw), `"`+field+`"`, field)
+	}
+}
+
 func TestLoadProviders_MigratesOnProfilesKeyAlone(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeLegacyFile(t, sp, `{"daemon": {"port": 4600}, "profiles": {"zai": {"name": "z.ai", "protocol": "anthropic"}}}`)

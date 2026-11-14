@@ -89,19 +89,17 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 		Protocol:  models.ProtocolAnthropic,
 		BaseURL:   "https://api.z.ai/api/anthropic",
 		AuthToken: "sk-z",
-		Env:       map[string]string{},
 		Models: []models.Model{
 			{ID: "glm-5.3[1m]", Label: "GLM 5.3", Default: true},
 			{ID: "glm-flash", Label: "Flash"},
 		},
 	})
 	p.Providers.Set("acme", &models.Profile{
-		Name:     "Acme",
-		Protocol: models.ProtocolOpenAI,
-		BaseURL:  "https://gw",
-		APIKey:   "k",
-		Env:      map[string]string{"CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true"},
-		Models:   []models.Model{{ID: "copilot-code-large", Default: true}},
+		Name:      "Acme",
+		Protocol:  models.ProtocolOpenAI,
+		BaseURL:   "https://gw",
+		AuthToken: "k",
+		Models:    []models.Model{{ID: "copilot-code-large", Default: true}},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
@@ -155,9 +153,10 @@ func TestApply_HappyPath(t *testing.T) {
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "http://127.0.0.1:4567", env["ANTHROPIC_BASE_URL"])
-	// acme has only api_key → ANTHROPIC_API_KEY (direct-path precedence)
-	require.Equal(t, "k", env["ANTHROPIC_API_KEY"])
-	require.NotContains(t, env, "ANTHROPIC_AUTH_TOKEN")
+	// acme's auth_token travels to settings.json as ANTHROPIC_AUTH_TOKEN
+	// (auth_token is the only credential field)
+	require.Equal(t, "k", env["ANTHROPIC_AUTH_TOKEN"])
+	require.NotContains(t, env, "ANTHROPIC_API_KEY")
 	// pinning: ONLY ANTHROPIC_MODEL carries the selected model; the legacy
 	// multi-mapping keys are neither written nor kept
 	for _, key := range pinnedKeysList {
@@ -170,8 +169,6 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
 	require.Equal(t, "user-token", env["MCP_TOKEN"])
 	require.NotContains(t, env, "ANTHROPIC_STALE_KEY")
-	// profile extras land in the env
-	require.Equal(t, "true", env["CLAUDE_CODE_DISABLE_EXTENDED_THINKING"])
 
 	// the model is pinned
 	var s struct {
@@ -229,11 +226,10 @@ func TestApply_PreservesSettingsFormatting(t *testing.T) {
   },
   "env": {
     "API_TIMEOUT_MS": "3000000",
-    "ANTHROPIC_API_KEY": "k",
+    "ANTHROPIC_AUTH_TOKEN": "k",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
     "ANTHROPIC_MODEL": "copilot-code-large",
     "CLAUDE_CODE_AUTO_MODE_SERVER": "0",
-    "CLAUDE_CODE_DISABLE_EXTENDED_THINKING": "true",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
@@ -367,48 +363,13 @@ func TestApply_AlwaysEnvNotOverwritten(t *testing.T) {
 	require.Equal(t, "1", env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"], "the missing ones are added")
 }
 
-func TestApply_AlwaysEnvProfileExtraWins(t *testing.T) {
-	sw, _, sp := newTestSwitcher(t)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	acme := p.Providers.Get("acme")
-	acme.Env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] = "0"
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-
-	_, err = sw.Apply(context.Background(), "acme", "")
-	require.NoError(t, err)
-	require.Equal(t, "0", settingsEnv(t, sp.Config.SettingsPath())["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "the profile extra wins")
-
-	// zai has no extras: the stale sweep wipes acme's "0" and the always-env
-	// default is back
-	_, err = sw.Apply(context.Background(), "zai", "")
-	require.NoError(t, err)
-	require.Equal(t, "1", settingsEnv(t, sp.Config.SettingsPath())["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"])
-}
-
-// auth_token wins over api_key (direct-path precedence) for the daemon path too.
-func TestApply_OpenAI_AuthTokenWinsOverAPIKey(t *testing.T) {
-	sw, _, sp := newTestSwitcher(t)
-	p, err := config.LoadProviders(sp.Config.ProvidersPath())
-	require.NoError(t, err)
-	p.Providers.Get("acme").AuthToken = "sk-acme"
-	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-
-	_, err = sw.Apply(context.Background(), "acme", "")
-	require.NoError(t, err)
-
-	env := settingsEnv(t, sp.Config.SettingsPath())
-	require.Equal(t, "sk-acme", env["ANTHROPIC_AUTH_TOKEN"])
-	require.NotContains(t, env, "ANTHROPIC_API_KEY")
-}
-
 // no credential in the profile → placeholder token (Claude Code expects one;
 // the daemon ignores it for non-pass-through protocols).
 func TestApply_NoCredentials_PlaceholderToken(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Providers.Get("acme").APIKey = ""
+	p.Providers.Get("acme").AuthToken = ""
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 	_, err = sw.Apply(context.Background(), "acme", "")
@@ -478,20 +439,6 @@ func TestApply_UnknownModel(t *testing.T) {
 	_, err := sw.Apply(context.Background(), "zai", "no-model")
 	require.ErrorContains(t, err, "not found")
 	require.NoFileExists(t, sp.Config.StatePath())
-}
-
-func TestApply_SwitchRemovesPrevExtras(t *testing.T) {
-	sw, _, sp := newTestSwitcher(t)
-
-	_, err := sw.Apply(context.Background(), "acme", "")
-	require.NoError(t, err)
-	env := settingsEnv(t, sp.Config.SettingsPath())
-	require.Equal(t, "true", env["CLAUDE_CODE_DISABLE_EXTENDED_THINKING"])
-
-	_, err = sw.Apply(context.Background(), "zai", "")
-	require.NoError(t, err)
-	env = settingsEnv(t, sp.Config.SettingsPath())
-	require.NotContains(t, env, "CLAUDE_CODE_DISABLE_EXTENDED_THINKING")
 }
 
 func TestApply_OneTimeBackup(t *testing.T) {

@@ -7,10 +7,12 @@
 package config_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,38 +69,44 @@ func TestExpandRef_NoRecursion(t *testing.T) {
 
 func TestExpandCredentials(t *testing.T) {
 	t.Setenv("CCX_REF_AUTH", "tok")
-	t.Setenv("CCX_REF_KEY", "key")
 
 	p := &models.Profile{BaseURL: "https://up"}
-	p.AuthToken, p.APIKey = "$CCX_REF_AUTH", "${CCX_REF_KEY}"
+	p.AuthToken = "$CCX_REF_AUTH"
 	require.NoError(t, config.ExpandCredentials(p))
 	require.Equal(t, "tok", p.AuthToken)
-	require.Equal(t, "key", p.APIKey)
 }
 
 func TestExpandCredentials_LiteralUntouched(t *testing.T) {
 	p := &models.Profile{BaseURL: "https://up"}
-	p.AuthToken, p.APIKey = "tok", "key"
+	p.AuthToken = "tok"
 	require.NoError(t, config.ExpandCredentials(p))
 	require.Equal(t, "tok", p.AuthToken)
-	require.Equal(t, "key", p.APIKey)
 }
 
 func TestExpandCredentials_MissingVarNamesTheField(t *testing.T) {
 	p := &models.Profile{}
-	p.AuthToken, p.APIKey = "$CCX_REF_MISSING", "$CCX_REF_ALSO_MISSING"
+	p.AuthToken = "$CCX_REF_MISSING"
 
 	err := config.ExpandCredentials(p)
 	require.ErrorContains(t, err, "auth_token")
 	require.ErrorContains(t, err, "CCX_REF_MISSING")
 }
 
-func TestExpandCredentials_APIKeyFieldNamed(t *testing.T) {
+// The removed api_key field is schema history: a raw providers.json still
+// carrying it (an un-migrated user file) loads cleanly and expands without
+// touching the dead field — the unset $VAR it references must not fail the
+// switch.
+func TestExpandCredentials_RemovedAPIKeyFieldIgnored(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	require.NoError(t, os.WriteFile(sp.Config.ProvidersPath(), []byte(
+		`{"providers": {"zai": {"name": "z.ai", "protocol": "anthropic",
+		"base_url": "https://z.example", "auth_token": "$CCX_REF_AUTH",
+		"api_key": "$CCX_REF_MISSING"}}}`,
+	), 0o600))
 	t.Setenv("CCX_REF_AUTH", "tok")
 
-	p := &models.Profile{}
-	p.AuthToken, p.APIKey = "$CCX_REF_AUTH", "$CCX_REF_MISSING"
-	err := config.ExpandCredentials(p)
-	require.ErrorContains(t, err, "api_key")
-	require.ErrorContains(t, err, "CCX_REF_MISSING")
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	require.NoError(t, config.ExpandCredentials(p.Providers.Get(zaiKey)))
+	require.Equal(t, "tok", p.Providers.Get(zaiKey).AuthToken)
 }

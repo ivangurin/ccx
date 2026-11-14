@@ -1,4 +1,4 @@
-// envref tests: auth_token/api_key may be a whole-value env reference
+// envref tests: auth_token may be a whole-value env reference
 // ($NAME / ${NAME}). The switcher expands it at the point of consumption —
 // settings.json receives the literal secret, providers.json keeps the
 // reference; an unset/empty variable fails the switch BEFORE anything is
@@ -33,20 +33,6 @@ func TestApply_EnvRef_DirectExpanded(t *testing.T) {
 	require.Equal(t, "sk-from-env", env["ANTHROPIC_AUTH_TOKEN"])
 }
 
-// The api_key field gets the same treatment (openai Bearer / anthropic
-// x-api-key are both secrets).
-func TestApply_EnvRef_APIKeyExpanded(t *testing.T) {
-	t.Setenv("CCX_SWITCH_KEY", "sk-key-env")
-	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
-		p.BaseURL, p.APIKey = envRefUpstream, "${CCX_SWITCH_KEY}"
-	})
-
-	_, err := sw.Apply(context.Background(), "p", "")
-	require.NoError(t, err)
-
-	require.Equal(t, "sk-key-env", settingsEnv(t, sp.Config.SettingsPath())["ANTHROPIC_API_KEY"])
-}
-
 // An unset variable fails the direct switch before any write: settings.json
 // untouched, no state, the daemon was never stopped (it never got that far).
 func TestApply_EnvRefMissing_DirectFailsUntouched(t *testing.T) {
@@ -72,7 +58,7 @@ func TestApply_EnvRefMissing_TranslatedNoRestart(t *testing.T) {
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	acme := p.Providers.Get("acme")
-	acme.AuthToken, acme.APIKey = "$CCX_SWITCH_MISSING", ""
+	acme.AuthToken = "$CCX_SWITCH_MISSING"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	before := readSettings(t, sp.Config.SettingsPath())
 

@@ -43,16 +43,13 @@ func (t *Translator) upstreamRequest(ctx context.Context, r *http.Request, body 
 			req.Header.Add(key, v)
 		}
 	}
-	// authorization: the client's daemon token is replaced with the profile's credentials
+	// authorization: the client's daemon token is replaced with the profile's
+	// credential (auth_token — the only one); an empty one leaves both client
+	// headers deleted
 	req.Header.Del("Authorization")
 	req.Header.Del("X-Api-Key")
 	if t.profile.AuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+t.profile.AuthToken)
-	} else if t.profile.APIKey != "" {
-		req.Header.Set("X-Api-Key", t.profile.APIKey)
-	}
-	for key, val := range t.profile.Headers {
-		req.Header.Set(key, val)
 	}
 
 	return req, nil

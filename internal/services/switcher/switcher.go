@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -119,7 +118,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 	// protocol, so there is nothing to prepare (the anthropic translator's
 	// Ready is trivial) — running the daemon would only add a hop.
 	if profile.Protocol == models.ProtocolAnthropic {
-		return s.applyDirect(ctx, providers, profile, profileKey, model)
+		return s.applyDirect(ctx, profile, profileKey, model)
 	}
 
 	// Invariant: the restarted daemon is ready BEFORE the settings.json edit.
@@ -133,7 +132,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 			fmt.Errorf("ccx: cancelled: daemon did not come up (%v)", err))
 	}
 
-	if err := s.writeSettings(providers, daemonEnv(profile, model, port), model.ID); err != nil {
+	if err := s.writeSettings(daemonEnv(profile, model, port), model.ID); err != nil {
 		return "", s.switchAborted(ctx, providers, port, debug, err)
 	}
 	if err := s.writeState(profileKey, model.ID); err != nil {
@@ -200,7 +199,6 @@ func (s *Switcher) rollbackDaemon(ctx context.Context, providers *models.Provide
 // anymore; a failure to stop must not fail the already-committed switch).
 func (s *Switcher) applyDirect(
 	ctx context.Context,
-	providers *models.Providers,
 	profile *models.Profile,
 	profileKey string,
 	model *models.Model,
@@ -210,7 +208,7 @@ func (s *Switcher) applyDirect(
 		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous provider", err)
 	}
 
-	if err := s.writeSettings(providers, env, model.ID); err != nil {
+	if err := s.writeSettings(env, model.ID); err != nil {
 		return "", err
 	}
 	if err := s.writeState(profileKey, model.ID); err != nil {
@@ -225,29 +223,17 @@ func (s *Switcher) applyDirect(
 	return out, nil
 }
 
-// directEnv — the env block for a direct anthropic profile: the upstream URL
-// and its credential (proxy.go precedence: auth_token wins, api_key
-// otherwise — exactly one credential var is written), extra_headers →
-// ANTHROPIC_CUSTOM_HEADERS (Name: Value, newline-separated, key-sorted for
-// deterministic output), plus the profile extras and model pinning.
+// directEnv — the env block for a direct anthropic profile: the upstream
+// URL, its credential (auth_token — the only credential field; an empty one
+// writes no credential var) and the model pinning.
 func directEnv(profile *models.Profile, model *models.Model) (map[string]string, error) {
 	if profile.BaseURL == "" {
 		return nil, fmt.Errorf("ccx: provider %s has no base_url — add it to providers.json", profile.Name)
 	}
 	env := map[string]string{}
-	maps.Copy(env, profile.Env)
 	env["ANTHROPIC_BASE_URL"] = profile.BaseURL
 	if profile.AuthToken != "" {
 		env["ANTHROPIC_AUTH_TOKEN"] = profile.AuthToken
-	} else if profile.APIKey != "" {
-		env["ANTHROPIC_API_KEY"] = profile.APIKey
-	}
-	if len(profile.Headers) > 0 {
-		parts := make([]string, 0, len(profile.Headers))
-		for _, key := range slices.Sorted(maps.Keys(profile.Headers)) {
-			parts = append(parts, key+": "+profile.Headers[key])
-		}
-		env["ANTHROPIC_CUSTOM_HEADERS"] = strings.Join(parts, "\n")
 	}
 	pinModel(env, model)
 
@@ -256,24 +242,26 @@ func directEnv(profile *models.Profile, model *models.Model) (map[string]string,
 
 // daemonEnv — the env block for settings.json: the daemon URL, the
 // provider's own credential (Claude Code sends it; the daemon passes it
-// through — direct-path precedence: auth_token > api_key, else a
-// placeholder: Claude Code expects a credential, the daemon ignores it for
-// non-pass-through protocols), the profile's extras and the model pinning.
+// through — auth_token, else the "ccx" placeholder: Claude Code expects a
+// credential, the daemon ignores it for non-pass-through protocols) and the
+// model pinning.
 func daemonEnv(profile *models.Profile, model *models.Model, port int) map[string]string {
 	env := map[string]string{}
-	maps.Copy(env, profile.Env)
 	env["ANTHROPIC_BASE_URL"] = baseURL(port)
-	switch {
-	case profile.AuthToken != "":
-		env["ANTHROPIC_AUTH_TOKEN"] = profile.AuthToken
-	case profile.APIKey != "":
-		env["ANTHROPIC_API_KEY"] = profile.APIKey
-	default:
-		env["ANTHROPIC_AUTH_TOKEN"] = "ccx"
-	}
+	env["ANTHROPIC_AUTH_TOKEN"] = credentialPlaceholder(profile)
 	pinModel(env, model)
 
 	return env
+}
+
+// credentialPlaceholder — the profile's auth_token, or the "ccx" placeholder
+// when it carries none (Claude Code insists on a credential value).
+func credentialPlaceholder(profile *models.Profile) string {
+	if profile.AuthToken != "" {
+		return profile.AuthToken
+	}
+
+	return "ccx"
 }
 
 // pinModel writes the model pin; a model with max_context_tokens additionally
@@ -339,7 +327,7 @@ var pinnedKeys = []string{
 // the file's own text, so everything outside env/the pin — order, indent,
 // user blocks — survives byte-for-byte; fresh keys land at the end of the
 // env block.
-func (s *Switcher) writeSettings(providers *models.Providers, env map[string]string, model string) error {
+func (s *Switcher) writeSettings(env map[string]string, model string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
 		return fmt.Errorf("ccx: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
@@ -349,45 +337,19 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 		return err
 	}
 
-	// managed: env keys of all profiles (past extras go away) + ANTHROPIC_* +
-	// the context trio and the effort key (ccx-owned: written for a capped /
-	// effort-carrying model, wiped otherwise)
-	managed := map[string]bool{}
-	for _, key := range providers.Providers.Keys {
-		for k := range providers.Providers.Get(key).Env {
-			managed[k] = true
-		}
-	}
-	for _, k := range contextKeys {
-		managed[k] = true
-	}
-	managed[effortKey] = true
-	// stale = managed/ANTHROPIC_* keys that are present now but absent from
-	// the fresh block; all ANTHROPIC_* are wiped, not only managed ones (past
-	// profile keys and manual values must not survive a switch — parity with
-	// bash with_entries). User keys are not touched at all.
 	currentEnv := settings.Env()
-	var stale []string
-	for k := range currentEnv {
-		if _, keep := env[k]; keep {
-			continue
-		}
-		if managed[k] || strings.HasPrefix(k, "ANTHROPIC_") {
-			stale = append(stale, k)
-		}
-	}
-	slices.Sort(stale)
+	stale := staleEnvKeys(currentEnv, env)
 
 	// always-env: present in every block ccx writes, but added ONLY when the
 	// final env would lack the key — a value already in the file (the user's
-	// own) or in the fresh block (a profile extra) wins and is never
-	// overwritten; a stale profile extra being wiped this switch does not
-	// count as present, so the default comes back.
+	// own) wins and is never overwritten. staleEnvKeys never lists an
+	// always-env key (they are neither managed nor ANTHROPIC_*), so a stale
+	// wipe can never mask a default here.
 	for k, v := range alwaysEnv {
 		if _, ok := env[k]; ok {
 			continue
 		}
-		if _, ok := currentEnv[k]; ok && !slices.Contains(stale, k) {
+		if _, ok := currentEnv[k]; ok {
 			continue
 		}
 		env[k] = v
@@ -408,6 +370,33 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 	}
 
 	return nil
+}
+
+// staleEnvKeys — the keys to wipe: the managed (ccx-owned) context trio and
+// effort key plus every ANTHROPIC_* key that is present now but absent from
+// the fresh block; all ANTHROPIC_* are wiped, not only managed ones (past
+// profile keys and manual values must not survive a switch — parity with
+// bash with_entries). Profile env keys are gone — a user key is simply never
+// touched.
+func staleEnvKeys(current, fresh map[string]string) []string {
+	managed := map[string]bool{}
+	for _, k := range contextKeys {
+		managed[k] = true
+	}
+	managed[effortKey] = true
+
+	var stale []string
+	for k := range current {
+		if _, keep := fresh[k]; keep {
+			continue
+		}
+		if managed[k] || strings.HasPrefix(k, "ANTHROPIC_") {
+			stale = append(stale, k)
+		}
+	}
+	slices.Sort(stale)
+
+	return stale
 }
 
 func (s *Switcher) writeState(profileKey, model string) error {

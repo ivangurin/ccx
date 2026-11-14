@@ -18,9 +18,10 @@ const (
 	roleAssistant = "assistant"
 )
 
-// BuildChatRequest maps a MessagesRequest to chat/completions. maxTokensField
-// is the token-limit field name from the profile (max_tokens | max_completion_tokens).
-func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *models.ChatRequest {
+// BuildChatRequest maps a MessagesRequest to chat/completions; the
+// token-limit field is always max_tokens (the profile-side
+// max_completion_tokens rename died with the max_tokens_field profile field).
+func BuildChatRequest(req *models.MessagesRequest) *models.ChatRequest {
 	sanitizeOrphans(req)
 	out := &models.ChatRequest{
 		Model:       req.Model,
@@ -30,7 +31,6 @@ func BuildChatRequest(req *models.MessagesRequest, maxTokensField string) *model
 		TopP:        req.TopP,
 		Stop:        req.StopSequences,
 	}
-	_ = maxTokensField // the field name is applied at serialization (custom MarshalJSON)
 	if req.Stream {
 		out.StreamOptions = &struct {
 			IncludeUsage bool `json:"include_usage"`

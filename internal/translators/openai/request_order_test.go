@@ -31,7 +31,7 @@ func TestBuildChatRequest_TextBeforeToolResultsKeepsToolAdjacency(t *testing.T) 
 		},
 	}
 
-	out := openai.BuildChatRequest(req, "")
+	out := openai.BuildChatRequest(req)
 
 	require.Len(t, out.Messages, 3)
 	require.Equal(t, "assistant", out.Messages[0].Role)
@@ -55,7 +55,7 @@ func TestBuildChatRequest_TextOnlyUserMessageUnchanged(t *testing.T) {
 		},
 	}
 
-	out := openai.BuildChatRequest(req, "")
+	out := openai.BuildChatRequest(req)
 
 	require.Len(t, out.Messages, 2)
 	require.Equal(t, "one", out.Messages[0].Content)

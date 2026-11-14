@@ -54,8 +54,8 @@ func InitProviders(cfg *Config, force bool) (*InitResult, error) {
 }
 
 // buildFromEnvironment mirrors bash-init: zai from the settings.json env
-// block, the work gateway from env.json (carry-extras), plus the
-// openai/copilot/codex templates.
+// block, the work gateway from env.json, plus the openai/copilot/codex
+// templates. Profiles carry no env extras — user keys stay where they are.
 func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 	var warnings []string
 	providers := &models.Providers{}
@@ -64,7 +64,7 @@ func buildFromEnvironment(cfg *Config) (*models.Providers, []string) {
 	if zai != nil {
 		providers.Providers.Set("zai", zai)
 	} else {
-		providers.Providers.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic, Env: map[string]string{}})
+		providers.Providers.Set("zai", &models.Profile{Name: zaiProfileName, Protocol: models.ProtocolAnthropic})
 		warnings = append(warnings, "zai: ANTHROPIC_BASE_URL not found in settings.json — provider is empty, fill it in via ccx edit")
 	}
 
@@ -96,7 +96,6 @@ func profileFromSettings(path string) *models.Profile {
 	prof := &models.Profile{
 		Name:     zaiProfileName,
 		Protocol: models.ProtocolAnthropic,
-		Env:      map[string]string{},
 	}
 	applyAnthropicEnv(prof, env)
 	if primary != "" {
@@ -134,28 +133,17 @@ func profileFromEnvJSON(path string) *models.Profile {
 	prof := &models.Profile{
 		Name:     "Work Gateway (Copilot)",
 		Protocol: models.ProtocolAnthropic,
-		Env:      dropAnthropicKeys(env),
 	}
 	applyAnthropicEnv(prof, env)
 
 	return prof
 }
 
-// applyAnthropicEnv lifts direct anthropic credentials out of an env block
-// (the settings.json/env.json import) into the flat profile fields.
+// applyAnthropicEnv lifts the direct anthropic credential out of an env
+// block (the settings.json/env.json import) — auth_token is the only
+// credential field; an old ANTHROPIC_API_KEY-only settings imports no
+// credential (the dead field is never lifted).
 func applyAnthropicEnv(prof *models.Profile, env map[string]string) {
 	prof.BaseURL = env["ANTHROPIC_BASE_URL"]
 	prof.AuthToken = env["ANTHROPIC_AUTH_TOKEN"]
-	prof.APIKey = env["ANTHROPIC_API_KEY"]
-}
-
-func dropAnthropicKeys(env map[string]string) map[string]string {
-	out := map[string]string{}
-	for k, v := range env {
-		if !strings.HasPrefix(k, "ANTHROPIC_") {
-			out[k] = v
-		}
-	}
-
-	return out
 }

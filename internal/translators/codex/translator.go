@@ -189,70 +189,88 @@ func BuildResponsesRequest(req *models.MessagesRequest) *ResponsesRequest {
 	return out
 }
 
+// convertMessage maps one Anthropic message to Responses items: a plain
+// string content is one message item; a block array splits into text /
+// function_call / function_call_output items (an assistant's text blocks
+// merge into one leading message item).
 func convertMessage(msg models.Message) []ResponsesItem {
 	var plain string
 	if err := json.Unmarshal(msg.Content, &plain); err == nil {
-		role := msg.Role
-		if role == roleAssistantS {
-			role = "assistant"
-		}
-
-		return []ResponsesItem{{
-			Type: typeMessage, Role: role,
-			Content: json.RawMessage(contentJSON(role, plain)),
-		}}
+		return []ResponsesItem{messageItem(msg.Role, plain)}
 	}
 	var blocks []models.ContentBlock
 	if err := json.Unmarshal(msg.Content, &blocks); err != nil {
 		return nil
 	}
 
+	return convertBlocks(msg.Role, blocks)
+}
+
+// messageItem — one message item carrying a plain text (the assistant role
+// is normalized to the wire's "assistant").
+func messageItem(role, text string) ResponsesItem {
+	if role == roleAssistantS {
+		role = "assistant"
+	}
+
+	return ResponsesItem{
+		Type: typeMessage, Role: role,
+		Content: json.RawMessage(contentJSON(role, text)),
+	}
+}
+
+func convertBlocks(role string, blocks []models.ContentBlock) []ResponsesItem {
 	var out []ResponsesItem
 	var texts []string
 	for _, b := range blocks {
 		switch b.Type {
 		case typeText:
-			if msg.Role == roleAssistantS {
+			if role == roleAssistantS {
 				texts = append(texts, content.Deref(b.Text))
 			} else {
-				out = append(out, ResponsesItem{
-					Type: typeMessage, Role: msg.Role,
-					Content: json.RawMessage(contentJSON(msg.Role, content.Deref(b.Text))),
-				})
+				out = append(out, messageItem(role, content.Deref(b.Text)))
 			}
 		case "tool_use":
-			// nil input must not become omitted arguments: the backend rejects
-			// the item ("Missing required parameter: 'input[N].arguments'",
-			// verified live 2026-11-08). An argumentless call is the empty
-			// object on this wire.
-			args := string(b.Input)
-			if args == "" {
-				args = "{}"
-			}
-			out = append(out, ResponsesItem{
-				Type: "function_call", Name: content.Deref(b.Name),
-				Arguments: args, CallID: content.Deref(b.ID),
-			})
+			out = append(out, functionCallItem(b))
 		case "tool_result":
-			// the pointer keeps output on the wire even when the result is
-			// empty — omission is a hard 400 (see ResponsesItem.Output)
-			result := content.ToolResultText(b)
-			out = append(out, ResponsesItem{
-				Type: "function_call_output", CallID: content.Deref(b.ToolUseID),
-				Output: &result,
-			})
+			out = append(out, functionCallOutputItem(b))
 		default:
 			// thinking/image and unknown ones are skipped (reasoning is on the Responses side)
 		}
 	}
-	if msg.Role == roleAssistantS && (len(texts) > 0 || len(out) == 0) {
-		out = append([]ResponsesItem{{
-			Type: typeMessage, Role: "assistant",
-			Content: json.RawMessage(contentJSON("assistant", strings.Join(texts, ""))),
-		}}, out...)
+	if role == roleAssistantS && (len(texts) > 0 || len(out) == 0) {
+		out = append([]ResponsesItem{messageItem("assistant", strings.Join(texts, ""))}, out...)
 	}
 
 	return out
+}
+
+// functionCallItem — a tool_use block: nil input must not become omitted
+// arguments, the backend rejects the item ("Missing required parameter:
+// 'input[N].arguments'", verified live 2026-11-08); an argumentless call is
+// the empty object on this wire.
+func functionCallItem(b models.ContentBlock) ResponsesItem {
+	args := string(b.Input)
+	if args == "" {
+		args = "{}"
+	}
+
+	return ResponsesItem{
+		Type: "function_call", Name: content.Deref(b.Name),
+		Arguments: args, CallID: content.Deref(b.ID),
+	}
+}
+
+// functionCallOutputItem — a tool_result block: the pointer keeps output on
+// the wire even when the result is empty — omission is a hard 400 (see
+// ResponsesItem.Output).
+func functionCallOutputItem(b models.ContentBlock) ResponsesItem {
+	result := content.ToolResultText(b)
+
+	return ResponsesItem{
+		Type: "function_call_output", CallID: content.Deref(b.ToolUseID),
+		Output: &result,
+	}
 }
 
 func contentJSON(role, text string) string {
