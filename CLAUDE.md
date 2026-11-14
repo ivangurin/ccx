@@ -118,12 +118,9 @@ internal/
                                          Execute(args, stdout) int is the stable seam — bodies
                                          runXxx(argv, stdout) int keep bash-ccx exit codes and
                                          hint texts, cobra owns parsing/help/completion
-  app/                                  app.Run(): serve mode: config→logger→lock→route(Build)→http
-                                         spawn.go: detached daemon launch (Setsid, pidfile,
-                                         --provider/--port/--debug args) via os.Executable():
-                                         the daemon always re-executes the very binary the
-                                         user invoked (dev ./bin/ccx or brew ccx), never a
-                                         PATH lookup (verified live 2026-11-11)
+  app/                                  app.Run(): serve mode: lock→route(GetRoute)→http — the
+                                         App holds no cfg/log of its own, everything comes from
+                                         the service provider (internal/provider; 2026-11-14)
   config/                               env config + CCX_* paths + providers.json (load/save, 0600)
                                          Home=~/.ccx; settings.json default stays in ~/.claude
                                          providers.go: ResolveDaemonPort (flag > CCX_PORT >
@@ -148,9 +145,13 @@ internal/
                                          credential, daemon stop)
   provider/                             the service provider (idp-kube shape): lazy singletons over
                                          one config — GetDaemon (HTTPDaemon), GetSwitcher (over the
-                                         daemon), GetConfig; NewEnv() for the CLI; consumers are
-                                         ccx use/restore/stop; daemon-process wiring stays in
-                                         router.Build (see Conventions for the boundary rationale)
+                                         daemon), GetRoute (the daemon's single route, router.Build
+                                         + Ready inside, single slot pinned by the --provider key —
+                                         a second key errors: one provider per daemon process),
+                                         GetConfig/GetLogger; NewEnv() for the CLI, New(cfg, log) for
+                                         the daemon runtime; consumers are ccx use/restore/stop AND
+                                         app.Run (2026-11-14 — the daemon launch primitives live in
+                                         pkg/spawn so app→provider→switcher→spawn stays acyclic)
   translators/
     translator.go                       Translator + ResponseSink interfaces
     prefill/                            prefill fix (port of copilot-bridge.py)
@@ -169,6 +170,9 @@ internal/
     httpserver/                         http.Server with graceful shutdown (WriteTimeout=0: SSE)
     flock/                              file locks (LOCK_EX|LOCK_NB)
     jsonfile/                           atomic JSON writes (tmp+rename, permissions)
+    spawn/                              daemon launch primitives (SpawnDetached: Setsid, stderr →
+                                         daemon-<launch time>.log; HealthCheck/WaitForHealth) — a leaf
+                                         package: app→provider→switcher→spawn stays acyclic
     sse/                                upstream SSE reader + AnthropicWriter
     tui/                                interactive menu (arrows/filter/fallback)
     suite/
@@ -180,9 +184,11 @@ internal/
                                          (GetDaemon/GetDaemonMock, GetCodexAuth(Mock),
                                          GetCopilotToken(Mock) — mockery mocks at the leaves,
                                          mock-by-default seams), services.go (GetSwitcher — the
-                                         REAL switcher over the mock daemon); the route side
-                                         stays in router.Build (keyed by --provider, see
-                                         internal/provider)
+                                         REAL switcher over the mock daemon; GetRoute(key) — the
+                                         real route per key via router.Build, cached per key and
+                                         Cleaner-closed, panics on a build failure — the fixture-bug
+                                         contract of the reference suite; unlike the production
+                                         single slot, keys cache separately — tests flip providers)
       capture/                          Capture — the mutex-guarded test log buffer (leaf
                                          package: in-graph packages' tests must not import the
                                          suite for it)
@@ -599,14 +605,23 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
 - **internal/provider — the service provider** (2026-11-14, the idp-kube
   `service_provider` shape): lazy singletons over one config, getters
   grouped per concern (`clients.go`: `GetDaemon`, `services.go`:
-  `GetSwitcher`), `GetX` naming mirrors the reference. Consumers: `ccx use`,
-  `ccx restore`, `ccx stop` (`provider.NewEnv()`); config-only commands stay
-  on `config.NewFromEnv`. Deliberately NOT in the provider: the daemon-process
-  singletons (router route, translators, OAuth clients) are keyed by the
-  `--provider` launch param — parameterless singleton getters do not fit,
-  and `app` cannot import the provider (cycle: provider→switcher→app), so
-  `app.Run` keeps its own `router.Build` (Ready-before-listening stays the
-  daemon's startup invariant).
+  `GetSwitcher`, `GetRoute`), `GetX` naming mirrors the reference.
+  Consumers: `ccx use`/`restore`/`stop` (`provider.NewEnv()`; config-only
+  commands stay on `config.NewFromEnv`) and `app.Run` (2026-11-14: the App
+  holds no cfg/log of its own — `GetConfig`/`GetLogger`/`GetRoute` come from
+  the provider). `GetRoute(ctx, key)` is the one keyed getter, deliberately
+  single-slot: the daemon serves exactly one provider per process
+  (switching = daemon restart), a second key errors instead of silently
+  replacing; Ready-before-listening lives inside it (`router.Build`). The
+  cycle that used to forbid app→provider is gone: the daemon launch
+  primitives moved out of `app` into the leaf `internal/pkg/spawn`
+  (`SpawnDetached`/`WaitForHealth`/`HealthCheck`; the switcher's spawn seam
+  var renamed `spawnFn`), so `app → provider → switcher → spawn` stays
+  acyclic — moving runtime-wrong primitives back under `app` reintroduces
+  the cycle. The translators and the OAuth client OBJECTS stay outside the
+  provider: they are composed inside `router.Build` over the auth stores,
+  their consumption seams (`AuthSource`/`TokenSource`) are mocked at the
+  suite level.
 - **"Why" decision comments** are written in code: they record invariants and
   precedent.
 - Tokens/secrets are never logged; request bodies are logged only on error.

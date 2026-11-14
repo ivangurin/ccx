@@ -6,11 +6,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/app"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	"github.com/ivangurin/ccx/internal/pkg/spawn"
 )
 
 // quotaTimeout bounds the quota fetch: ccx status is a local-state command,
@@ -89,7 +89,7 @@ func printDaemonState(cfg *config.Config, prof *models.Profile, stdout io.Writer
 		return
 	}
 	port := config.ResolveDaemonPort(cfg, 0)
-	if app.HealthCheck(fmt.Sprintf("http://127.0.0.1:%d", port), daemonProbeTimeout) {
+	if spawn.HealthCheck(fmt.Sprintf("http://127.0.0.1:%d", port), daemonProbeTimeout) {
 		fmt.Fprintf(stdout, "Daemon:         up (127.0.0.1:%d)\n", port)
 
 		return

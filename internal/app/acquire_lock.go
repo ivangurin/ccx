@@ -22,12 +22,13 @@ func ResetLockRetryForTest() { lockRetry = 5 * time.Second }
 // acquireLock takes daemon.lock with a bounded retry: the previous daemon may
 // hold it for a moment while its graceful shutdown drains in-flight requests.
 func (a *App) acquireLock() (*flock.Lock, error) {
+	home := a.p.GetConfig().Home
 	// a fresh install may not have the ccx home yet — the lock lives there
-	_ = os.MkdirAll(a.cfg.Home, 0o750)
+	_ = os.MkdirAll(home, 0o750)
 
 	deadline := time.Now().Add(lockRetry)
 	for {
-		lock, err := flock.TryLock(a.daemonLockPath())
+		lock, err := flock.TryLock(filepath.Join(home, "daemon.lock"))
 		if err == nil {
 			return lock, nil
 		}
@@ -36,8 +37,4 @@ func (a *App) acquireLock() (*flock.Lock, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-func (a *App) daemonLockPath() string {
-	return filepath.Join(a.cfg.Home, "daemon.lock")
 }

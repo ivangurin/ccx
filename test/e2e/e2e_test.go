@@ -17,6 +17,7 @@ import (
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/logger"
+	"github.com/ivangurin/ccx/internal/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +65,9 @@ func TestDaemon_EndToEnd_AnthropicPassthrough(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = app.New(cfg, log, nil).Run(ctx, app.ServeOptions{Provider: "zai", Port: port}) }()
+	go func() {
+		_ = app.New(provider.New(cfg, log), nil).Run(ctx, app.ServeOptions{Provider: "zai", Port: port})
+	}()
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool { return alive(base + "/health") }, 5*time.Second, 50*time.Millisecond, "daemon did not come up")

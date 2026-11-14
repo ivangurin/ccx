@@ -5,6 +5,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+
 	codex_client "github.com/ivangurin/ccx/internal/clients/codex"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/mock"
@@ -90,4 +93,30 @@ func TestGetCopilotToken_MockByDefault(t *testing.T) {
 	tok, err := sp.GetCopilotToken().Token(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "tok", tok)
+}
+
+// GetRoute builds the real daemon route over the sandbox (an anthropic
+// profile needs no upstream for Ready), caches per key and panics on an
+// unknown key — the fixture-bug contract of the reference suite.
+func TestGetRoute_PerKeyCache(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{}
+	p.Providers.Set("zai", &models.Profile{
+		Protocol: models.ProtocolAnthropic,
+		BaseURL:  "https://api.z.ai/api/anthropic",
+		Models:   []models.Model{{ID: "glm", Default: true}},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	svc := sp.GetRoute("zai")
+	require.NotNil(t, svc)
+	require.Same(t, svc, sp.GetRoute("zai"))
+
+	p2, _, ok := svc.Active()
+	require.True(t, ok)
+	require.Equal(t, "zai", p2)
+
+	require.PanicsWithValue(t,
+		`suite provider: route "nope": router: unknown provider: nope`,
+		func() { sp.GetRoute("nope") })
 }

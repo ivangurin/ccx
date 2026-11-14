@@ -1,4 +1,10 @@
-package app
+// Package spawn — daemon process utilities shared by the CLI side: the
+// detached launch (Setsid, stdout/stderr → daemon-<launch time>.log) and the
+// health probes the spawner waits on. A leaf package deliberately: the
+// switcher and the service provider consume it, and the daemon runtime
+// (internal/app) must be free to consume the provider without an import
+// cycle (app → provider → switcher → spawn).
+package spawn
 
 import (
 	"context"

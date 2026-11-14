@@ -20,6 +20,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/suite/capture"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +65,7 @@ func TestRun_UsageRidesUnifiedLog(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- app.New(sp.Config, log, usageLog).Run(ctx, app.ServeOptions{Provider: "zai", Port: port})
+		errCh <- app.New(provider.New(sp.Config, log), usageLog).Run(ctx, app.ServeOptions{Provider: "zai", Port: port})
 	}()
 	// LIFO: cancel first, THEN drain Run's result — Run returns only after
 	// the ctx cancel is observed

@@ -40,8 +40,7 @@ func TestBuild_EnvRef_ExpandedBearer(t *testing.T) {
 	zai.AuthToken = "$CCX_SERVE_TOKEN"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
-	require.NoError(t, err)
+	svc := sp.GetRoute("zai")
 
 	rec := httptest.NewRecorder()
 	body := `{"model":"glm","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}`

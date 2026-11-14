@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ivangurin/ccx/internal/app"
 	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/pkg/spawn"
 )
 
 // Wait/escalation timings (vars: tests shorten them; the defaults bound the
@@ -28,7 +28,7 @@ var (
 )
 
 // spawn is the detached-launch function (seam for tests).
-var spawn = app.SpawnDetached
+var spawnFn = spawn.SpawnDetached
 
 // SetWaitTimingsForTest overrides the wait timings (restored by the test's
 // cleanup; tests are not parallel).
@@ -37,10 +37,10 @@ func SetWaitTimingsForTest(port, term, kill, drain, poll time.Duration) {
 }
 
 // SetSpawnForTest replaces the spawn function; ResetSpawnForTest restores it.
-func SetSpawnForTest(fn func(*config.Config, ...string) error) { spawn = fn }
+func SetSpawnForTest(fn func(*config.Config, ...string) error) { spawnFn = fn }
 
 // ResetSpawnForTest restores the real spawn.
-func ResetSpawnForTest() { spawn = app.SpawnDetached }
+func ResetSpawnForTest() { spawnFn = spawn.SpawnDetached }
 
 // HTTPDaemon — the Daemon implementation: restart = stop + detached spawn
 // with launch params + health wait; stop = graceful /admin/stop with a
@@ -74,11 +74,11 @@ func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int, 
 	if debug {
 		args = append(args, "--debug")
 	}
-	if err := spawn(d.cfg, args...); err != nil {
+	if err := spawnFn(d.cfg, args...); err != nil {
 		return fmt.Errorf("daemon: spawn: %w", err)
 	}
 	base := baseURL(port)
-	if !app.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
+	if !spawn.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
 		return fmt.Errorf("daemon did not respond within %s (logs: %s/daemon-*.log)", d.cfg.DaemonStartTimeout, d.cfg.LogDir())
 	}
 
@@ -132,7 +132,7 @@ func (d *HTTPDaemon) waitDrained(ctx context.Context) error {
 func (d *HTTPDaemon) Stop(ctx context.Context) error {
 	port := config.ResolveDaemonPort(d.cfg, 0)
 	base := baseURL(port)
-	if !app.HealthCheck(base, time.Second) {
+	if !spawn.HealthCheck(base, time.Second) {
 		return nil
 	}
 	// ownsCCX, not pidAlive: signal-0 counts ANY live process as the owner
@@ -191,7 +191,7 @@ func (d *HTTPDaemon) postStop(ctx context.Context, base string) {
 func (d *HTTPDaemon) waitPortClosed(ctx context.Context, base string, budget time.Duration) bool {
 	deadline := time.Now().Add(budget)
 	for {
-		if !app.HealthCheck(base, time.Second) {
+		if !spawn.HealthCheck(base, time.Second) {
 			return true
 		}
 		if time.Now().After(deadline) {

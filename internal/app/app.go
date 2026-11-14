@@ -1,10 +1,13 @@
 // Package app — daemon wiring for ccx serve: config → logger → lock →
-// route (Build from --provider, Ready before listening) → http → signals →
-// graceful shutdown.
+// route (Ready before listening) → http → signals → graceful shutdown. The
+// wiring goes through the service provider (internal/provider): the App
+// holds no config or logger of its own — GetConfig/GetLogger/GetRoute come
+// from the provider, so the daemon process and the CLI commands compose
+// their singletons the same way.
 //
 // One operation per file: app.go (the App type + Run, the startup
 // orchestrator), acquire_lock.go, pidfile.go, self_check.go,
-// resolve_listen_port.go; spawn.go is the detached launch.
+// resolve_listen_port.go.
 package app
 
 import (
@@ -19,12 +22,11 @@ import (
 	"time"
 
 	"github.com/ivangurin/ccx/internal/api/handlers"
-	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/pkg/closer"
 	"github.com/ivangurin/ccx/internal/pkg/httpserver"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
-	"github.com/ivangurin/ccx/internal/services/router"
+	"github.com/ivangurin/ccx/internal/provider"
 )
 
 // Version — daemon version (ldflags).
@@ -44,23 +46,25 @@ type ServeOptions struct {
 	Debug bool
 }
 
-// App — the daemon.
+// App — the daemon. p is the composition root: config, the diagnostics
+// logger and the route all come from it (GetRoute carries the
+// Ready-before-listening invariant inside).
 type App struct {
-	cfg      *config.Config
-	log      *slog.Logger
+	p        *provider.Provider
 	usageLog *slog.Logger
 }
 
-// New creates an App. usageLog is the usage stream over the same sink —
-// usage is DATA, not diagnostics: pinned to info+json by buildServeLogger so
-// a warn/error CCX_LOG_LEVEL daemon keeps recording (a nil usageLog falls
-// back to log; tests pass the suite's silent logger for both).
-func New(cfg *config.Config, log *slog.Logger, usageLog *slog.Logger) *App {
+// New creates an App over the provider. usageLog is the usage stream over
+// the same sink — usage is DATA, not diagnostics: pinned to info+json by
+// buildServeLogger so a warn/error CCX_LOG_LEVEL daemon keeps recording (a
+// nil usageLog falls back to the provider's logger; tests pass the suite's
+// silent logger for both).
+func New(p *provider.Provider, usageLog *slog.Logger) *App {
 	if usageLog == nil {
-		usageLog = log
+		usageLog = p.GetLogger()
 	}
 
-	return &App{cfg: cfg, log: log, usageLog: usageLog}
+	return &App{p: p, usageLog: usageLog}
 }
 
 // Run blocks until a signal/ctx cancel (or /admin/stop). The route is built
@@ -73,6 +77,9 @@ func New(cfg *config.Config, log *slog.Logger, usageLog *slog.Logger) *App {
 // runServe turns it into a non-zero exit so scripts never mistake a failed
 // start for a healthy daemon.
 func (a *App) Run(ctx context.Context, opts ServeOptions) error {
+	log := a.p.GetLogger()
+	cfg := a.p.GetConfig()
+
 	lock, err := a.acquireLock()
 	if err != nil {
 		return fmt.Errorf("app: daemon.lock is held — another daemon is already running: %w", err)
@@ -91,7 +98,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 	if sidErr != nil {
 		sid = -1
 	}
-	a.log.Info(
+	log.Info(
 		"daemon launch",
 		"pid", os.Getpid(),
 		"ppid", os.Getppid(),
@@ -108,16 +115,16 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 
 	// request dumps exist only in debug runs (flag-gated by design: bodies
 	// must never land on disk in a normal run) and ride the unified log as
-	// kind=reqdump lines. Must precede router.Build — the first served
+	// kind=reqdump lines. Must precede the route build — the first served
 	// request may already dump.
-	reqdump.Configure(reqdump.Options{Enabled: opts.Debug, Logger: a.log})
+	reqdump.Configure(reqdump.Options{Enabled: opts.Debug, Logger: log})
 
-	svc, err := router.Build(ctx, a.cfg, a.log, opts.Provider)
+	svc, err := a.p.GetRoute(ctx, opts.Provider)
 	if err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
 
-	port := resolveListenPort(a.cfg, opts.Port)
+	port := resolveListenPort(cfg, opts.Port)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -130,7 +137,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 		Version: Version,
 		Port:    port,
 		Stop:    cancel,
-		Log:     a.log,
+		Log:     log,
 	}))
 	if err != nil {
 		_ = cl.Close(context.Background())
@@ -149,7 +156,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Start() }()
-	a.log.Info("ccx daemon listening", "addr", addr, "provider", opts.Provider, "version", Version)
+	log.Info("ccx daemon listening", "addr", addr, "provider", opts.Provider, "version", Version)
 
 	// --debug only: a watchdog dialing the daemon's own /health — a failure
 	// while the process is alive separates a broken listener from a dead
@@ -158,7 +165,7 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 	// first and must not fire false alarms during the drain.
 	selfDone := make(chan struct{})
 	if opts.Debug {
-		go selfCheck(a.log, "http://"+addr, selfDone)
+		go selfCheck(log, "http://"+addr, selfDone)
 	}
 
 	sig := make(chan os.Signal, 1)
@@ -175,9 +182,9 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 		// the /admin/stop path: this used to be the daemon's only fully
 		// silent exit — the process disappeared without a single log line,
 		// leaving ECONNREFUSED forensics with nothing (2026-11-09)
-		a.log.Info("daemon stopping", "reason", "context cancelled — /admin/stop or parent")
+		log.Info("daemon stopping", "reason", "context cancelled — /admin/stop or parent")
 	case s := <-sig:
-		a.log.Info("signal — shutting down", "signal", s.String())
+		log.Info("signal — shutting down", "signal", s.String())
 	case err := <-serveErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			close(selfDone)
