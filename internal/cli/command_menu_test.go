@@ -1,8 +1,9 @@
-package cli
+package cli_test
 
 import (
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/cli"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,7 @@ func menuTestProviders() *models.Providers {
 }
 
 func TestMenuStages_EndsAfterModelLevel(t *testing.T) {
-	next := menuStages(menuTestProviders(), 0)
+	next := cli.MenuStagesForTest(menuTestProviders(), 0)
 
 	stage, ok := next(nil)
 	require.True(t, ok)
@@ -44,7 +45,7 @@ func TestMenuStages_EndsAfterModelLevel(t *testing.T) {
 }
 
 func TestMenuStages_ProfileWithoutModelsEndsChain(t *testing.T) {
-	next := menuStages(menuTestProviders(), 0)
+	next := cli.MenuStagesForTest(menuTestProviders(), 0)
 
 	_, ok := next([]int{1})
 
