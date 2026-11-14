@@ -28,7 +28,7 @@ func writeAuthFixture(t *testing.T) *config.Config {
 	p.Providers.Set("gh", &models.Profile{Name: "GitHub", Protocol: models.ProtocolCopilot, Models: []models.Model{}})
 	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex, Models: []models.Model{}})
 	p.Providers.Set(profZai, &models.Profile{
-		Name: "z.ai", Protocol: models.ProtocolAnthropic, BaseURL: "https://x",
+		Name: profZaiName, Protocol: models.ProtocolAnthropic, BaseURL: "https://x",
 		Models: []models.Model{{ID: "m", Default: true}},
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))

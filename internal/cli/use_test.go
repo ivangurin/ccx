@@ -68,7 +68,7 @@ func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	// reach it — see the ownership gate; verified live 2026-11-09)
 	p := &models.Providers{Daemon: &models.Daemon{Port: freePort(t)}}
 	p.Providers.Set("zai", &models.Profile{
-		Name:     "z.ai",
+		Name:     profZaiName,
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  "https://api.z.ai/api/anthropic",
 		Models: []models.Model{
@@ -80,7 +80,7 @@ func TestCommandUse_DirectWithExplicitModel(t *testing.T) {
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
 	var out bytes.Buffer
 
-	code := cli.Execute([]string{cmdUse, "zai", "glm-flash"}, &out)
+	code := cli.Execute([]string{cmdUse, profZai, "glm-flash"}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "direct")

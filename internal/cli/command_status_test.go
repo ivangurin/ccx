@@ -87,7 +87,7 @@ func TestStatus_DaemonUpForTranslatedProfile(t *testing.T) {
 func TestStatus_DaemonNotUsedForDirectAnthropic(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	writeStatusFixture(t, sp, &models.Profile{
-		Name:     "zai",
+		Name:     profZai,
 		Protocol: models.ProtocolAnthropic,
 		BaseURL:  "https://example.invalid",
 		Models:   []models.Model{{ID: "glm", Label: "GLM", Default: true}},
