@@ -148,21 +148,3 @@ func TestApply_DirectEffortLevel(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "xhigh", settingsEnv(t, sp.Config.SettingsPath())["CLAUDE_CODE_EFFORT_LEVEL"])
 }
-
-// pinnedKeysList — the model pin env vars ccx writes (just one: the legacy
-// ANTHROPIC_DEFAULT_*_MODEL / SMALL_FAST mappings are deliberately not
-// written anymore — a leftover in settings.json is wiped by the stale sweep).
-var pinnedKeysList = []string{
-	"ANTHROPIC_MODEL",
-}
-
-// legacyPinnedKeys — the old multi-mapping pin; a switch must REMOVE these
-// from settings.json when they are present.
-var legacyPinnedKeys = []string{
-	"ANTHROPIC_DEFAULT_MODEL",
-	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-	"ANTHROPIC_DEFAULT_SONET_MODEL",
-	"ANTHROPIC_DEFAULT_OPUS_MODEL",
-	"ANTHROPIC_DEFAULT_FABLE_MODEL",
-	"ANTHROPIC_SMALL_FAST_MODEL",
-}

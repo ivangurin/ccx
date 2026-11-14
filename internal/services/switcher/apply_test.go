@@ -1,0 +1,303 @@
+package switcher_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
+	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/services/switcher"
+	"github.com/stretchr/testify/require"
+)
+
+// fakeDaemon — a daemon mock: remembers Restart calls, can fail on demand.
+type fakeDaemon struct {
+	mu        sync.Mutex
+	restartOK bool
+	restarts  []string // "profile:port" per call
+	debugs    []bool   // the debug launch flag per call
+	stopN     int
+	stopErr   error
+}
+
+func (f *fakeDaemon) Restart(_ context.Context, providerKey string, port int, debug bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.restarts = append(f.restarts, providerKey+":"+itoa(port))
+	f.debugs = append(f.debugs, debug)
+	if f.restartOK {
+		return nil
+	}
+
+	return errors.New("daemon did not come up")
+}
+
+// lastDebugs snapshots the recorded debug flags (nil-safe on no calls).
+func (f *fakeDaemon) lastDebugs() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]bool(nil), f.debugs...)
+}
+
+// snapshotRestarts copies the recorded Restart calls.
+func (f *fakeDaemon) snapshotRestarts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.restarts...)
+}
+
+func (f *fakeDaemon) Stop(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stopN++
+
+	return f.stopErr
+}
+
+func itoa(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var b []byte
+	for v > 0 {
+		b = append([]byte{byte('0' + v%10)}, b...)
+		v /= 10
+	}
+
+	return string(b)
+}
+
+func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
+	t.Helper()
+	sp := suite_provider.NewProvider(t)
+
+	// providers.json: zai (anthropic, no extras), acme (openai + an extra key)
+	p := &models.Providers{
+		Daemon: &models.Daemon{Port: 4567},
+	}
+	p.Providers.Set("zai", &models.Profile{
+		Name:      "z.ai (GLM)",
+		Protocol:  models.ProtocolAnthropic,
+		BaseURL:   "https://api.z.ai/api/anthropic",
+		AuthToken: "sk-z",
+		Models: []models.Model{
+			{ID: "glm-5.3[1m]", Label: "GLM 5.3", Default: true},
+			{ID: "glm-flash", Label: "Flash"},
+		},
+	})
+	p.Providers.Set("acme", &models.Profile{
+		Name:      "Acme",
+		Protocol:  models.ProtocolOpenAI,
+		BaseURL:   "https://gw",
+		AuthToken: "k",
+		Models:    []models.Model{{ID: "copilot-code-large", Default: true}},
+	})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	// settings.json with user keys (left untouched) and a stale ANTHROPIC_*
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
+		"env": {
+			"API_TIMEOUT_MS": "3000000",
+			"MCP_TOKEN": "user-token",
+			"ANTHROPIC_STALE_KEY": "old"
+		},
+		"model": "old-model",
+		"permissions": {"allow": ["Bash"]}
+	}`), 0o600))
+
+	d := &fakeDaemon{restartOK: true}
+	sw := switcher.New(sp.Config, d)
+
+	return sw, d, sp
+}
+
+func settingsEnv(t *testing.T, path string) map[string]string {
+	t.Helper()
+	var s struct {
+		Env map[string]string `json:"env"`
+	}
+	require.NoError(t, jsonfile.ReadJSON(path, &s))
+
+	return s.Env
+}
+
+func readState(t *testing.T, path string) models.State {
+	t.Helper()
+	var st models.State
+	require.NoError(t, jsonfile.ReadJSON(path, &st))
+
+	return st
+}
+
+func readSettings(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(path), filepath.Base(path))) //nolint:gosec // sandbox path
+	require.NoError(t, err)
+
+	return string(data)
+}
+
+func TestApply_HappyPath(t *testing.T) {
+	sw, d, sp := newTestSwitcher(t)
+
+	// acme (openai) — the daemon path: BASE_URL is the daemon, Restart got the
+	// provider key and the resolved port (daemon.port 4567)
+	out, err := sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+	require.Contains(t, out, "Switched")
+	require.Contains(t, out, "Acme")
+	require.Contains(t, out, "http://127.0.0.1:4567")
+
+	require.Equal(t, []string{"acme:4567"}, d.restarts)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "http://127.0.0.1:4567", env["ANTHROPIC_BASE_URL"])
+	// acme's auth_token travels to settings.json as ANTHROPIC_AUTH_TOKEN
+	// (auth_token is the only credential field)
+	require.Equal(t, "k", env["ANTHROPIC_AUTH_TOKEN"])
+	require.NotContains(t, env, "ANTHROPIC_API_KEY")
+	// pinning: ONLY ANTHROPIC_MODEL carries the selected model; the legacy
+	// multi-mapping keys are neither written nor kept
+	for _, key := range pinnedKeysList {
+		require.Equal(t, "copilot-code-large", env[key], key)
+	}
+	for _, key := range legacyPinnedKeys {
+		require.NotContains(t, env, key, key)
+	}
+	// user keys kept, the stale ANTHROPIC_* wiped
+	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
+	require.Equal(t, "user-token", env["MCP_TOKEN"])
+	require.NotContains(t, env, "ANTHROPIC_STALE_KEY")
+
+	// the model is pinned
+	var s struct {
+		Model   string         `json:"model"`
+		Avail   []string       `json:"availableModels"`
+		Enforce bool           `json:"enforceAvailableModels"`
+		Perms   map[string]any `json:"permissions"`
+	}
+	require.NoError(t, jsonfile.ReadJSON(sp.Config.SettingsPath(), &s))
+	require.Equal(t, "copilot-code-large", s.Model)
+	require.Equal(t, []string{"copilot-code-large"}, s.Avail)
+	require.True(t, s.Enforce)
+	// other file fields are untouched
+	require.Equal(t, map[string]any{"allow": []any{"Bash"}}, s.Perms)
+
+	// state
+	st := readState(t, sp.Config.StatePath())
+	require.Equal(t, "acme", st.Provider)
+	require.Equal(t, "copilot-code-large", st.Model)
+	require.NotEmpty(t, st.Updated)
+
+	// the switch lock is taken at <Home>/switch.lock (a visible sibling of
+	// daemon.lock, not the hidden bash-ccx .ccx.lock)
+	require.FileExists(t, filepath.Join(sp.HomeDir(), "switch.lock"))
+
+	// the daemon stays up on the daemon path (no stop)
+	require.Equal(t, 0, d.stopN)
+}
+
+// Models resolve by exact id (the name alias is gone): a bare id without
+// the [1m] suffix must not match the bracketed one, the full id applies.
+func TestApply_ModelMatchesIDOnly(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+
+	_, err := sw.Apply(context.Background(), "zai", "glm-5.3") // no [1m] suffix
+	require.ErrorContains(t, err, "not found")
+	require.NoFileExists(t, sp.Config.StatePath())
+
+	out, err := sw.Apply(context.Background(), "zai", "glm-5.3[1m]")
+	require.NoError(t, err)
+	require.Contains(t, out, "glm-5.3[1m]")
+
+	st := readState(t, sp.Config.StatePath())
+	require.Equal(t, "glm-5.3[1m]", st.Model)
+}
+
+func TestApply_UnknownProfile(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+	before := readSettings(t, sp.Config.SettingsPath())
+
+	_, err := sw.Apply(context.Background(), "nope", "")
+	require.ErrorContains(t, err, "unknown provider")
+	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
+}
+
+func TestApply_UnknownModel(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+
+	_, err := sw.Apply(context.Background(), "zai", "no-model")
+	require.ErrorContains(t, err, "not found")
+	require.NoFileExists(t, sp.Config.StatePath())
+}
+
+// A failed restart leaves settings.json byte-identical — the invariant.
+func TestApply_RestartFailureLeavesSettingsUntouched(t *testing.T) {
+	sw, d, sp := newTestSwitcher(t)
+	d.restartOK = false
+	before := readSettings(t, sp.Config.SettingsPath())
+
+	_, err := sw.Apply(context.Background(), "acme", "") // daemon path
+	require.ErrorContains(t, err, "untouched")
+	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
+	require.NoFileExists(t, sp.Config.StatePath())
+}
+
+// daemon.debug is switcher-owned launch config: the daemon block is read
+// HERE (from the same providers.json snapshot the route comes from) and
+// rides the spawn as --debug — the daemon itself never reads the block.
+func TestApply_DaemonDebugPassedToRestart(t *testing.T) {
+	sw, d, sp := newTestSwitcher(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Daemon.Debug = true
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+
+	require.Equal(t, []bool{true}, d.lastDebugs())
+}
+
+func TestApply_LockSerializes(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			_, _ = sw.Apply(context.Background(), "zai", "glm-flash")
+		})
+	}
+	wg.Wait()
+
+	st := readState(t, sp.Config.StatePath())
+	require.Equal(t, "glm-flash", st.Model)
+}
+
+func TestApply_MissingSettingsFails(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := &models.Providers{}
+	p.Providers.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	sw := switcher.New(sp.Config, &fakeDaemon{restartOK: true})
+	_, err := sw.Apply(context.Background(), "zai", "")
+	require.ErrorContains(t, err, "settings.json")
+}
+
+func TestApply_Idempotent(t *testing.T) {
+	sw, _, _ := newTestSwitcher(t)
+
+	for range 2 {
+		_, err := sw.Apply(context.Background(), "zai", "")
+		require.NoError(t, err)
+	}
+}

@@ -112,12 +112,3 @@ func (s *Switcher) restoreOriginalLocked(ctx context.Context) (string, error) {
 
 	return out, nil
 }
-
-// writeStateFile — atomic write of state.json (format 1:1 with bash-ccx).
-func writeStateFile(path string, state models.State) error {
-	if err := jsonfile.WriteAtomicJSON(path, state, 0o600); err != nil {
-		return fmt.Errorf("ccx: writing state: %w", err)
-	}
-
-	return nil
-}
