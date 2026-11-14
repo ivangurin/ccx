@@ -1,4 +1,4 @@
-package cli
+package cli_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/cli"
 	copilot_client "github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
@@ -26,7 +27,7 @@ func writeAuthFixture(t *testing.T) *config.Config {
 	p := &models.Providers{}
 	p.Providers.Set("gh", &models.Profile{Name: "GitHub", Protocol: models.ProtocolCopilot, Models: []models.Model{}})
 	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex, Models: []models.Model{}})
-	p.Providers.Set("zai", &models.Profile{
+	p.Providers.Set(profZai, &models.Profile{
 		Name: "z.ai", Protocol: models.ProtocolAnthropic, BaseURL: "https://x",
 		Models: []models.Model{{ID: "m", Default: true}},
 	})
@@ -41,7 +42,7 @@ func TestCommandAuth_ListsAuthState(t *testing.T) {
 	writeAuthFixture(t)
 	var out bytes.Buffer
 
-	code := runAuth([]string{authArg}, &out)
+	code := cli.Execute([]string{authArg}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "gh (copilot) — authorized")
@@ -53,7 +54,7 @@ func TestCommandAuth_NoArgs_MissingProviders(t *testing.T) {
 	suite_provider.NewProvider(t)
 	var out bytes.Buffer
 
-	code := runAuth([]string{authArg}, &out)
+	code := cli.Execute([]string{authArg}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "ccx init")
@@ -63,7 +64,7 @@ func TestCommandAuth_UnsupportedProtocol(t *testing.T) {
 	writeAuthFixture(t)
 	var out bytes.Buffer
 
-	code := runAuth([]string{authArg, "zai"}, &out)
+	code := cli.Execute([]string{authArg, profZai}, &out)
 
 	require.Equal(t, 1, code)
 	require.Equal(t, "ccx: provider zai (protocol anthropic) does not support auth\n", out.String())
@@ -87,19 +88,14 @@ func TestCommandAuth_CopilotFlow(t *testing.T) {
 	cfg := writeAuthFixture(t)
 	var out bytes.Buffer
 
-	var gotStore string
-	orig := newCopilotAuthClient
-	newCopilotAuthClient = func(store string) copilotAuthClient {
-		gotStore = store
+	store := filepath.Join(cfg.Home, "auth", "gh.json")
+	restore, storeArg := cli.SetCopilotAuthClientForTest(&fakeAuthClient{store: store})
+	t.Cleanup(restore)
 
-		return &fakeAuthClient{store: store}
-	}
-	t.Cleanup(func() { newCopilotAuthClient = orig })
-
-	code := runAuth([]string{authArg, "gh"}, &out)
+	code := cli.Execute([]string{authArg, "gh"}, &out)
 
 	require.Equal(t, 0, code)
-	require.Equal(t, filepath.Join(cfg.Home, "auth", "gh.json"), gotStore)
+	require.Equal(t, store, *storeArg)
 	require.Contains(t, out.String(), "Done: tokens saved to")
 }
 
@@ -108,15 +104,14 @@ func TestCommandAuth_CodexFlow(t *testing.T) {
 	var out bytes.Buffer
 
 	var gotPath string
-	orig := codexLogin
-	codexLogin = func(_ context.Context, authPath string, _ func(string) error) error {
+	restore := cli.SetCodexLoginForTest(func(_ context.Context, authPath string, _ func(string) error) error {
 		gotPath = authPath
 
 		return nil
-	}
-	t.Cleanup(func() { codexLogin = orig })
+	})
+	t.Cleanup(restore)
 
-	code := runAuth([]string{authArg, "cx"}, &out)
+	code := cli.Execute([]string{authArg, "cx"}, &out)
 
 	require.Equal(t, 0, code)
 	require.Equal(t, filepath.Join(cfg.Home, "auth", "cx.json"), gotPath)
@@ -127,7 +122,7 @@ func TestCommandAuth_ExtraArgs(t *testing.T) {
 	writeAuthFixture(t)
 	var out bytes.Buffer
 
-	code := runAuth([]string{authArg, "gh", "extra"}, &out)
+	code := cli.Execute([]string{authArg, "gh", "extra"}, &out)
 
 	require.Equal(t, 1, code)
 	require.Contains(t, out.String(), "usage")
@@ -138,6 +133,6 @@ func TestCommandAuth_ExtraArgs(t *testing.T) {
 // argument) launches clean. The reap itself is unobservable from Go — the
 // wiring is what these pin.
 func TestLaunchOpener(t *testing.T) {
-	require.Error(t, launchOpener("/nonexistent-opener-xyz", "https://example.com"))
-	require.NoError(t, launchOpener("/usr/bin/true", "https://example.com"))
+	require.Error(t, cli.LaunchOpenerForTest("/nonexistent-opener-xyz", "https://example.com"))
+	require.NoError(t, cli.LaunchOpenerForTest("/usr/bin/true", "https://example.com"))
 }
