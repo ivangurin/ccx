@@ -146,6 +146,11 @@ internal/
                                          SIGTERM/SIGKILL escalation → spawn --provider/--port →
                                          health wait); anthropic → direct env (upstream base_url +
                                          credential, daemon stop)
+  provider/                             the service provider (idp-kube shape): lazy singletons over
+                                         one config — GetDaemon (HTTPDaemon), GetSwitcher (over the
+                                         daemon), GetConfig; NewEnv() for the CLI; consumers are
+                                         ccx use/restore/stop; daemon-process wiring stays in
+                                         router.Build (see Conventions for the boundary rationale)
   translators/
     translator.go                       Translator + ResponseSink interfaces
     prefill/                            prefill fix (port of copilot-bridge.py)
@@ -549,8 +554,32 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
 
 ## Conventions
 
-- **One file per service method / handler / translator step**: `switcher/apply.go`,
-  `api/handlers/anthropic/messages.go`. One test file per method (`foo_test.go`).
+- **One file per service method / handler / client call / translator step**
+  (the idp-kube convention, applied tree-wide 2026-11-14): one exported
+  operation — `switcher/apply.go`, `tester/probe_id.go`,
+  `clients/codex/save_cas.go`, `router/serve_messages.go`,
+  `handlers/admin_stop.go`. Follow this split when adding operations. The
+  package's BASE file keeps the package doc, the type, its constructor and
+  the shared consts (`switcher.go`, `client.go`, `translator.go`); private
+  helpers ride with their consumer, package-wide ones live in the base file
+  or their own shared file (`write_json.go`, `write_read_err.go`). A compact
+  type whose API IS the package (`readguard.Guard`, `streamState`,
+  `app.Run`'s orchestrator body) is one operation and is not split
+  mechanically. Tests mirror: `foo.go` → `foo_test.go`; aspect files are
+  fine (idp-kube precedent: `apply_locked_test.go` ← envref, `daemon_test.go`),
+  shared test helpers live in the base operation's test file
+  (`apply_test.go` holds `fakeDaemon`/`newTestSwitcher`).
+- **internal/provider — the service provider** (2026-11-14, the idp-kube
+  `service_provider` shape): lazy singletons over one config, getters
+  grouped per concern (`clients.go`: `GetDaemon`, `services.go`:
+  `GetSwitcher`), `GetX` naming mirrors the reference. Consumers: `ccx use`,
+  `ccx restore`, `ccx stop` (`provider.NewEnv()`); config-only commands stay
+  on `config.NewFromEnv`. Deliberately NOT in the provider: the daemon-process
+  singletons (router route, translators, OAuth clients) are keyed by the
+  `--provider` launch param — parameterless singleton getters do not fit,
+  and `app` cannot import the provider (cycle: provider→switcher→app), so
+  `app.Run` keeps its own `router.Build` (Ready-before-listening stays the
+  daemon's startup invariant).
 - **"Why" decision comments** are written in code: they record invariants and
   precedent.
 - Tokens/secrets are never logged; request bodies are logged only on error.
