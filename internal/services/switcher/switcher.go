@@ -279,19 +279,26 @@ func daemonEnv(profile *models.Profile, model *models.Model, port int) map[strin
 // pinModel writes the model pin; a model with max_context_tokens additionally
 // caps the window Claude Code believes it has: the 1M context is disabled,
 // the window pinned, the auto-compact threshold set 10% below the cap (room
-// to compact BEFORE the hard limit). No cap ⇒ the trio is not written;
+// to compact BEFORE the hard limit). A model with effort additionally pins
+// CLAUDE_CODE_EFFORT_LEVEL verbatim (no validation — the value passes
+// through). Unset facts ⇒ the corresponding keys are not written;
 // writeSettings wipes any stale copy (the keys are ccx-owned).
 func pinModel(env map[string]string, model *models.Model) {
 	for _, key := range pinnedKeys {
 		env[key] = model.ID
 	}
-	if model.MaxContextTokens <= 0 {
-		return
+	if model.MaxContextTokens > 0 {
+		window := model.MaxContextTokens
+		env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
+		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.Itoa(window)
+		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = strconv.Itoa(window - window/10)
 	}
-	window := model.MaxContextTokens
-	env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
-	env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.Itoa(window)
-	env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = strconv.Itoa(window - window/10)
+	// after the context block, and independent of it: a model may carry
+	// effort without a context cap (the early return of the trio must not
+	// swallow this write)
+	if model.Effort != "" {
+		env[effortKey] = model.Effort
+	}
 }
 
 // alwaysEnv — flags ccx guarantees on every switch: nonessential telemetry
@@ -311,6 +318,12 @@ var contextKeys = []string{
 	"CLAUDE_CODE_MAX_CONTEXT_TOKENS",
 	"CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 }
+
+// effortKey — CLAUDE_CODE_EFFORT_LEVEL, derived from the per-model effort
+// field: written verbatim (no allow-list) only for a model that carries it,
+// wiped otherwise (ccx-owned like the context trio — a manual value dies
+// too).
+var effortKey = "CLAUDE_CODE_EFFORT_LEVEL"
 
 // pinnedKeys — the model pin env vars. Deliberately a single mapping: the
 // legacy ANTHROPIC_DEFAULT_*_MODEL / ANTHROPIC_SMALL_FAST_MODEL siblings are
@@ -336,7 +349,8 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 	}
 
 	// managed: env keys of all profiles (past extras go away) + ANTHROPIC_* +
-	// the context trio (ccx-owned: written for a capped model, wiped otherwise)
+	// the context trio and the effort key (ccx-owned: written for a capped /
+	// effort-carrying model, wiped otherwise)
 	managed := map[string]bool{}
 	for _, key := range providers.Providers.Keys {
 		for k := range providers.Providers.Get(key).Env {
@@ -346,6 +360,7 @@ func (s *Switcher) writeSettings(providers *models.Providers, env map[string]str
 	for _, k := range contextKeys {
 		managed[k] = true
 	}
+	managed[effortKey] = true
 	// stale = managed/ANTHROPIC_* keys that are present now but absent from
 	// the fresh block; all ANTHROPIC_* are wiped, not only managed ones (past
 	// profile keys and manual values must not survive a switch — parity with

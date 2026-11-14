@@ -302,6 +302,39 @@ func TestApply_MaxContextTokens(t *testing.T) {
 	require.NotContains(t, env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
 }
 
+// The per-model effort field pins CLAUDE_CODE_EFFORT_LEVEL verbatim (no
+// validation — the value passes through as written): written when the model
+// carries it, wiped on the next switch when it does not. The key is
+// ccx-owned: a manual value in settings.json dies too (stale-managed
+// semantics, same as the context trio).
+func TestApply_EffortLevel(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+
+	// acme's model has no effort → a pre-existing manual value is wiped
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
+		"env": {
+			"CLAUDE_CODE_EFFORT_LEVEL": "low"
+		}
+	}`), 0o600))
+	_, err := sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
+
+	// a model with the effort field → written verbatim
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Providers.Get("acme").Models[0].Effort = "high"
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	_, err = sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+	require.Equal(t, "high", settingsEnv(t, sp.Config.SettingsPath())["CLAUDE_CODE_EFFORT_LEVEL"])
+
+	// back to a model without effort → wiped again
+	_, err = sw.Apply(context.Background(), "zai", "")
+	require.NoError(t, err)
+	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
+}
+
 // Always-env: three CLAUDE_CODE_* flags are present in every block ccx
 // writes — added at their defaults only when missing. A value the user set
 // by hand survives untouched; a profile extra wins over the default; a wiped

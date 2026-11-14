@@ -30,6 +30,9 @@ type Model struct {
 	Default bool   `json:"default,omitempty"`
 	// MaxContextTokens → CLAUDE_CODE_MAX_CONTEXT_TOKENS and friends on switch.
 	MaxContextTokens int `json:"max_context_tokens,omitempty"`
+	// Effort → CLAUDE_CODE_EFFORT_LEVEL on switch (written verbatim, no
+	// validation); empty means unset — the key is wiped (ccx-owned).
+	Effort string `json:"effort,omitempty"`
 }
 
 // Profile is a single provider. The connection fields sit at the top level
