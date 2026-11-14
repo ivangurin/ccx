@@ -1,4 +1,4 @@
-package readguard
+package readguard_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ivangurin/ccx/internal/pkg/readguard"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +64,7 @@ func trickleServer() *httptest.Server {
 func guardedGet(t *testing.T, url string, firstByte, idle time.Duration) *http.Response {
 	t.Helper()
 
-	gctx, g := Arm(context.Background(), firstByte, idle)
+	gctx, g := readguard.Arm(context.Background(), firstByte, idle)
 	t.Cleanup(g.Stop)
 	req, err := http.NewRequestWithContext(gctx, http.MethodGet, url, nil) //nolint:noctx // guarded ctx
 	require.NoError(t, err)
@@ -78,7 +79,7 @@ func TestFirstByteTimeoutBeforeHeaders(t *testing.T) {
 	srv := hangServer()
 	defer srv.Close()
 
-	gctx, g := Arm(context.Background(), 50*time.Millisecond, 50*time.Millisecond)
+	gctx, g := readguard.Arm(context.Background(), 50*time.Millisecond, 50*time.Millisecond)
 	defer g.Stop()
 	req, err := http.NewRequestWithContext(gctx, http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
@@ -153,7 +154,7 @@ func TestStopReleasesWatchdog(t *testing.T) {
 	// must cancel the armed context, must not poison the parent, and a second
 	// Arm on the same parent must work.
 	parent := context.Background()
-	gctx, g := Arm(parent, time.Hour, time.Hour)
+	gctx, g := readguard.Arm(parent, time.Hour, time.Hour)
 	g.Stop()
 
 	select {
@@ -164,7 +165,7 @@ func TestStopReleasesWatchdog(t *testing.T) {
 	}
 	require.NoError(t, parent.Err())
 
-	gctx2, g2 := Arm(parent, time.Hour, time.Hour)
+	gctx2, g2 := readguard.Arm(parent, time.Hour, time.Hour)
 	require.NoError(t, gctx2.Err())
 	g2.Stop()
 }
@@ -173,7 +174,7 @@ func TestStopReleasesWatchdog(t *testing.T) {
 // several goroutines at once.
 func TestStopConcurrentSafe(_ *testing.T) {
 	for range 100 {
-		_, g := Arm(context.Background(), time.Hour, time.Hour)
+		_, g := readguard.Arm(context.Background(), time.Hour, time.Hour)
 		var wg sync.WaitGroup
 		wg.Go(func() { g.Stop() })
 		wg.Go(func() { g.Stop() })

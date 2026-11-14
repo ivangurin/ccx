@@ -1,4 +1,4 @@
-package chatstream
+package chatstream_test
 
 import (
 	"io"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/translators/chatstream"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +33,7 @@ func TestServeChatStream_OnFinish(t *testing.T) {
 	var gotTTFT time.Duration
 	called := false
 
-	ServeChatStream(rec, resp, "gpt", func(ttft time.Duration, usage models.Usage) {
+	chatstream.ServeChatStream(rec, resp, "gpt", func(ttft time.Duration, usage models.Usage) {
 		called = true
 		gotTTFT, gotUsage = ttft, usage
 	}, nil)
@@ -58,7 +59,7 @@ func TestServeChatStream_OnFinishNotCalledOnBreak(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	rec := httptest.NewRecorder()
-	ServeChatStream(rec, resp, "gpt", func(time.Duration, models.Usage) {
+	chatstream.ServeChatStream(rec, resp, "gpt", func(time.Duration, models.Usage) {
 		t.Fatal("onFinish must not fire on a broken stream")
 	}, nil)
 }
@@ -77,7 +78,7 @@ func TestServeChatStream_NilOnFinish(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	rec := httptest.NewRecorder()
-	require.NotPanics(t, func() { ServeChatStream(rec, resp, "gpt", nil, nil) })
+	require.NotPanics(t, func() { chatstream.ServeChatStream(rec, resp, "gpt", nil, nil) })
 }
 
 // A broken stream reports to onBreak — the usage entry must not record a
@@ -96,7 +97,7 @@ func TestServeChatStream_OnBreak(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	broke := false
-	ServeChatStream(rec, resp, "gpt", nil, func(_ string) { broke = true })
+	chatstream.ServeChatStream(rec, resp, "gpt", nil, func(_ string) { broke = true })
 
 	require.True(t, broke)
 }

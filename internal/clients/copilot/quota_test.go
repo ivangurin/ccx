@@ -1,4 +1,4 @@
-package copilot
+package copilot_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/clients/copilot"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +45,7 @@ func TestQuota(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	storeWithUserToken(t, store)
 
-	c := NewWithBase(GitHubBase, GitHubBase, srv.URL+"/copkit/token", store)
+	c := copilot.NewWithBase(copilot.GitHubBase, copilot.GitHubBase, srv.URL+"/copkit/token", store)
 	q, err := c.Quota(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "INDIVIDUAL", q.CopilotPlan)
@@ -79,7 +80,7 @@ func TestQuota_Snapshots(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	storeWithUserToken(t, store)
 
-	c := NewWithBase(GitHubBase, GitHubBase, srv.URL+"/copkit/token", store)
+	c := copilot.NewWithBase(copilot.GitHubBase, copilot.GitHubBase, srv.URL+"/copkit/token", store)
 	q, err := c.Quota(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "individual", q.CopilotPlan)
@@ -105,7 +106,7 @@ func TestQuota_SnapshotsUnlimited(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	storeWithUserToken(t, store)
 
-	c := NewWithBase(GitHubBase, GitHubBase, srv.URL+"/copkit/token", store)
+	c := copilot.NewWithBase(copilot.GitHubBase, copilot.GitHubBase, srv.URL+"/copkit/token", store)
 	q, err := c.Quota(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, q.PremiumInteractions)
@@ -121,7 +122,7 @@ func TestQuota_NoPremiumField(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	storeWithUserToken(t, store)
 
-	c := NewWithBase(GitHubBase, GitHubBase, srv.URL+"/copkit/token", store)
+	c := copilot.NewWithBase(copilot.GitHubBase, copilot.GitHubBase, srv.URL+"/copkit/token", store)
 	q, err := c.Quota(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "BUSINESS", q.CopilotPlan)
@@ -129,7 +130,7 @@ func TestQuota_NoPremiumField(t *testing.T) {
 }
 
 func TestQuota_NotAuthenticated(t *testing.T) {
-	c := New(filepath.Join(t.TempDir(), "copilot-auth.json"))
+	c := copilot.New(filepath.Join(t.TempDir(), "copilot-auth.json"))
 	_, err := c.Quota(context.Background())
 	require.ErrorContains(t, err, "run ccx auth <provider>")
 }
@@ -147,7 +148,7 @@ func TestQuota_UnauthorizedSurfacesHint(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "copilot-auth.json")
 	storeWithUserToken(t, store)
 
-	c := NewWithBase(GitHubBase, GitHubBase, srv2.URL+"/copkit/token", store)
+	c := copilot.NewWithBase(copilot.GitHubBase, copilot.GitHubBase, srv2.URL+"/copkit/token", store)
 	_, err := c.Quota(context.Background())
 	require.ErrorContains(t, err, "run ccx auth <provider>")
 }
@@ -157,6 +158,6 @@ func TestQuota_UnauthorizedSurfacesHint(t *testing.T) {
 func TestQuota_AuthErrorsPointAtProviderAuth(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := New(filepath.Join(dir, "missing.json")).Quota(context.Background())
+	_, err := copilot.New(filepath.Join(dir, "missing.json")).Quota(context.Background())
 	require.ErrorContains(t, err, "run ccx auth <provider>")
 }
