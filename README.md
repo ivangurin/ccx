@@ -249,11 +249,12 @@ requests reach your provider in its own language:
 
 ```mermaid
 flowchart LR
-    CC["Claude Code"] -->|"Anthropic Messages API"| D["ccx daemon<br>127.0.0.1:4567"]
+    CC["Claude Code"] -->|"direct, no daemon"| A["Anthropic-compatible API"]
+    CC -.->|"Anthropic Messages API"| D["ccx daemon<br>127.0.0.1:4567"]
     D -->|"chat/completions"| O["OpenAI-compatible<br>gateway"]
-    D -->|"Copilot API"| C["GitHub Copilot"]
     D -->|"Responses API"| X["ChatGPT · codex"]
-    CC -.->|"direct, no daemon"| A["Anthropic-compatible API"]
+    D -->|"Copilot API"| C["GitHub Copilot"]
+    
 ```
 
 Switching providers means `ANTHROPIC_BASE_URL` in `settings.json` changes:
