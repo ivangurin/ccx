@@ -1,4 +1,4 @@
-package tui
+package tui_test
 
 import (
 	"bytes"
@@ -6,64 +6,64 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/ivangurin/ccx/internal/pkg/tui"
 	"github.com/stretchr/testify/require"
 )
 
+// providersStage — the first menu level every session test starts from.
+var providersStage = tui.Stage{Header: "providers", Items: []tui.Item{{Label: "p1"}, {Label: "p2"}}}
+
 // nextTwoLevels — a two-level builder: two items, then two items, then done.
-func nextTwoLevels(chosen []int) (Stage, bool) {
+func nextTwoLevels(chosen []int) (tui.Stage, bool) {
 	switch len(chosen) {
 	case 0:
-		return Stage{Header: "providers", Items: []Item{{Label: "p1"}, {Label: "p2"}}}, true
+		return providersStage, true
 	case 1:
-		return Stage{Header: "models", Items: []Item{{Label: "m1"}, {Label: "m2"}}}, true
+		return tui.Stage{Header: "models", Items: []tui.Item{{Label: "m1"}, {Label: "m2"}}}, true
 	default:
-		return Stage{}, false
+		return tui.Stage{}, false
 	}
-}
-
-func newSession(out *bytes.Buffer) *session {
-	s := &session{out: out}
-	s.push(Stage{Header: "providers", Items: []Item{{Label: "p1"}, {Label: "p2"}}})
-
-	return s
 }
 
 // A Cyrillic keystroke arrives as several bytes in one Read; appending only
 // the first byte corrupted the query into invalid UTF-8 mojibake that never
 // matched anything. The whole chunk is the rune.
 func TestHandleKey_MultiByteRuneAppendedWhole(t *testing.T) {
-	s := newSession(&bytes.Buffer{})
+	s := tui.NewSessionForTest(&bytes.Buffer{})
+	tui.PushForTest(s, providersStage)
 
-	done, _, _ := s.handleKey([]byte("ф"), nil)
+	done, _, _ := tui.HandleKeyForTest(s, []byte("ф"), nil)
 
 	require.False(t, done)
-	require.Equal(t, "ф", s.top().query)
-	require.True(t, utf8.ValidString(s.top().query))
+	require.Equal(t, "ф", tui.TopQueryForTest(s))
+	require.True(t, utf8.ValidString(tui.TopQueryForTest(s)))
 }
 
 // Backspace must drop the whole last rune, not one byte — a byte-sized pop
 // leaves half a rune behind and the same mojibake match failure.
 func TestHandleKey_BackspaceRemovesWholeRune(t *testing.T) {
-	s := newSession(&bytes.Buffer{})
-	s.top().query = "пр"
+	s := tui.NewSessionForTest(&bytes.Buffer{})
+	tui.PushForTest(s, providersStage)
+	tui.SetTopQueryForTest(s, "пр")
 
-	done, _, _ := s.handleKey([]byte{127}, nil)
+	done, _, _ := tui.HandleKeyForTest(s, []byte{127}, nil)
 
 	require.False(t, done)
-	require.Equal(t, "п", s.top().query)
+	require.Equal(t, "п", tui.TopQueryForTest(s))
 }
 
 func TestSession_EnterDescendsInPlace(t *testing.T) {
 	var buf bytes.Buffer
-	s := newSession(&buf)
-	s.render()
+	s := tui.NewSessionForTest(&buf)
+	tui.PushForTest(s, providersStage)
+	tui.RenderForTest(s)
 	first := buf.Len()
 
-	done, path, err := s.handleKey([]byte("\r"), nextTwoLevels)
+	done, path, err := tui.HandleKeyForTest(s, []byte("\r"), nextTwoLevels)
 	require.NoError(t, err)
 	require.False(t, done)
 	require.Nil(t, path)
-	s.render()
+	tui.RenderForTest(s)
 
 	second := buf.String()[first:]
 	// the model frame replaces the provider frame: the cursor climbs the
@@ -72,54 +72,57 @@ func TestSession_EnterDescendsInPlace(t *testing.T) {
 		"model list must replace the provider list in place: %q", second)
 	require.Contains(t, second, "models")
 	require.Contains(t, second, "Esc back", "deeper level must hint back, not cancel")
-	require.Len(t, s.levels, 2)
+	require.Len(t, tui.LevelsForTest(s), 2)
 }
 
 func TestSession_EscReturnsToProviders(t *testing.T) {
 	var buf bytes.Buffer
-	s := newSession(&buf)
-	s.render()
-	_, _, err := s.handleKey([]byte("\r"), nextTwoLevels) // descend
+	s := tui.NewSessionForTest(&buf)
+	tui.PushForTest(s, providersStage)
+	tui.RenderForTest(s)
+	_, _, err := tui.HandleKeyForTest(s, []byte("\r"), nextTwoLevels) // descend
 	require.NoError(t, err)
-	s.render()
+	tui.RenderForTest(s)
 
-	done, path, err := s.handleKey([]byte{27}, nextTwoLevels)
+	done, path, err := tui.HandleKeyForTest(s, []byte{27}, nextTwoLevels)
 	require.NoError(t, err)
 	require.False(t, done)
 	require.Nil(t, path)
-	require.Len(t, s.levels, 1)
-	require.Equal(t, "providers", s.top().header)
+	require.Len(t, tui.LevelsForTest(s), 1)
+	require.Equal(t, "providers", tui.TopHeaderForTest(s))
 
-	s.render()
+	tui.RenderForTest(s)
 	out := buf.String()
 	require.Contains(t, out, "Esc cancel", "the first level must hint cancel again")
 	// the provider cursor survived the round trip
-	require.Equal(t, 0, s.top().cursor)
+	require.Equal(t, 0, tui.TopCursorForTest(s))
 }
 
 func TestSession_EscOnFirstLevelCancels(t *testing.T) {
 	var buf bytes.Buffer
-	s := newSession(&buf)
-	s.render()
+	s := tui.NewSessionForTest(&buf)
+	tui.PushForTest(s, providersStage)
+	tui.RenderForTest(s)
 
-	done, path, err := s.handleKey([]byte{27}, nextTwoLevels)
+	done, path, err := tui.HandleKeyForTest(s, []byte{27}, nextTwoLevels)
 	require.True(t, done)
-	require.ErrorIs(t, err, errCancelled)
+	require.ErrorIs(t, err, tui.ErrCancelledForTest)
 	require.Nil(t, path)
 	require.Contains(t, buf.String(), "\r\n")
 }
 
 func TestSession_EnterOnLastLevelReturnsPath(t *testing.T) {
 	var buf bytes.Buffer
-	s := newSession(&buf)
-	s.top().cursor = 1 // p2
+	s := tui.NewSessionForTest(&buf)
+	tui.PushForTest(s, providersStage)
+	tui.SetTopCursorForTest(s, 1) // p2
 
-	done, _, err := s.handleKey([]byte("\r"), nextTwoLevels)
+	done, _, err := tui.HandleKeyForTest(s, []byte("\r"), nextTwoLevels)
 	require.NoError(t, err)
 	require.False(t, done)
-	s.top().cursor = 1 // m2
+	tui.SetTopCursorForTest(s, 1) // m2
 
-	done, path, err := s.handleKey([]byte("\r"), nextTwoLevels)
+	done, path, err := tui.HandleKeyForTest(s, []byte("\r"), nextTwoLevels)
 	require.True(t, done)
 	require.NoError(t, err)
 	require.Equal(t, []int{1, 1}, path)
@@ -127,17 +130,18 @@ func TestSession_EnterOnLastLevelReturnsPath(t *testing.T) {
 
 func TestSession_FilterSurvivesReturn(t *testing.T) {
 	var buf bytes.Buffer
-	s := newSession(&buf)
+	s := tui.NewSessionForTest(&buf)
+	tui.PushForTest(s, providersStage)
 	// type "p2" on the provider level, descend, come back
-	_, _, err := s.handleKey([]byte("p"), nextTwoLevels)
+	_, _, err := tui.HandleKeyForTest(s, []byte("p"), nextTwoLevels)
 	require.NoError(t, err)
-	_, _, err = s.handleKey([]byte("2"), nextTwoLevels)
+	_, _, err = tui.HandleKeyForTest(s, []byte("2"), nextTwoLevels)
 	require.NoError(t, err)
-	require.Equal(t, "p2", s.top().query)
-	_, _, err = s.handleKey([]byte("\r"), nextTwoLevels)
+	require.Equal(t, "p2", tui.TopQueryForTest(s))
+	_, _, err = tui.HandleKeyForTest(s, []byte("\r"), nextTwoLevels)
 	require.NoError(t, err)
-	_, _, err = s.handleKey([]byte{27}, nextTwoLevels)
+	_, _, err = tui.HandleKeyForTest(s, []byte{27}, nextTwoLevels)
 	require.NoError(t, err)
 
-	require.Equal(t, "p2", s.top().query, "the filter must survive the round trip")
+	require.Equal(t, "p2", tui.TopQueryForTest(s), "the filter must survive the round trip")
 }
