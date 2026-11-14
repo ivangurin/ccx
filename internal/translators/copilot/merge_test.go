@@ -1,8 +1,9 @@
-package copilot
+package copilot_test
 
 import (
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/translators/copilot"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,7 +59,7 @@ func TestMergeToolResults_AbsorbsTextIntoLastResult(t *testing.T) {
 		{"type":"tool_result","tool_use_id":"t2","content":"second"},
 		{"type":"text","text":"and this"}
 	]}]}`
-	out := mergeToolResults(body(t, raw))
+	out := copilot.MergeToolResultsForTest(body(t, raw))
 	msg := msgAt(t, messagesOf(t, out), 0)
 	content := blocksOf(t, msg["content"])
 	require.Len(t, content, 2)
@@ -80,7 +81,7 @@ func TestMergeToolResults_MergesConsecutiveToolOnlyMessages(t *testing.T) {
 		{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"one"}]},
 		{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"two"}]}
 	]}`
-	out := mergeToolResults(body(t, raw))
+	out := copilot.MergeToolResultsForTest(body(t, raw))
 	msgs := messagesOf(t, out)
 	require.Len(t, msgs, 2)
 	merged := msgAt(t, msgs, 1)
@@ -94,7 +95,7 @@ func TestMergeToolResults_LeavesPlainText(t *testing.T) {
 		{"role":"user","content":"hello"},
 		{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"tool_use","id":"t1","name":"a","input":{}}]}
 	]}`
-	out := mergeToolResults(body(t, raw))
+	out := copilot.MergeToolResultsForTest(body(t, raw))
 	require.Equal(t, body(t, raw), out)
 }
 
@@ -105,7 +106,7 @@ func TestMergeToolResults_BlockContentAppends(t *testing.T) {
 		{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"orig"}]},
 		{"type":"text","text":"extra"}
 	]}]}`
-	out := mergeToolResults(body(t, raw))
+	out := copilot.MergeToolResultsForTest(body(t, raw))
 	content := blocksOf(t, msgAt(t, messagesOf(t, out), 0)["content"])
 	require.Len(t, content, 1)
 	blocks := blocksOf(t, blockAt(t, content, 0)["content"])

@@ -1,11 +1,20 @@
-package copilot
+package copilot_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"github.com/ivangurin/ccx/internal/translators/copilot"
 	"github.com/ivangurin/ccx/internal/translators/prefill"
 	"github.com/stretchr/testify/require"
+)
+
+// Expected initiator values: copilot keeps initiatorUser/initiatorAgent
+// unexported, and goconst rejects the bare literals repeated across the
+// cases table — the same strings pinned as test-local constants.
+const (
+	wantUser  = "user"
+	wantAgent = "agent"
 )
 
 func body(t *testing.T, raw string) map[string]any {
@@ -25,16 +34,16 @@ func TestClassifyQuota(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{"tool continuation is agent", `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"ok"},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"out"}]}]}`, initiatorAgent},
-		{"mixed tool_result+text is agent", `{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"out"},{"type":"text","text":"and this"}]}]}`, initiatorAgent},
-		{"plain text user is user", `{"messages":[{"role":"user","content":"hello there"}]}`, initiatorUser},
-		{"string content user is user", `{"messages":[{"role":"user","content":"hello"}]}`, initiatorUser},
-		{"no messages is user", `{}`, initiatorUser},
-		{"last message assistant is user", `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"text","text":"thinking"}]}]}`, initiatorUser},
+		{"tool continuation is agent", `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"ok"},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"out"}]}]}`, wantAgent},
+		{"mixed tool_result+text is agent", `{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"out"},{"type":"text","text":"and this"}]}]}`, wantAgent},
+		{"plain text user is user", `{"messages":[{"role":"user","content":"hello there"}]}`, wantUser},
+		{"string content user is user", `{"messages":[{"role":"user","content":"hello"}]}`, wantUser},
+		{"no messages is user", `{}`, wantUser},
+		{"last message assistant is user", `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"text","text":"thinking"}]}]}`, wantUser},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, classifyQuota(body(t, tc.raw)).Initiator)
+			require.Equal(t, tc.want, copilot.ClassifyQuotaForTest(body(t, tc.raw)).Initiator)
 		})
 	}
 }
@@ -42,8 +51,8 @@ func TestClassifyQuota(t *testing.T) {
 // A subagent turn is agent-initiated even when its first message is user text.
 func TestClassifyQuota_SubagentOverridesToAgent(t *testing.T) {
 	raw := `{"messages":[{"role":"user","content":"__SUBAGENT_MARKER__ do the side quest"}],"metadata":{"user_id":"user_x_account_y_session_z"}}`
-	cls := classifyQuota(body(t, raw))
-	require.Equal(t, initiatorAgent, cls.Initiator)
+	cls := copilot.ClassifyQuotaForTest(body(t, raw))
+	require.Equal(t, wantAgent, cls.Initiator)
 	require.True(t, cls.IsSubagent)
 }
 
@@ -51,8 +60,8 @@ func TestClassifyQuota_SubagentOverridesToAgent(t *testing.T) {
 // context is not a new user interaction).
 func TestClassifyQuota_CompactIsAgent(t *testing.T) {
 	raw := `{"messages":[{"role":"user","content":"CRITICAL: Respond with TEXT ONLY. Do NOT call any tools."}]}`
-	cls := classifyQuota(body(t, raw))
-	require.Equal(t, initiatorAgent, cls.Initiator)
+	cls := copilot.ClassifyQuotaForTest(body(t, raw))
+	require.Equal(t, wantAgent, cls.Initiator)
 	require.True(t, cls.IsCompact)
 }
 
@@ -69,5 +78,5 @@ func TestClassifyQuota_PrefillContinuationIsAgent(t *testing.T) {
 	msg, ok := msgs[0].(map[string]any)
 	require.True(t, ok)
 	msg["content"] = payload
-	require.Equal(t, initiatorAgent, classifyQuota(m).Initiator)
+	require.Equal(t, wantAgent, copilot.ClassifyQuotaForTest(m).Initiator)
 }
