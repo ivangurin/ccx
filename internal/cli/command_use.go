@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ivangurin/ccx/internal/config"
-	"github.com/ivangurin/ccx/internal/services/switcher"
+	"github.com/ivangurin/ccx/internal/provider"
 )
 
 // runUse — ccx use <provider> [model] (alias: ccx <provider> [model]).
@@ -16,7 +15,7 @@ func runUse(args []string, stdout io.Writer) int {
 
 		return 1
 	}
-	cfg, err := config.NewFromEnv()
+	p, err := provider.NewEnv()
 	if err != nil {
 		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
@@ -27,8 +26,7 @@ func runUse(args []string, stdout io.Writer) int {
 		model = args[2]
 	}
 
-	sw := switcher.New(cfg, switcher.NewHTTPDaemon(cfg))
-	out, err := sw.Apply(context.Background(), args[1], model)
+	out, err := p.GetSwitcher().Apply(context.Background(), args[1], model)
 	if err != nil {
 		fmt.Fprintf(stdout, "%v\n", err)
 
