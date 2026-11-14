@@ -70,13 +70,13 @@ func backupSettings(cfg *config.Config, settings *models.Settings) error {
 // respawn a provider the restored settings.json no longer names and ccx
 // status would report it active, making "you stay on the previous provider"
 // a lie.
-func (s *Switcher) RestoreOriginal(ctx context.Context) (string, error) {
+func (s *Service) RestoreOriginal(ctx context.Context) (string, error) {
 	return s.underSwitchLock(func() (string, error) {
 		return s.restoreOriginalLocked(ctx)
 	})
 }
 
-func (s *Switcher) restoreOriginalLocked(ctx context.Context) (string, error) {
+func (s *Service) restoreOriginalLocked(ctx context.Context) (string, error) {
 	data, err := jsonfile.ReadRaw(s.cfg.SettingsBackupPath())
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("ccx: backup not found at %s — nothing to restore (no switch has frozen the original yet)", s.cfg.SettingsBackupPath())

@@ -12,7 +12,7 @@ import (
 // A previous direct-anthropic provider needs no daemon (settings.json still
 // points straight at its upstream); no recorded state (the very first
 // switch) means nothing was serving either.
-func (s *Switcher) rollbackDaemon(ctx context.Context, providers *models.Providers, port int, debug bool) error {
+func (s *Service) rollbackDaemon(ctx context.Context, providers *models.Providers, port int, debug bool) error {
 	var state models.State
 	if err := jsonfile.ReadJSON(s.cfg.StatePath(), &state); err != nil {
 		// an unreadable/absent state file means no previous provider is on

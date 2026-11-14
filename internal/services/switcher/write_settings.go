@@ -14,7 +14,7 @@ import (
 // the file's own text, so everything outside env/the pin — order, indent,
 // user blocks — survives byte-for-byte; fresh keys land at the end of the
 // env block.
-func (s *Switcher) writeSettings(env map[string]string, model string) error {
+func (s *Service) writeSettings(env map[string]string, model string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
 		return fmt.Errorf("ccx: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())

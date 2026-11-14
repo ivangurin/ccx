@@ -67,3 +67,13 @@ func TestGetRoute_SingleSlot(t *testing.T) {
 	_, err = prv.GetRoute(context.Background(), "acme")
 	require.ErrorContains(t, err, "one provider per daemon process")
 }
+
+// GetTester is a lazy singleton built over the provider's config.
+func TestGetTester_LazySingleton(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	p := provider.New(sp.Config, nil)
+
+	tr := p.GetTester()
+	require.NotNil(t, tr)
+	require.Same(t, tr, p.GetTester())
+}

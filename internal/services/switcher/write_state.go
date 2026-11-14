@@ -9,7 +9,7 @@ import (
 )
 
 // writeState records the switch in state.json (the statusline's source).
-func (s *Switcher) writeState(profileKey, model string) error {
+func (s *Service) writeState(profileKey, model string) error {
 	state := models.State{
 		Provider: profileKey,
 		Model:    model,

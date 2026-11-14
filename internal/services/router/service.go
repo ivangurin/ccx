@@ -34,10 +34,10 @@ type Service struct {
 	providersPath string // Models() rereads providers.json on demand
 }
 
-// Build loads providers.json, resolves the profile by key, builds the
+// NewService loads providers.json, resolves the profile by key, builds the
 // translator and runs its readiness check. Any failure must abort the daemon
 // startup BEFORE listening — /health answering then means "route ready".
-func Build(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKey string) (*Service, error) {
+func NewService(ctx context.Context, cfg *config.Config, log *slog.Logger, providerKey string) (*Service, error) {
 	providers, err := config.LoadProviders(cfg.ProvidersPath())
 	if err != nil {
 		return nil, fmt.Errorf("router: providers.json: %w", err)

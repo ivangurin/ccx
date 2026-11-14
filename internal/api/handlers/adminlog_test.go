@@ -40,7 +40,7 @@ func TestAdmin_AccessLogged(t *testing.T) {
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
+	svc, err := router.NewService(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 
 	var buf bytes.Buffer

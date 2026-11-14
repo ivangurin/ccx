@@ -120,3 +120,12 @@ func TestGetRoute_PerKeyCache(t *testing.T) {
 		`suite provider: route "nope": router: unknown provider: nope`,
 		func() { sp.GetRoute("nope") })
 }
+
+// GetTester is a lazy singleton over the sandbox config.
+func TestGetTester_LazySingleton(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+
+	tr := sp.GetTester()
+	require.NotNil(t, tr)
+	require.Same(t, tr, sp.GetTester())
+}

@@ -33,13 +33,13 @@ type Daemon interface {
 	Stop(ctx context.Context) error
 }
 
-// Switcher — applies a profile to settings.json under a lock.
-type Switcher struct {
+// Service — applies a profile to settings.json under a lock.
+type Service struct {
 	cfg    *config.Config
 	daemon Daemon
 }
 
-// New creates a Switcher.
-func New(cfg *config.Config, daemon Daemon) *Switcher {
-	return &Switcher{cfg: cfg, daemon: daemon}
+// NewService creates a Switcher.
+func NewService(cfg *config.Config, daemon Daemon) *Service {
+	return &Service{cfg: cfg, daemon: daemon}
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 )
 
-func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string) (string, error) {
+func (s *Service) applyLocked(ctx context.Context, profileKey, modelArg string) (string, error) {
 	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
 	if err != nil {
 		// the init hint is only for a missing file: suggesting ccx init on a
@@ -83,7 +83,7 @@ func (s *Switcher) applyLocked(ctx context.Context, profileKey, modelArg string)
 // provider and its credential) — either way the previous provider must be
 // serving again. The restore is best-effort: its failure lands in the
 // error text together with the recovery command, never swallowed.
-func (s *Switcher) switchAborted(
+func (s *Service) switchAborted(
 	ctx context.Context,
 	providers *models.Providers,
 	port int, debug bool,

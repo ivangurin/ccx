@@ -23,7 +23,7 @@ func TestBuild_EnvRefMissing_Fails(t *testing.T) {
 	p.Providers.Get("zai").AuthToken = "$CCX_SERVE_MISSING"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	_, err = router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
+	_, err = router.NewService(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.ErrorContains(t, err, "CCX_SERVE_MISSING")
 }
 

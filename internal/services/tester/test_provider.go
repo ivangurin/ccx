@@ -48,7 +48,7 @@ func testProvider(
 		return res
 	}
 
-	svc, err := router.Build(ctx, cfg, slog.New(slog.DiscardHandler), key)
+	svc, err := router.NewService(ctx, cfg, slog.New(slog.DiscardHandler), key)
 	if err != nil {
 		res.Status = StatusFail
 		res.Err = err

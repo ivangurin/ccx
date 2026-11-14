@@ -84,7 +84,7 @@ func itoa(v int) string {
 	return string(b)
 }
 
-func newTestSwitcher(t *testing.T) (*switcher.Switcher, *daemonRec, *suite_provider.Provider) {
+func newTestSwitcher(t *testing.T) (*switcher.Service, *daemonRec, *suite_provider.Provider) {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 

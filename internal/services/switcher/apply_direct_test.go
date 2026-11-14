@@ -18,7 +18,7 @@ import (
 
 // newDirectSwitcher — a switcher with a single anthropic profile "p";
 // mutate tweaks the flat connection fields (base_url, credentials, headers).
-func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.Switcher, *daemonRec, *suite_provider.Provider) {
+func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.Service, *daemonRec, *suite_provider.Provider) {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 

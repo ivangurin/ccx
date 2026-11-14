@@ -74,7 +74,7 @@ func TestBuild_ActivatesRoute(t *testing.T) {
 func TestBuild_UnknownProviderFails(t *testing.T) {
 	sp := newFixture(t)
 
-	_, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "nope")
+	_, err := router.NewService(context.Background(), sp.Config, sp.GetLogger(), "nope")
 	require.ErrorContains(t, err, "unknown provider")
 }
 
@@ -107,7 +107,7 @@ func TestBuild_CopilotWithoutAuth_NotReady(t *testing.T) {
 	p.Providers.Set("copilot-x", &models.Profile{Name: "copilot-x", Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	_, err = router.Build(context.Background(), sp.Config, sp.GetLogger(), "copilot-x")
+	_, err = router.NewService(context.Background(), sp.Config, sp.GetLogger(), "copilot-x")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not ready")
 }
@@ -200,7 +200,7 @@ func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
 			require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 			require.NotPanics(t, func() {
-				_, err := router.Build(t.Context(), sp.Config, sp.GetLogger(), tc.key)
+				_, err := router.NewService(t.Context(), sp.Config, sp.GetLogger(), tc.key)
 				require.Error(t, err, "a route without base_url must not be built")
 				require.Contains(t, err.Error(), "ccx edit")
 			})

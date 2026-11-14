@@ -10,7 +10,7 @@ import (
 // applyDirect — a direct anthropic profile: upstream URL + credential into
 // settings.json, then a best-effort stop of the daemon (it is not needed
 // anymore; a failure to stop must not fail the already-committed switch).
-func (s *Switcher) applyDirect(
+func (s *Service) applyDirect(
 	ctx context.Context,
 	profile *models.Profile,
 	profileKey string,

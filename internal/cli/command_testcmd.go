@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/provider"
 	"github.com/ivangurin/ccx/internal/services/tester"
 )
 
@@ -20,7 +20,7 @@ func runTest(argv []string, stdout io.Writer) int {
 	if code != 0 {
 		return code
 	}
-	cfg, err := config.NewFromEnv()
+	p, err := provider.NewEnv()
 	if err != nil {
 		fmt.Fprintf(stdout, "ccx: %v\n", err)
 
@@ -40,7 +40,7 @@ func runTest(argv []string, stdout io.Writer) int {
 	render := tester.NewRenderer(stdout, tty)
 	opts.OnUpdate = render.Update
 
-	report := tester.Run(context.Background(), cfg, *opts)
+	report := p.GetTester().Run(context.Background(), *opts)
 	render.Finish(report)
 
 	if report.ProvidersOK < report.TotalProviders || report.ModelsOK < report.TotalModels {

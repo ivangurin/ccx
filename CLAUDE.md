@@ -143,15 +143,21 @@ internal/
                                          SIGTERM/SIGKILL escalation → spawn --provider/--port →
                                          health wait); anthropic → direct env (upstream base_url +
                                          credential, daemon stop)
+    tester/                             the ccx test engine: Service over one config (NewService,
+                                         Run(ctx, Options)), per-provider probe — structural check →
+                                         throwaway daemon on a free port (router.NewService + the full
+                                         HTTP layer) → one short probe per model; three-level report
+                                         provider → models → per-model errors, settings.json untouched
   provider/                             the service provider (idp-kube shape): lazy singletons over
                                          one config — GetDaemon (HTTPDaemon), GetSwitcher (over the
                                          daemon), GetRoute (the daemon's single route, router.Build
                                          + Ready inside, single slot pinned by the --provider key —
                                          a second key errors: one provider per daemon process),
+                                         GetTester (ccx test — per-call run params stay in Options),
                                          GetConfig/GetLogger; NewEnv() for the CLI, New(cfg, log) for
-                                         the daemon runtime; consumers are ccx use/restore/stop AND
-                                         app.Run (2026-11-14 — the daemon launch primitives live in
-                                         pkg/spawn so app→provider→switcher→spawn stays acyclic)
+                                         the daemon runtime; consumers are ccx use/restore/test/stop
+                                         AND app.Run (2026-11-14 — the daemon launch primitives live
+                                         in pkg/spawn so app→provider→switcher→spawn stays acyclic)
   translators/
     translator.go                       Translator + ResponseSink interfaces
     prefill/                            prefill fix (port of copilot-bridge.py)
@@ -605,14 +611,18 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
 - **internal/provider — the service provider** (2026-11-14, the idp-kube
   `service_provider` shape): lazy singletons over one config, getters
   grouped per concern (`clients.go`: `GetDaemon`, `services.go`:
-  `GetSwitcher`, `GetRoute`), `GetX` naming mirrors the reference.
-  Consumers: `ccx use`/`restore`/`stop` (`provider.NewEnv()`; config-only
-  commands stay on `config.NewFromEnv`) and `app.Run` (2026-11-14: the App
+  `GetSwitcher`, `GetRoute`, `GetTester`), `GetX` naming mirrors the
+  reference. Services are constructor-built (`switcher.NewService`,
+  `router.NewService`, `tester.NewService` — the idp-kube constructor idiom;
+  base files are `service.go`). Consumers: `ccx
+  use`/`restore`/`test`/`stop` (`provider.NewEnv()`; config-only commands
+  stay on `config.NewFromEnv`) and `app.Run` (2026-11-14: the App
   holds no cfg/log of its own — `GetConfig`/`GetLogger`/`GetRoute` come from
   the provider). `GetRoute(ctx, key)` is the one keyed getter, deliberately
   single-slot: the daemon serves exactly one provider per process
   (switching = daemon restart), a second key errors instead of silently
-  replacing; Ready-before-listening lives inside it (`router.Build`). The
+  replacing; Ready-before-listening lives inside it (`router.NewService`).
+  The
   cycle that used to forbid app→provider is gone: the daemon launch
   primitives moved out of `app` into the leaf `internal/pkg/spawn`
   (`SpawnDetached`/`WaitForHealth`/`HealthCheck`; the switcher's spawn seam

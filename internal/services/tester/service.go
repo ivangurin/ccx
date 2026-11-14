@@ -75,10 +75,21 @@ type Live struct {
 	Total     int
 }
 
+// Service — the test engine over one config (the sandbox in tests, the env
+// in production): Run probes providers through a temporary daemon.
+type Service struct {
+	cfg *config.Config
+}
+
+// NewService builds the tester.
+func NewService(cfg *config.Config) *Service {
+	return &Service{cfg: cfg}
+}
+
 // Run validates providers.json and probes every (or the selected) provider
 // and its models through a temporary daemon. The providers file is loaded
 // once here; every failure mode lands in the report, never panics Run.
-func Run(ctx context.Context, cfg *config.Config, opts Options) *Report {
+func (s *Service) Run(ctx context.Context, opts Options) *Report {
 	report := &Report{}
 	live := &Live{}
 	notify := func() {
@@ -87,7 +98,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) *Report {
 		}
 	}
 
-	providers, err := config.LoadProviders(cfg.ProvidersPath())
+	providers, err := config.LoadProviders(s.cfg.ProvidersPath())
 	if err != nil {
 		report.Providers = []ProviderResult{{
 			Key:    "providers.json",
@@ -113,7 +124,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) *Report {
 		}
 		live.Providers = append(live.Providers, &res)
 		notify()
-		finish := testProvider(ctx, cfg, opts, key, profile, &res, notify)
+		finish := testProvider(ctx, s.cfg, opts, key, profile, &res, notify)
 		tally(report, finish)
 		live.Done++
 		notify()

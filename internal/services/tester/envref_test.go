@@ -6,7 +6,6 @@
 package tester_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +29,7 @@ func TestTest_EnvRefMissing_FailsProviderLevel(t *testing.T) {
 		return p
 	}()).done())
 
-	report := tester.Run(context.Background(), sp.Config, tester.Options{})
+	report := sp.GetTester().Run(sp.Context(), tester.Options{})
 
 	require.Len(t, report.Providers, 1)
 	require.Equal(t, tester.StatusFail, report.Providers[0].Status)
@@ -52,7 +51,7 @@ func TestTest_EnvRef_ExpandedProbeBearer(t *testing.T) {
 		return p
 	}()).done())
 
-	report := tester.Run(context.Background(), sp.Config, tester.Options{})
+	report := sp.GetTester().Run(sp.Context(), tester.Options{})
 
 	require.Len(t, report.Providers, 1)
 	require.NoError(t, report.Providers[0].Err)
