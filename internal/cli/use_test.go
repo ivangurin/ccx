@@ -23,6 +23,8 @@ import (
 
 const cmdUse = "use"
 
+const cmdStop = "stop"
+
 func TestCommandUse_UnknownProfileFails(t *testing.T) {
 	sp := suite_provider.NewProvider(t)
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), &models.Providers{}))
@@ -99,6 +101,14 @@ func readStateFile(t *testing.T, path string) models.State {
 	return st
 }
 
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path) //nolint:gosec // test sandbox
+	require.NoError(t, err)
+
+	return string(raw)
+}
+
 func TestCommandUse_NoProvidersHint(t *testing.T) {
 	suite_provider.NewProvider(t)
 	var out bytes.Buffer
@@ -132,7 +142,7 @@ func TestCommandStop_DaemonNotRunning(t *testing.T) {
 	}))
 	var out bytes.Buffer
 
-	code := cli.Execute([]string{"stop"}, &out)
+	code := cli.Execute([]string{cmdStop}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "not running")
@@ -192,7 +202,7 @@ func TestCommandStop_HungDaemonFailsNonZero(t *testing.T) {
 	t.Setenv("CCX_PORT", strconv.Itoa(listenerPort(t, srv.Listener)))
 	var out bytes.Buffer
 
-	code := cli.Execute([]string{"stop"}, &out)
+	code := cli.Execute([]string{cmdStop}, &out)
 
 	require.Equal(t, 1, code)
 	require.Contains(t, out.String(), "still responding")
@@ -223,7 +233,7 @@ func TestCommandStop_CleanShutdown(t *testing.T) {
 	t.Setenv("CCX_PORT", strconv.Itoa(listenerPort(t, srv.Listener)))
 	var out bytes.Buffer
 
-	code := cli.Execute([]string{"stop"}, &out)
+	code := cli.Execute([]string{cmdStop}, &out)
 
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "Daemon stopped")

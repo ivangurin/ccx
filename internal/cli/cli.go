@@ -120,6 +120,7 @@ func newRootCmd(stdout io.Writer) *cobra.Command {
 	test.DisableFlagParsing = true
 	edit := bodyCmd(stdout, "edit", "open providers.json in $EDITOR", runEdit)
 	stop := bodyCmd(stdout, "stop", "stop the daemon", runStop)
+	restore := bodyCmd(stdout, "restore", "restore the original settings.json from the one-time backup", runRestore)
 	auth := bodyCmd(stdout, "auth [provider]", "login flow (copilot/codex); no argument — auth state", runAuth)
 	version := bodyCmd(stdout, "version", "binary version", func(_ []string, out io.Writer) int {
 		fmt.Fprintf(out, "ccx %s\n", Version)
@@ -127,7 +128,7 @@ func newRootCmd(stdout io.Writer) *cobra.Command {
 		return 0
 	})
 
-	root.AddCommand(use, list, status, test, newInitCmd(stdout), edit, newServeCmd(), stop, auth, version)
+	root.AddCommand(use, list, status, test, newInitCmd(stdout), edit, newServeCmd(), stop, restore, auth, version)
 
 	return root
 }

@@ -50,10 +50,13 @@ func (c *Config) StatePath() string {
 	return filepath.Join(c.Home, "state.json")
 }
 
-// BackupDir is the settings.json backup directory, pinned to <Home>/backups
-// (there is no env override: CCX_HOME already moves the whole data root).
-func (c *Config) BackupDir() string {
-	return filepath.Join(c.Home, "backups")
+// SettingsBackupPath is the one-time original backup of settings.json: a
+// fixed name derived from the settings path itself, so the default lives in
+// Claude Code's own root (~/.claude/settings.json.bak) and CCX_SETTINGS
+// moves the backup together with the file. Created exactly once — at the
+// first switch, never overwritten afterward.
+func (c *Config) SettingsBackupPath() string {
+	return c.SettingsPath() + ".bak"
 }
 
 // LogDir is the daemon log directory, pinned to <Home>/logs (there is no

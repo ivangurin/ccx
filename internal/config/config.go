@@ -27,7 +27,9 @@ const (
 // Config is the ccx process environment (CLI and daemon read the same one).
 type Config struct {
 	// Home is the ccx data root (default ~/.ccx): providers.json,
-	// state.json, backups/, logs/, daemon.lock/pid, the copilot store.
+	// state.json, logs/, daemon.lock/pid, the copilot store. The one-time
+	// settings backup is NOT here: it is settings.json.bak next to the
+	// settings file itself (moves with CCX_SETTINGS).
 	// It is deliberately NOT the Claude Code root: of Claude's ~/.claude
 	// only settings.json is touched (edited in place, never moved).
 	Home string `env:"CCX_HOME"`
@@ -39,8 +41,8 @@ type Config struct {
 	DaemonStartTimeout time.Duration `env:"CCX_DAEMON_START_TIMEOUT"`
 
 	// targeted path overrides (CCX_PROVIDERS/... parity with the bash
-	// version). backups/ and logs/ have none: they are pinned to <Home>
-	// — CCX_HOME already moves the whole data root.
+	// version). logs/ has none: it is pinned to <Home> — CCX_HOME already
+	// moves the whole data root.
 	ProvidersFile string `env:"CCX_PROVIDERS"`
 	SettingsFile  string `env:"CCX_SETTINGS"`
 	StateFile     string `env:"CCX_STATE"`

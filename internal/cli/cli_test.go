@@ -27,7 +27,7 @@ func TestExecute_Help(t *testing.T) {
 	code := cli.Execute([]string{"help"}, &out)
 
 	require.Equal(t, 0, code)
-	for _, want := range []string{"use", "list", "status", "init", "serve", "stop"} {
+	for _, want := range []string{"use", "list", "status", "init", "serve", cmdStop, "restore"} {
 		require.Contains(t, out.String(), want)
 	}
 }
@@ -53,6 +53,20 @@ func TestExecute_UnknownCommand(t *testing.T) {
 	require.NotEqual(t, 0, code)
 	// a non-command is treated as a provider (bash parity): provider not found
 	require.Contains(t, out.String(), "unknown provider")
+}
+
+// restore without a backup (no switch ever froze the original) fails and
+// leaves settings.json untouched.
+func TestExecute_RestoreNoBackup(t *testing.T) {
+	sp := suite_provider.NewProvider(t)
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
+	var out bytes.Buffer
+
+	code := cli.Execute([]string{"restore"}, &out)
+
+	require.NotEqual(t, 0, code)
+	require.Contains(t, out.String(), "nothing to restore")
+	require.JSONEq(t, `{"env": {}}`, readFile(t, sp.Config.SettingsPath()))
 }
 
 func TestExecute_HelpFlag(t *testing.T) {

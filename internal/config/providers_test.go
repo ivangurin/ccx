@@ -82,23 +82,24 @@ func TestConfigPaths_DefaultsAndOverrides(t *testing.T) {
 
 	require.Equal(t, filepath.Join(home, "providers.json"), sp.Config.ProvidersPath())
 	require.Equal(t, filepath.Join(home, "settings.json"), sp.Config.SettingsPath())
+	// the one-time backup is a fixed name next to settings.json itself
+	require.Equal(t, filepath.Join(home, "settings.json.bak"), sp.Config.SettingsBackupPath())
 	require.Equal(t, filepath.Join(home, "state.json"), sp.Config.StatePath())
-	require.Equal(t, filepath.Join(home, "backups"), sp.Config.BackupDir())
 	require.Equal(t, filepath.Join(home, "logs"), sp.Config.LogDir())
 
 	t.Setenv("CCX_PROVIDERS", "/tmp/custom-providers.json")
 	t.Setenv("CCX_SETTINGS", "/tmp/custom-settings.json")
 	t.Setenv("CCX_STATE", "/tmp/custom-state.json")
-	// CCX_BACKUP_DIR/CCX_LOG_DIR are gone: the dirs are pinned to
-	// <CCX_HOME>/backups and <CCX_HOME>/logs — the env vars are ignored
-	t.Setenv("CCX_BACKUP_DIR", "/tmp/custom-backups")
+	// CCX_LOG_DIR is gone: logs is pinned to <CCX_HOME>/logs — the env var
+	// is ignored
 	t.Setenv("CCX_LOG_DIR", "/tmp/custom-logs")
 	cfg, err := config.NewFromEnv()
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/custom-providers.json", cfg.ProvidersPath())
 	require.Equal(t, "/tmp/custom-settings.json", cfg.SettingsPath())
+	// the backup follows the settings override (always next to the file)
+	require.Equal(t, "/tmp/custom-settings.json.bak", cfg.SettingsBackupPath())
 	require.Equal(t, "/tmp/custom-state.json", cfg.StatePath())
-	require.Equal(t, filepath.Join(cfg.Home, "backups"), cfg.BackupDir())
 	require.Equal(t, filepath.Join(cfg.Home, "logs"), cfg.LogDir())
 }
 

@@ -69,13 +69,22 @@ a local probe tap or reading formula.rb:1155.
 CLI (profile switching, editing `~/.claude/settings.json`) + daemon (routing
 the Anthropic API to the launched provider's translator; switching = daemon
 restart with new launch params). Data ownership: ccx owns its data root
-`~/.ccx` (`CCX_HOME`) — providers.json, state.json, backups/, logs/,
+`~/.ccx` (`CCX_HOME`) — providers.json, state.json, logs/,
 daemon.lock/pid, switch.lock (the switcher's flock; was the hidden
 bash-ccx `.ccx.lock`, renamed the same day as state.json), the
 per-provider credential stores auth/<key>.json; of
 Claude Code's `~/.claude` only
 `settings.json` is touched (edited in place, never moved; `CCX_SETTINGS`
-redirects it). The pre-rename one-time data move from `~/.claude` is gone
+redirects it) plus its one-time backup: the first switch freezes the
+original to a fixed `settings.json.bak` next to the file (0600,
+`O_EXCL` — later switches never overwrite it; `ccx restore` copies it
+back and stops the daemon; known limit for installs that lived through
+the old accumulating scheme ≤ v0.7.0: their first post-upgrade switch
+freezes an ALREADY ccx-managed file — the pristine pre-ccx original
+sits as the oldest file in ~/.ccx/backups and nothing imports it;
+restore resets `state.json` to an empty provider — rollback/status read
+it, and a stale record after a restore would make the "you stay on the
+previous provider" promise a lie). The pre-rename one-time data move from `~/.claude` is gone
 (2026-11-07): fresh installs start from `ccx init`; old-world data, if any,
 must be copied by hand. providers.json is unversioned, flat — the map sits
 under the `providers`
@@ -119,7 +128,8 @@ internal/
     router/                             build-once at startup: --provider key → profile →
                                          translator → Ready() before listening (no in-daemon
                                          switching: a switch is a daemon restart)
-    switcher/                           port of bash-ccx apply_profile: flock, backup 0600, atomic,
+    switcher/                           port of bash-ccx apply_profile: flock, one-time original backup
+                                         (settings.json.bak, 0600, create-once) + restore, atomic,
                                          managed keys, model pinning, daemon Restart (stop with
                                          SIGTERM/SIGKILL escalation → spawn --provider/--port →
                                          health wait); anthropic → direct env (upstream base_url +
@@ -231,8 +241,12 @@ internal/
   its path at `~/.ccx/state.json`; the JSON schema is unchanged). Renamed
   from `ccx-state.json` (2026-11-07) with no fallback read: the pre-rename
   file stays on disk unread, same clean break as the legacy data migration.
+  statusline.sh also renders `effort.level` (low/medium/high/xhigh/max) from
+  the statusline stdin JSON — the whole `effort` object is ABSENT on models
+  without effort support, so the segment prints only when present (2026-11-14,
+  docs + mock runs; jq fallback `// empty`, no dangling `|`).
 - Atomic writes: tmp file in the same directory + rename (one implementation:
-  jsonfile.WriteAtomicJSON/WriteAtomicRaw); backups and ccx-owned configs are
+  jsonfile.WriteAtomicJSON/WriteAtomicRaw); the backup and ccx-owned configs are
   0600, but an EXISTING target keeps its own perms (settings.json belongs to
   Claude Code — a switch must not silently tighten it).
 - **Daemon Stop is home-scoped (foreign-daemon refusal)**: the port is a
@@ -468,14 +482,14 @@ was being built, and a blind hand-copy would have clobbered the fresh file) —
 re-check live paths immediately before any write into them.
 
 Diagnostic shape of "copilot stopped answering" (verified live 2026-11-07,
-a full evening traced via usage log + daemon-*.log + settings backups +
-zsh history + CC transcripts): `ENOTFOUND` in the client error means the
+a full evening traced via usage log + daemon-*.log + zsh history + CC
+transcripts): `ENOTFOUND` in the client error means the
 direct provider's hostname DNS — never the daemon (127.0.0.1 resolves no
 name); a bare `Connection error.` right after a switch to a direct
 anthropic profile is the switcher's by-design silent daemon stop while the
 running session's env still says 127.0.0.1:4567 — a stale-daemon
 diagnosis must first check what settings.json pointed at WHEN the failing
-session started (backups/ carry the timestamped sequence). daemon-*.log
+session started. daemon-*.log
 (one file per launch) records every spawn but NO stop: `/admin/stop`
 exits silently (pidfile removed) and SIGTERM logs `signal — shutting
 down` — absence of that line means no signal escalation ever ran.

@@ -99,7 +99,8 @@ curl -fsSL https://raw.githubusercontent.com/ivangurin/ccx/main/uninstall.sh | s
 ```
 
 Stops the daemon (best-effort) and removes the binary only — `~/.ccx` with
-your providers, state, backups and logs stays untouched.
+your providers, state and logs stays untouched, and so does the one-time
+settings backup `~/.claude/settings.json.bak`.
 
 <details>
 <summary>Upgrading from the pre-rename release?</summary>
@@ -236,6 +237,7 @@ edited in place, never moved or reformatted.
 | `ccx edit` | open providers.json in `$EDITOR` |
 | `ccx serve [--daemon] [--debug] --provider <key> [--port N]` | run the daemon in the foreground (`--debug`: debug-level logging — the format stays env-driven — and request dumps into the unified daemon log as `kind=reqdump` lines) |
 | `ccx stop` | stop the daemon |
+| `ccx restore` | restore the original settings.json from the one-time backup (`~/.claude/settings.json.bak`, frozen at the first switch); stops the daemon |
 | `ccx auth [provider]` | login flow for the provider's protocol (copilot device flow / codex OAuth); no argument — auth state of every provider |
 | `ccx version` / `ccx help` | version / help |
 | `ccx completion <shell>` | shell completion script (zsh/bash/fish/powershell) |
