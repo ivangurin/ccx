@@ -3,12 +3,8 @@ package tui
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"strings"
-	"time"
-	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -76,168 +72,6 @@ func runSession(next NextStage, first Stage, tty *os.File, out io.Writer) ([]int
 	}
 }
 
-// escContWindow bounds how long a lone-ESC read waits for a possible
-// escape-sequence continuation: slow ptys and SSH split "ESC [ A" across
-// reads, and treating the head as a standalone Esc cancels a menu level
-// while the "[A" tail lands typed in the filter. Var for tests.
-var escContWindow = 25 * time.Millisecond
-
-// escJoin decides how a lone-ESC read and the bytes collected within the
-// continuation window combine into keypresses: a CSI head ('[' or 'O')
-// belongs to the ESC (the two halves of one split arrow sequence), anything
-// else means the ESC was standalone and the follow-up is its own keypress.
-func escJoin(rest []byte) [][]byte {
-	if len(rest) > 0 && (rest[0] == '[' || rest[0] == 'O') {
-		return [][]byte{append([]byte{27}, rest...)}
-	}
-	keys := [][]byte{{27}}
-	if len(rest) > 0 {
-		keys = append(keys, rest)
-	}
-
-	return keys
-}
-
-// readEscContinuation collects the tail of a possibly split escape sequence
-// within the continuation window: keep waiting while a CSI head arrived
-// without its body (arrows are 3 bytes). A timeout (or a non-pollable tty)
-// returns whatever arrived — possibly nothing, which is a real Esc press.
-func readEscContinuation(tty *os.File) []byte {
-	var out []byte
-	deadline := time.Now().Add(escContWindow)
-	for {
-		wait := time.Until(deadline)
-		if wait <= 0 {
-			return out
-		}
-		if err := tty.SetReadDeadline(time.Now().Add(wait)); err != nil {
-			return nil // no deadline support: degrade to the old lone-ESC behavior
-		}
-		buf := make([]byte, 16)
-		n, err := tty.Read(buf)
-		_ = tty.SetReadDeadline(time.Time{})
-		if err != nil || n == 0 {
-			return out // window expired (os.ErrDeadlineExceeded) or the tty died
-		}
-		out = append(out, buf[:n]...)
-		if out[0] != '[' && out[0] != 'O' {
-			return out // not a CSI tail — the ESC was standalone
-		}
-		if len(out) >= 3 {
-			return out // the sequence body arrived
-		}
-	}
-}
-
-// handleKey processes a keypress; done=true — the session is over (path or error).
-func (s *session) handleKey(key []byte, next NextStage) (done bool, path []int, selErr error) {
-	switch {
-	case key[0] == '\r' || key[0] == '\n':
-		return s.confirm(next)
-	case (key[0] == 27 && len(key) == 1) || key[0] == 3 || key[0] == 4:
-		return s.cancel()
-	case key[0] == 27 && len(key) >= 3 && (key[1] == '[' || key[1] == 'O'):
-		s.arrow(key[2])
-	case key[0] == 127 || key[0] == 8:
-		s.backspace()
-	case key[0] >= 32:
-		s.appendRune(key)
-	default:
-		// an unhandled control byte — ignore
-	}
-
-	return false, nil, nil
-}
-
-// backspace — BS/DEL: drop the whole last rune, not a byte: multi-byte UTF-8
-// input (Cyrillic labels) must not decay into invalid halves.
-func (s *session) backspace() {
-	if top := s.top(); top.query != "" {
-		_, size := utf8.DecodeLastRuneInString(top.query)
-		top.query = top.query[:len(top.query)-size]
-	}
-}
-
-// appendRune — the whole read chunk is printable runes (escape sequences
-// were matched in handleKey); appending a single byte corrupted multi-byte
-// UTF-8 input — the filter then never matched the typed label.
-func (s *session) appendRune(key []byte) {
-	if utf8.Valid(key) {
-		s.top().query += string(key)
-	}
-}
-
-// cancel — Esc/Ctrl-C: one level up; from the first level — cancel the session.
-func (s *session) cancel() (bool, []int, error) {
-	if len(s.levels) > 1 {
-		s.levels = s.levels[:len(s.levels)-1]
-
-		return false, nil, nil
-	}
-	fmt.Fprint(s.out, "\r\n")
-
-	return true, nil, errCancelled
-}
-
-// confirm — Enter: record the choice and descend to the next level, or
-// finish when the builder has no next level (ok=false).
-func (s *session) confirm(next NextStage) (bool, []int, error) {
-	top := s.top()
-	visible := Filter(top.items, top.query)
-	if len(visible) == 0 {
-		return false, nil, nil
-	}
-	chosenItem := visible[top.cursor]
-	idx := -1
-	for i, it := range top.items {
-		if it == chosenItem {
-			idx = i
-
-			break
-		}
-	}
-	if idx < 0 {
-		return true, nil, errCancelled
-	}
-	top.chosen = idx
-
-	path := make([]int, len(s.levels))
-	for i, lv := range s.levels {
-		path[i] = lv.chosen
-	}
-
-	stage, ok := next(path)
-	if !ok {
-		fmt.Fprint(s.out, "\r\n")
-
-		return true, path, nil
-	}
-	if len(stage.Items) == 0 {
-		fmt.Fprint(s.out, "\r\n")
-
-		return true, nil, errEmptyList
-	}
-	s.push(stage)
-
-	return false, nil, nil
-}
-
-func (s *session) arrow(code byte) {
-	top := s.top()
-	switch code {
-	case 'A':
-		if top.cursor > 0 {
-			top.cursor--
-		}
-	case 'B':
-		if top.cursor < len(Filter(top.items, top.query))-1 {
-			top.cursor++
-		}
-	default:
-		// other escape codes are ignored
-	}
-}
-
 // push — enter a level: the cursor starts at the stage default.
 func (s *session) push(st Stage) {
 	cursor := st.DefaultIdx
@@ -250,23 +84,4 @@ func (s *session) push(st Stage) {
 // top — the active level.
 func (s *session) top() *level {
 	return &s.levels[len(s.levels)-1]
-}
-
-func (s *session) render() {
-	top := s.top()
-	visible := Filter(top.items, top.query)
-	if top.cursor >= len(visible) {
-		top.cursor = len(visible) - 1
-	}
-	if top.cursor < 0 {
-		top.cursor = 0
-	}
-	var sb strings.Builder
-	// in-place repaint: climb up to the first frame line and erase it — the
-	// next level (or the level returned to) is drawn over the old one
-	sb.WriteString(repaintPrefix(s.lastLines))
-	frame, lines := buildFrame(top.header, visible, top.query, top.cursor, len(s.levels) > 1)
-	sb.WriteString(frame)
-	s.lastLines = lines
-	_, _ = io.WriteString(s.out, sb.String())
 }

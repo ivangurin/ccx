@@ -1,6 +1,10 @@
 // Package app — daemon wiring for ccx serve: config → logger → lock →
 // route (Build from --provider, Ready before listening) → http → signals →
 // graceful shutdown.
+//
+// One operation per file: app.go (the App type + Run, the startup
+// orchestrator), acquire_lock.go, pidfile.go, self_check.go,
+// resolve_listen_port.go; spawn.go is the detached launch.
 package app
 
 import (
@@ -11,14 +15,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/ivangurin/ccx/internal/api/handlers"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/pkg/closer"
-	"github.com/ivangurin/ccx/internal/pkg/flock"
 	"github.com/ivangurin/ccx/internal/pkg/httpserver"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
 	"github.com/ivangurin/ccx/internal/pkg/usagelog"
@@ -191,105 +193,3 @@ func (a *App) Run(ctx context.Context, opts ServeOptions) error {
 
 	return cl.Close(closeCtx)
 }
-
-// lockRetry is the acquireLock retry window (a var: tests shorten it — the
-// default makes a lock-held test wait out the full 5s).
-var lockRetry = 5 * time.Second
-
-// resolveListenPort is the daemon-side fallback when --port is absent: env
-// CCX_PORT, else the fixed default. providers.json daemon.* is deliberately
-// NOT read — that block is switcher-owned launch config, and the switcher
-// always passes an explicit --port; daemon.port reaches the daemon through
-// the switcher's resolution (config.ResolveDaemonPort), never its own.
-func resolveListenPort(c *config.Config, flagPort int) int {
-	if flagPort > 0 {
-		return flagPort
-	}
-	if c.DaemonPort > 0 {
-		return c.DaemonPort
-	}
-
-	return config.DefaultDaemonPort
-}
-
-// ResolveListenPortForTest exports resolveListenPort for fallback tests.
-var ResolveListenPortForTest = resolveListenPort
-
-// SetLockRetryForTest overrides the lock retry window; ResetLockRetryForTest
-// restores it.
-func SetLockRetryForTest(d time.Duration) { lockRetry = d }
-
-// ResetLockRetryForTest restores the default lock retry window.
-func ResetLockRetryForTest() { lockRetry = 5 * time.Second }
-
-// acquireLock takes daemon.lock with a bounded retry: the previous daemon may
-// hold it for a moment while its graceful shutdown drains in-flight requests.
-func (a *App) acquireLock() (*flock.Lock, error) {
-	// a fresh install may not have the ccx home yet — the lock lives there
-	_ = os.MkdirAll(a.cfg.Home, 0o750)
-
-	deadline := time.Now().Add(lockRetry)
-	for {
-		lock, err := flock.TryLock(a.daemonLockPath())
-		if err == nil {
-			return lock, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, err
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func (a *App) daemonLockPath() string {
-	return filepath.Join(a.cfg.Home, "daemon.lock")
-}
-
-func (a *App) pidfilePath() string {
-	return filepath.Join(a.cfg.Home, "daemon.pid")
-}
-
-func (a *App) writePidfile() {
-	_ = os.MkdirAll(a.cfg.LogDir(), 0o750)
-	_ = os.WriteFile(a.pidfilePath(), fmt.Appendf(nil, "%d\n", os.Getpid()), 0o600) //nolint:gosec // fixed permissions
-}
-
-// selfCheckInterval — the self-check cadence (a var: tests shorten it).
-var selfCheckInterval = 10 * time.Second
-
-// selfCheck dials the daemon's own /health every selfCheckInterval while the
-// process is alive: an answering process with a failing self-check means the
-// listener is broken, not the process dead — the distinction the 2026-11-09
-// silent-death hunt could not make. Every failure is one Warn line, nothing
-// else (no restart, no exit): the daemon never self-heals by design — only
-// a switch (ccx use) respawns it.
-func selfCheck(log *slog.Logger, baseURL string, done <-chan struct{}) {
-	client := &http.Client{Timeout: 2 * time.Second}
-	ticker := time.NewTicker(selfCheckInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-			resp, err := client.Get(baseURL + "/health") //nolint:gosec // the daemon's own address
-			if err != nil {
-				log.Warn("self-check: listener not answering", "addr", baseURL, "err", err)
-
-				continue
-			}
-			_ = resp.Body.Close()
-		}
-	}
-}
-
-// SetSelfCheckIntervalForTest overrides the self-check cadence; the returned
-// func restores it.
-func SetSelfCheckIntervalForTest(d time.Duration) func() {
-	selfCheckInterval = d
-
-	return func() { selfCheckInterval = 10 * time.Second }
-}
-
-// SelfCheckForTest exports selfCheck for direct tests.
-var SelfCheckForTest = selfCheck
