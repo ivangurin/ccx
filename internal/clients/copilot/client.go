@@ -2,16 +2,15 @@
 // copilot-token. Tokens are stored per provider in
 // <CCX_HOME>/auth/<key>.json (0600); exchange is lazy — driven by expires_at
 // (no background goroutines, per the "lazy refresh" plan).
+//
+// One operation per file: client.go (the Client + the store + the
+// masquerade), device_flow.go (GitHub OAuth device flow), token.go (the
+// copilot-token exchange), quota.go (the premium-quota probe).
 package copilot
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +32,26 @@ const (
 	DefaultClientID = "Iv1.b507a08c87ecfe98"
 	DefaultScope    = "read:user"
 )
+
+// Masquerade constants (public values of the GitHub Copilot Chat extension
+// — the single source for the auth client AND the chat translator): GitHub
+// answers the default Go UA on the Copilot endpoints with "Please only use
+// approved clients" (notification_id go_http_client, verified live on the
+// token exchange) and is suspected of stalling the device-flow poll for it
+// — every Copilot-bound request masquerades as the extension.
+const (
+	MasqueradeUA    = "GitHubCopilotChat/0.28.0"
+	EditorVersion   = "vscode/1.99.0"
+	EditorPluginVer = "copilot-chat/0.28.0"
+	IntegrationID   = "copilot-chat"
+)
+
+// masquerade dresses a request as the Copilot Chat extension client.
+func masquerade(req *http.Request) {
+	req.Header.Set("User-Agent", MasqueradeUA)
+	req.Header.Set("Editor-Version", EditorVersion)
+	req.Header.Set("Editor-Plugin-Version", EditorPluginVer)
+}
 
 // DeviceFlowResult is the device flow start.
 type DeviceFlowResult struct {
@@ -81,144 +100,6 @@ func NewWithBase(codeURL, tokenURL, exchangeURL, store string) *Client {
 	}
 }
 
-// Masquerade constants (public values of the GitHub Copilot Chat extension
-// — the single source for the auth client AND the chat translator): GitHub
-// answers the default Go UA on the Copilot endpoints with "Please only use
-// approved clients" (notification_id go_http_client, verified live on the
-// token exchange) and is suspected of stalling the device-flow poll for it
-// — every Copilot-bound request masquerades as the extension.
-const (
-	MasqueradeUA    = "GitHubCopilotChat/0.28.0"
-	EditorVersion   = "vscode/1.99.0"
-	EditorPluginVer = "copilot-chat/0.28.0"
-	IntegrationID   = "copilot-chat"
-)
-
-// masquerade dresses a request as the Copilot Chat extension client.
-func masquerade(req *http.Request) {
-	req.Header.Set("User-Agent", MasqueradeUA)
-	req.Header.Set("Editor-Version", EditorVersion)
-	req.Header.Set("Editor-Plugin-Version", EditorPluginVer)
-}
-
-// StartDeviceFlow requests a device code.
-func (c *Client) StartDeviceFlow(ctx context.Context) (*DeviceFlowResult, error) {
-	form := url.Values{"client_id": {DefaultClientID}, "scope": {DefaultScope}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.codeURL, strings.NewReader(form.Encode())) //nolint:gosec // constants
-	if err != nil {
-		return nil, fmt.Errorf("copilot: device flow: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	masquerade(req)
-
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("copilot: device flow: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("copilot: device flow: github responded %d", resp.StatusCode)
-	}
-	var out DeviceFlowResult
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("copilot: device flow: %w", err)
-	}
-
-	return &out, nil
-}
-
-// PollDeviceFlow waits for user confirmation, returns the access token,
-// and saves it to the store.
-//
-//nolint:gocognit // polling loop: select+switch, splitting it would hurt readability
-func (c *Client) PollDeviceFlow(ctx context.Context, deviceCode string) (string, error) {
-	interval := 5 * time.Second
-	for {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("copilot: polling interrupted: %w", ctx.Err())
-		case <-time.After(interval):
-		}
-		form := url.Values{
-			"client_id":   {DefaultClientID},
-			"device_code": {deviceCode},
-			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, strings.NewReader(form.Encode())) //nolint:gosec // constants
-		if err != nil {
-			return "", err
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Accept", "application/json")
-		masquerade(req)
-
-		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-		if err != nil {
-			continue // network noise — wait for the next tick
-		}
-		// A non-2xx must surface, not loop: the endpoint answers 200 with an
-		// error JSON for pending states; anything else is a wiring/transport
-		// problem (the 404-forever bug hid in the silent default branch).
-		if resp.StatusCode != http.StatusOK {
-			_ = resp.Body.Close()
-
-			return "", fmt.Errorf("copilot: device flow poll: github responded %d", resp.StatusCode)
-		}
-		var payload struct {
-			AccessToken string `json:"access_token"`
-			Error       string `json:"error"`
-			Interval    int    `json:"interval"`
-		}
-		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
-		_ = resp.Body.Close()
-		if decodeErr != nil {
-			continue
-		}
-		switch {
-		case payload.AccessToken != "":
-			if err := c.saveUserToken(payload.AccessToken); err != nil {
-				return "", err
-			}
-
-			return payload.AccessToken, nil
-		case payload.Error == "authorization_pending" || payload.Error == "slow_down":
-			interval = pollIntervalAdvance(interval, payload.Error, payload.Interval)
-		case payload.Error != "":
-			return "", fmt.Errorf("copilot: device flow: %s", payload.Error)
-		default:
-			// pending without an interval — next tick keeps the current one
-		}
-	}
-}
-
-// pollIntervalAdvance advances the device-flow polling interval per RFC 8628
-// §3.5: authorization_pending adopts the server-advertised interval (when
-// present), while slow_down MUST increase it by 5 seconds beyond the larger
-// of the current and advertised values — merely adopting the advertised
-// value kept the poll at exactly the rate the server had just told us to
-// slow down from, looping slow_down until the device code expired.
-func pollIntervalAdvance(current time.Duration, errKind string, serverInterval int) time.Duration {
-	if errKind == "slow_down" {
-		next := current
-		if v := time.Duration(serverInterval) * time.Second; serverInterval > 0 && v > next {
-			next = v
-		}
-
-		return next + 5*time.Second
-	}
-	if serverInterval > 0 {
-		return time.Duration(serverInterval) * time.Second
-	}
-
-	return current
-}
-
-// PollIntervalAdvanceForTest exports pollIntervalAdvance for unit tests.
-func PollIntervalAdvanceForTest(current time.Duration, errKind string, serverInterval int) time.Duration {
-	return pollIntervalAdvance(current, errKind, serverInterval)
-}
-
 func (c *Client) saveUserToken(token string) error {
 	return jsonfile.WriteAtomicJSON(c.store, authStore{UserAccessToken: token}, 0o600)
 }
@@ -244,118 +125,4 @@ func (c *Client) loadStore() (authStore, error) {
 	}
 
 	return s, nil
-}
-
-// Token returns a valid copilot-token (cache → store → exchange; lazy
-// refresh at expires_at − 60s).
-func (c *Client) Token(ctx context.Context) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.cached != "" && time.Now().Before(c.expiry.Add(-60*time.Second)) {
-		return c.cached, nil
-	}
-	store, err := c.loadStore()
-	if err != nil {
-		return "", err
-	}
-	if store.CopilotToken != "" && store.ExpiresAt != "" {
-		if exp, perr := time.Parse(time.RFC3339, store.ExpiresAt); perr == nil && time.Now().Before(exp.Add(-60*time.Second)) {
-			c.cached, c.expiry = store.CopilotToken, exp
-
-			return c.cached, nil
-		}
-	}
-	token, expiresAt, err := c.exchange(ctx, store.UserAccessToken)
-	if err != nil {
-		return "", err
-	}
-	// The token is valid and now cached in memory — a failed store save
-	// (read-only home, full disk) must not fail the request it was fetched
-	// for. The cost of a stale store is one extra exchange at the next
-	// process start; failing the turn is unaffordable either way, and the
-	// very next call in THIS process serves from the cache.
-	c.cached, c.expiry = token, expiresAt
-	store.CopilotToken = token
-	store.ExpiresAt = expiresAt.UTC().Format(time.RFC3339)
-	_ = jsonfile.WriteAtomicJSON(c.store, store, 0o600)
-
-	return token, nil
-}
-
-// exchange swaps the user token for a copilot-token.
-func (c *Client) exchange(ctx context.Context, userToken string) (string, time.Time, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.exURL, nil) //nolint:gosec // constant/API
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+userToken)
-	req.Header.Set("Accept", "application/json")
-	masquerade(req)
-
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("copilot: token exchange: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusUnauthorized {
-		return "", time.Time{}, errors.New("copilot: user token invalid (401) — run ccx auth <provider>")
-	}
-	if resp.StatusCode != http.StatusOK {
-		// The body names the real reason (verified live: trade_restricted_country,
-		// go_http_client) — "status 403" alone hid it behind a second manual probe.
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
-		var e struct {
-			Message string `json:"message"`
-			Details *struct {
-				Message string `json:"message"`
-			} `json:"error_details"`
-		}
-		_ = json.Unmarshal(body, &e)
-		if msg := e.Details.Message; msg != "" {
-			return "", time.Time{}, fmt.Errorf("copilot: token exchange: status %d: %s", resp.StatusCode, msg)
-		}
-		if e.Message != "" {
-			return "", time.Time{}, fmt.Errorf("copilot: token exchange: status %d: %s", resp.StatusCode, e.Message)
-		}
-
-		return "", time.Time{}, fmt.Errorf("copilot: token exchange: status %d", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var payload struct {
-		Token     string          `json:"token"`
-		ExpiresAt json.RawMessage `json:"expires_at"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.Token == "" {
-		return "", time.Time{}, errors.New("copilot: token exchange: unexpected response")
-	}
-
-	return payload.Token, parseExpiry(payload.ExpiresAt), nil
-}
-
-// parseExpiry accepts both shapes seen in the wild: github.com returns unix
-// seconds (number, verified live); keep the RFC3339 string shape too (the
-// original assumption). Unparseable/absent → the conservative 30-minute
-// fallback, same as before.
-func parseExpiry(raw json.RawMessage) time.Time {
-	fallback := time.Now().Add(30 * time.Minute)
-	if len(raw) == 0 {
-		return fallback
-	}
-	var secs int64
-	if err := json.Unmarshal(raw, &secs); err == nil {
-		if secs > 0 {
-			return time.Unix(secs, 0)
-		}
-
-		return fallback
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		if parsed, perr := time.Parse(time.RFC3339, s); perr == nil {
-			return parsed
-		}
-	}
-
-	return fallback
 }
