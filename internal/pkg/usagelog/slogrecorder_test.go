@@ -1,16 +1,17 @@
-package usagelog
+package usagelog_test
 
 import (
 	"log/slog"
 	"testing"
 	"time"
 
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/pkg/suite/capture"
+	"github.com/ivangurin/ccx/internal/pkg/usagelog"
 	"github.com/stretchr/testify/require"
 )
 
 // singleLine — the one JSONL line the capture holds (fails otherwise).
-func singleLine(t *testing.T, buf *suite_provider.Capture) map[string]any {
+func singleLine(t *testing.T, buf *capture.Capture) map[string]any {
 	t.Helper()
 	lines := buf.Lines(t)
 	require.Len(t, lines, 1, "expected exactly one line")
@@ -23,11 +24,11 @@ func singleLine(t *testing.T, buf *suite_provider.Capture) map[string]any {
 // `jq 'select(.kind=="usage")' logs/daemon-*.log` replaces the per-day
 // usage-YYYY-MM-DD.jsonl file.
 func TestSlogRecorder_WritesUsageLineWithKind(t *testing.T) {
-	var buf suite_provider.Capture
+	var buf capture.Capture
 	log := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	rec := NewSlogRecorder(log.With("kind", "usage"))
+	rec := usagelog.NewSlogRecorder(log.With("kind", "usage"))
 
-	rec.Record(Entry{
+	rec.Record(usagelog.Entry{
 		Ts:       time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC),
 		Provider: "work-relay", Protocol: "openai", Model: "gpt-6.1", Stream: true,
 		InputTokens: 100, OutputTokens: 7, LatencyMS: 1500, TTFTMS: 300, Status: 200,
@@ -58,17 +59,17 @@ func TestSlogRecorder_WritesUsageLineWithKind(t *testing.T) {
 
 // error rides omitempty semantics: absent when empty, present when set.
 func TestSlogRecorder_ErrorFieldOmitEmpty(t *testing.T) {
-	var buf suite_provider.Capture
+	var buf capture.Capture
 	log := slog.New(slog.NewJSONHandler(&buf, nil))
-	rec := NewSlogRecorder(log.With("kind", "usage"))
+	rec := usagelog.NewSlogRecorder(log.With("kind", "usage"))
 
-	rec.Record(Entry{Provider: "p", Status: 200})
+	rec.Record(usagelog.Entry{Provider: "p", Status: 200})
 	lines := buf.Lines(t)
 	require.Len(t, lines, 1)
 	_, has := lines[0]["error"]
 	require.False(t, has, "empty error must not appear")
 
-	rec.Record(Entry{Provider: "p", Status: 429, Error: "rate limited"})
+	rec.Record(usagelog.Entry{Provider: "p", Status: 429, Error: "rate limited"})
 	lines = buf.Lines(t)
 	require.Len(t, lines, 2)
 	line := lines[1]
@@ -79,11 +80,11 @@ func TestSlogRecorder_ErrorFieldOmitEmpty(t *testing.T) {
 // A zero Ts stamps "now" — the recorder never trusts the caller (the old
 // FileRecorder contract, kept).
 func TestSlogRecorder_ZeroTsDefaultsToNow(t *testing.T) {
-	var buf suite_provider.Capture
+	var buf capture.Capture
 	log := slog.New(slog.NewJSONHandler(&buf, nil))
-	rec := NewSlogRecorder(log.With("kind", "usage"))
+	rec := usagelog.NewSlogRecorder(log.With("kind", "usage"))
 
-	rec.Record(Entry{Status: 200})
+	rec.Record(usagelog.Entry{Status: 200})
 
 	line := singleLine(t, &buf)
 	ts, ok := line["ts"].(string)
@@ -94,24 +95,24 @@ func TestSlogRecorder_ZeroTsDefaultsToNow(t *testing.T) {
 
 // A nil logger drops the entry — usage accounting must never break a request.
 func TestSlogRecorder_NilLoggerSwallows(t *testing.T) {
-	require.NotPanics(t, func() { NewSlogRecorder(nil).Record(Entry{Status: 200}) })
+	require.NotPanics(t, func() { usagelog.NewSlogRecorder(nil).Record(usagelog.Entry{Status: 200}) })
 }
 
 // Record dispatches through Default — the seam every translator calls
 // through. Default is Noop unwired (safe outside serve mode), swappable for
 // tests.
 func TestRecordDispatchesThroughDefault(t *testing.T) {
-	var buf suite_provider.Capture
-	old := Default
-	Default = NewSlogRecorder(slog.New(slog.NewJSONHandler(&buf, nil)).With("kind", "usage"))
-	t.Cleanup(func() { Default = old })
+	var buf capture.Capture
+	old := usagelog.Default
+	usagelog.Default = usagelog.NewSlogRecorder(slog.New(slog.NewJSONHandler(&buf, nil)).With("kind", "usage"))
+	t.Cleanup(func() { usagelog.Default = old })
 
-	require.NotPanics(t, func() { Record(Entry{Provider: "p", Status: 200}) })
+	require.NotPanics(t, func() { usagelog.Record(usagelog.Entry{Provider: "p", Status: 200}) })
 
 	line := singleLine(t, &buf)
 	require.Equal(t, "p", line["provider"])
 
 	// a nil Default is safe too (defensive: the package variable is exported)
-	Default = nil
-	require.NotPanics(t, func() { Record(Entry{Status: 200}) })
+	usagelog.Default = nil
+	require.NotPanics(t, func() { usagelog.Record(usagelog.Entry{Status: 200}) })
 }

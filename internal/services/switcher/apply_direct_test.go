@@ -18,7 +18,7 @@ import (
 
 // newDirectSwitcher — a switcher with a single anthropic profile "p";
 // mutate tweaks the flat connection fields (base_url, credentials, headers).
-func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
+func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.Switcher, *daemonRec, *suite_provider.Provider) {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 
@@ -35,14 +35,13 @@ func newDirectSwitcher(t *testing.T, mutate func(p *models.Profile)) (*switcher.
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"ANTHROPIC_STALE_KEY": "old"}}`), 0o600))
 
-	d := &fakeDaemon{restartOK: true}
-	sw := switcher.New(sp.Config, d)
+	rec := wireDaemon(sp.GetDaemonMock())
 
-	return sw, d, sp
+	return sp.GetSwitcher(), rec, sp
 }
 
 func TestApply_DirectAnthropic(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t) // zai: auth_token based anthropic profile
+	sw, rec, sp := newTestSwitcher(t) // zai: auth_token based anthropic profile
 
 	out, err := sw.Apply(context.Background(), "zai", "")
 	require.NoError(t, err)
@@ -63,8 +62,8 @@ func TestApply_DirectAnthropic(t *testing.T) {
 	require.Equal(t, "3000000", env["API_TIMEOUT_MS"])
 
 	// no daemon round-trip; the unused daemon is stopped
-	require.Empty(t, d.restarts)
-	require.Equal(t, 1, d.stopN)
+	require.Empty(t, rec.calls)
+	require.Equal(t, 1, rec.stops)
 
 	st := readState(t, sp.Config.StatePath())
 	require.Equal(t, "zai", st.Provider)
@@ -72,14 +71,14 @@ func TestApply_DirectAnthropic(t *testing.T) {
 }
 
 func TestApply_DirectStopFailureNonFatal(t *testing.T) {
-	sw, d, sp := newDirectSwitcher(t, func(p *models.Profile) { p.BaseURL, p.AuthToken = envRefUpstream, "t" })
-	d.stopErr = errors.New("daemon did not stop")
+	sw, rec, sp := newDirectSwitcher(t, func(p *models.Profile) { p.BaseURL, p.AuthToken = envRefUpstream, "t" })
+	rec.stopErr = errors.New("daemon did not stop")
 
 	out, err := sw.Apply(context.Background(), "p", "")
 	require.NoError(t, err) // the switch is already committed
 	require.Contains(t, out, "still running")
 	require.Equal(t, envRefUpstream, settingsEnv(t, sp.Config.SettingsPath())["ANTHROPIC_BASE_URL"])
-	require.Equal(t, 1, d.stopN)
+	require.Equal(t, 1, rec.stops)
 }
 
 // A direct profile without auth_token writes NO credential var (the legacy

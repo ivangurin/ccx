@@ -13,53 +13,62 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccx/internal/services/switcher"
+	switcher_mocks "github.com/ivangurin/ccx/internal/services/switcher/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// fakeDaemon — a daemon mock: remembers Restart calls, can fail on demand.
-type fakeDaemon struct {
-	mu        sync.Mutex
-	restartOK bool
-	restarts  []string // "profile:port" per call
-	debugs    []bool   // the debug launch flag per call
-	stopN     int
-	stopErr   error
+// daemonRec — the daemon mock's call recorder: the mockery mock carries the
+// wiring, the recorder carries the assertions (call sequences, debug flags,
+// stop counts, the configurable outcomes).
+type daemonRec struct {
+	mu         sync.Mutex
+	calls      []string // "provider:port" per Restart
+	debugs     []bool   // the debug launch flag per Restart
+	stops      int
+	restartErr error
+	stopErr    error
 }
 
-func (f *fakeDaemon) Restart(_ context.Context, providerKey string, port int, debug bool) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.restarts = append(f.restarts, providerKey+":"+itoa(port))
-	f.debugs = append(f.debugs, debug)
-	if f.restartOK {
-		return nil
-	}
+func (r *daemonRec) snapshotCalls() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	return errors.New("daemon did not come up")
+	return append([]string(nil), r.calls...)
 }
 
-// lastDebugs snapshots the recorded debug flags (nil-safe on no calls).
-func (f *fakeDaemon) lastDebugs() []bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (r *daemonRec) snapshotDebugs() []bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	return append([]bool(nil), f.debugs...)
+	return append([]bool(nil), r.debugs...)
 }
 
-// snapshotRestarts copies the recorded Restart calls.
-func (f *fakeDaemon) snapshotRestarts() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+// wireDaemon arms the suite's daemon mock with recording defaults: Restart
+// records the call and returns restartErr (read at call time — tests flip it
+// mid-test), Stop counts and returns stopErr. Maybe(): call counts vary per
+// scenario (rollback restarts twice, direct paths never restart).
+func wireDaemon(d *switcher_mocks.Daemon) *daemonRec {
+	rec := &daemonRec{}
+	d.EXPECT().Restart(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, providerKey string, port int, debug bool) error {
+			rec.mu.Lock()
+			defer rec.mu.Unlock()
+			rec.calls = append(rec.calls, providerKey+":"+itoa(port))
+			rec.debugs = append(rec.debugs, debug)
 
-	return append([]string(nil), f.restarts...)
-}
+			return rec.restartErr
+		}).Maybe()
+	d.EXPECT().Stop(mock.Anything).
+		RunAndReturn(func(_ context.Context) error {
+			rec.mu.Lock()
+			defer rec.mu.Unlock()
+			rec.stops++
 
-func (f *fakeDaemon) Stop(_ context.Context) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.stopN++
+			return rec.stopErr
+		}).Maybe()
 
-	return f.stopErr
+	return rec
 }
 
 func itoa(v int) string {
@@ -75,7 +84,7 @@ func itoa(v int) string {
 	return string(b)
 }
 
-func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_provider.Provider) {
+func newTestSwitcher(t *testing.T) (*switcher.Switcher, *daemonRec, *suite_provider.Provider) {
 	t.Helper()
 	sp := suite_provider.NewProvider(t)
 
@@ -113,10 +122,9 @@ func newTestSwitcher(t *testing.T) (*switcher.Switcher, *fakeDaemon, *suite_prov
 		"permissions": {"allow": ["Bash"]}
 	}`), 0o600))
 
-	d := &fakeDaemon{restartOK: true}
-	sw := switcher.New(sp.Config, d)
+	rec := wireDaemon(sp.GetDaemonMock())
 
-	return sw, d, sp
+	return sp.GetSwitcher(), rec, sp
 }
 
 func settingsEnv(t *testing.T, path string) map[string]string {
@@ -146,7 +154,7 @@ func readSettings(t *testing.T, path string) string {
 }
 
 func TestApply_HappyPath(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 
 	// acme (openai) — the daemon path: BASE_URL is the daemon, Restart got the
 	// provider key and the resolved port (daemon.port 4567)
@@ -156,7 +164,7 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Contains(t, out, "Acme")
 	require.Contains(t, out, "http://127.0.0.1:4567")
 
-	require.Equal(t, []string{"acme:4567"}, d.restarts)
+	require.Equal(t, []string{"acme:4567"}, rec.calls)
 
 	env := settingsEnv(t, sp.Config.SettingsPath())
 	require.Equal(t, "http://127.0.0.1:4567", env["ANTHROPIC_BASE_URL"])
@@ -202,13 +210,13 @@ func TestApply_HappyPath(t *testing.T) {
 	require.FileExists(t, filepath.Join(sp.HomeDir(), "switch.lock"))
 
 	// the daemon stays up on the daemon path (no stop)
-	require.Equal(t, 0, d.stopN)
+	require.Equal(t, 0, rec.stops)
 }
 
 // Models resolve by exact id (the name alias is gone): a bare id without
 // the [1m] suffix must not match the bracketed one, the full id applies.
 func TestApply_ModelMatchesIDOnly(t *testing.T) {
-	sw, _, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 
 	_, err := sw.Apply(context.Background(), "zai", "glm-5.3") // no [1m] suffix
 	require.ErrorContains(t, err, "not found")
@@ -220,6 +228,7 @@ func TestApply_ModelMatchesIDOnly(t *testing.T) {
 
 	st := readState(t, sp.Config.StatePath())
 	require.Equal(t, "glm-5.3[1m]", st.Model)
+	require.Empty(t, rec.calls) // zai is a direct profile — no daemon round-trip
 }
 
 func TestApply_UnknownProfile(t *testing.T) {
@@ -241,8 +250,8 @@ func TestApply_UnknownModel(t *testing.T) {
 
 // A failed restart leaves settings.json byte-identical — the invariant.
 func TestApply_RestartFailureLeavesSettingsUntouched(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
-	d.restartOK = false
+	sw, rec, sp := newTestSwitcher(t)
+	rec.restartErr = errors.New("daemon did not come up")
 	before := readSettings(t, sp.Config.SettingsPath())
 
 	_, err := sw.Apply(context.Background(), "acme", "") // daemon path
@@ -255,7 +264,7 @@ func TestApply_RestartFailureLeavesSettingsUntouched(t *testing.T) {
 // HERE (from the same providers.json snapshot the route comes from) and
 // rides the spawn as --debug — the daemon itself never reads the block.
 func TestApply_DaemonDebugPassedToRestart(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	p.Daemon.Debug = true
@@ -264,11 +273,11 @@ func TestApply_DaemonDebugPassedToRestart(t *testing.T) {
 	_, err = sw.Apply(context.Background(), "acme", "")
 	require.NoError(t, err)
 
-	require.Equal(t, []bool{true}, d.lastDebugs())
+	require.Equal(t, []bool{true}, rec.snapshotDebugs())
 }
 
 func TestApply_LockSerializes(t *testing.T) {
-	sw, _, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 
 	var wg sync.WaitGroup
 	for range 4 {
@@ -280,6 +289,7 @@ func TestApply_LockSerializes(t *testing.T) {
 
 	st := readState(t, sp.Config.StatePath())
 	require.Equal(t, "glm-flash", st.Model)
+	require.Empty(t, rec.calls) // direct profile: only the flock serializes
 }
 
 func TestApply_MissingSettingsFails(t *testing.T) {
@@ -288,8 +298,7 @@ func TestApply_MissingSettingsFails(t *testing.T) {
 	p.Providers.Set("zai", &models.Profile{Protocol: models.ProtocolAnthropic, Models: []models.Model{{ID: "m", Default: true}}})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	sw := switcher.New(sp.Config, &fakeDaemon{restartOK: true})
-	_, err := sw.Apply(context.Background(), "zai", "")
+	_, err := sp.GetSwitcher().Apply(context.Background(), "zai", "")
 	require.ErrorContains(t, err, "settings.json")
 }
 

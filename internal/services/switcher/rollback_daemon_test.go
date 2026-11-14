@@ -2,6 +2,7 @@ package switcher_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -41,16 +42,16 @@ func addBeta(t *testing.T, sp interface {
 // translated previous provider that promise is the daemon itself — Stop
 // already killed it during the failed Restart.
 func TestApply_RestartFailureRestoresPreviousDaemon(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	addBeta(t, sp.Config)
 
 	_, err := sw.Apply(context.Background(), "acme", "")
 	require.NoError(t, err)
 
-	d.restartOK = false
+	rec.restartErr = errors.New("daemon did not come up")
 	_, err = sw.Apply(context.Background(), "beta", "")
 	require.ErrorContains(t, err, "untouched")
-	require.Equal(t, []string{restartAcme, restartBeta, restartAcme}, d.snapshotRestarts(),
+	require.Equal(t, []string{restartAcme, restartBeta, restartAcme}, rec.snapshotCalls(),
 		"the failed switch must be followed by a rollback restart of the previous provider")
 }
 
@@ -58,17 +59,17 @@ func TestApply_RestartFailureRestoresPreviousDaemon(t *testing.T) {
 // recovery command — a silent "you stay on the previous provider" would be
 // a lie with no daemon running.
 func TestApply_RestartFailureRollbackAlsoFails(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	addBeta(t, sp.Config)
 
 	_, err := sw.Apply(context.Background(), "acme", "")
 	require.NoError(t, err)
 
-	d.restartOK = false
+	rec.restartErr = errors.New("daemon did not come up")
 	_, err = sw.Apply(context.Background(), "beta", "")
 	require.ErrorContains(t, err, "did not come back up")
 	require.ErrorContains(t, err, "run: ccx acme")
-	require.Equal(t, []string{restartAcme, restartBeta, restartAcme}, d.snapshotRestarts())
+	require.Equal(t, []string{restartAcme, restartBeta, restartAcme}, rec.snapshotCalls())
 }
 
 // A settings.json failure AFTER a successful restart: the new daemon is
@@ -76,7 +77,7 @@ func TestApply_RestartFailureRollbackAlsoFails(t *testing.T) {
 // provider (with its credential) — the daemon must be rolled back for the
 // old env block to work again.
 func TestApply_SettingsWriteFailureRollsDaemonBack(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	addBeta(t, sp.Config)
 
 	_, err := sw.Apply(context.Background(), "acme", "")
@@ -86,22 +87,22 @@ func TestApply_SettingsWriteFailureRollsDaemonBack(t *testing.T) {
 	_, err = sw.Apply(context.Background(), "beta", "")
 	require.ErrorContains(t, err, "created by the first run of Claude Code")
 	require.ErrorContains(t, err, "stay on the previous provider")
-	require.Equal(t, []string{restartAcme, restartBeta, restartAcme}, d.snapshotRestarts())
+	require.Equal(t, []string{restartAcme, restartBeta, restartAcme}, rec.snapshotCalls())
 }
 
 // A DIRECT previous provider (anthropic passthrough) needs no rollback:
 // settings.json still points straight at its upstream, no daemon was
 // serving it.
 func TestApply_RestartFailure_DirectPreviousNeedsNoRestore(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	addBeta(t, sp.Config)
 
 	_, err := sw.Apply(context.Background(), "zai", "") // direct: no daemon
 	require.NoError(t, err)
 
-	d.restartOK = false
+	rec.restartErr = errors.New("daemon did not come up")
 	_, err = sw.Apply(context.Background(), "beta", "")
 	require.ErrorContains(t, err, "untouched")
-	require.Equal(t, []string{restartBeta}, d.snapshotRestarts(),
+	require.Equal(t, []string{restartBeta}, rec.snapshotCalls(),
 		"no rollback restart: the previous provider is a direct anthropic profile")
 }

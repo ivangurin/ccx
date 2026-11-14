@@ -22,25 +22,25 @@ func TestRestoreOriginal_NoBackup(t *testing.T) {
 }
 
 func TestRestoreOriginal_RestoresAndStopsDaemon(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 
 	_, err := sw.Apply(context.Background(), "zai", "")
 	require.NoError(t, err)
 	require.NotEqual(t, readSettings(t, sp.Config.SettingsBackupPath()), readSettings(t, sp.Config.SettingsPath()))
-	stopsBefore := d.stopN // applyDirect already stopped the idle daemon once
+	stopsBefore := rec.stops // applyDirect already stopped the idle daemon once
 
 	out, err := sw.RestoreOriginal(context.Background())
 
 	require.NoError(t, err)
 	require.Contains(t, out, sp.Config.SettingsPath())
 	require.Equal(t, readSettings(t, sp.Config.SettingsBackupPath()), readSettings(t, sp.Config.SettingsPath()))
-	require.Equal(t, stopsBefore+1, d.stopN)
+	require.Equal(t, stopsBefore+1, rec.stops)
 }
 
 func TestRestoreOriginal_DaemonStopFailureIsNote(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	require.NoError(t, os.WriteFile(sp.Config.SettingsBackupPath(), []byte(`{"env": {}}`), 0o600)) //nolint:gosec // test sandbox
-	d.stopErr = errors.New("refused")
+	rec.stopErr = errors.New("refused")
 
 	out, err := sw.RestoreOriginal(context.Background())
 

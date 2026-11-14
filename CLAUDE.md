@@ -171,8 +171,21 @@ internal/
     jsonfile/                           atomic JSON writes (tmp+rename, permissions)
     sse/                                upstream SSE reader + AnthropicWriter
     tui/                                interactive menu (arrows/filter/fallback)
-    suite/provider/                     test suite: temp CCX_HOME, safe config, lazy mocks,
-                                         cleanup (settings default pinned away from the live ~/.claude)
+    suite/
+      provider/                         the TEST composition root, the idp-kube suite_provider
+                                         shape (2026-11-14): sandbox (temp CCX_HOME, CCX_SETTINGS
+                                         pinned inside — the live ~/.claude unreachable; the
+                                         deliberate NewProvider(t) difference from the bare
+                                         reference), lazy GetX getters per concern: clients.go
+                                         (GetDaemon/GetDaemonMock, GetCodexAuth(Mock),
+                                         GetCopilotToken(Mock) — mockery mocks at the leaves,
+                                         mock-by-default seams), services.go (GetSwitcher — the
+                                         REAL switcher over the mock daemon); the route side
+                                         stays in router.Build (keyed by --provider, see
+                                         internal/provider)
+      capture/                          Capture — the mutex-guarded test log buffer (leaf
+                                         package: in-graph packages' tests must not import the
+                                         suite for it)
 ```
 
 ### Key invariants (from bash-ccx, mandatory)
@@ -496,12 +509,26 @@ internal/
   and tests driving Stop/Restart write a live pid into the sandbox
   daemon.pid — the ownership gate refuses anything else by design.
 
-Tests use testify (`require`); the suite provider is
-`internal/pkg/suite/provider` (temp CCX_HOME with CCX_SETTINGS pinned inside
-it — the settings default points at the live ~/.claude and must not leak
-into tests; safe config, quiet logger, lazy mocks, cleanup). Upstreams are
-httptest fakes; SSE uses golden sequences in testdata. **Test coverage must
-be at least 80%** (`make test`, `-coverpkg=./...`).
+Tests use testify (`require`). **Tests live in the external package
+`<pkg>_test`, never in-package** (owner rule, 2026-11-14): an external test
+package may import the suite provider (which imports the whole daemon graph)
+without cycles; in-package test files that only test unexported helpers are
+legacy debt and migrate when touched (`reqdump.SeqForTest` is the export
+precedent). Upstreams are httptest fakes; SSE uses golden sequences in
+testdata. **Test coverage must be at least 80%** (`make test`,
+`-coverpkg=./...`).
+
+**Mocks are mockery** (`.mockery.yaml`, the idp-kube template — `make
+gen-mocks`, config appeared 2026-11-14): `switcher/mocks.Daemon`,
+`translators/codex/mocks.AuthSource`, `translators/copilot/mocks.TokenSource`
+— the client seams; concrete clients (`clients/codex.Client`,
+`clients/copilot.Client`) stay unmocked — their consumption boundaries ARE
+these interfaces. Suite tests get them via the suite provider
+(`sp.GetDaemonMock().EXPECT()...` → `sp.GetSwitcher()`); the switcher tests'
+`wireDaemon` helper arms recording defaults via `RunAndReturn` closures —
+`mock.MatchBy` does not compile with this testify version. In-package
+translator tests (codex/copilot) cannot import the suite (cycle:
+suite → … → codex) — they keep hand stubs until they move out-of-package.
 
 ### Manual daemon verification (live, without touching settings.json)
 

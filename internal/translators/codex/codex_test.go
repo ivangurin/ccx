@@ -13,7 +13,7 @@ import (
 	codexauth "github.com/ivangurin/ccx/internal/clients/codex"
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/pkg/suite/capture"
 	"github.com/ivangurin/ccx/internal/translators/codex"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +27,7 @@ func (fakeAuth) Token(_ context.Context) (codexauth.Auth, error) {
 // dumpLinesOf — the decoded unified-log lines a capture holds: dumps ride
 // the daemon logger as kind=reqdump lines (no file anymore), and the
 // external test package reads back the decoded shape.
-func dumpLinesOf(t *testing.T, c *suite_provider.Capture) []map[string]any {
+func dumpLinesOf(t *testing.T, c *capture.Capture) []map[string]any {
 	t.Helper()
 	lines := c.Lines(t)
 	require.NotEmpty(t, lines, "no dump lines captured")
@@ -325,19 +325,19 @@ func TestServeMessages_DumpsUpstreamSSEWhenEnabled(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	capture := &suite_provider.Capture{}
+	buf := &capture.Capture{}
 	reqdump.ResetForTest()
 	t.Cleanup(reqdump.ResetForTest)
 	// dumping is --debug-gated in production (app.Run Configure); the
 	// translator test arms it directly with a capture logger (dumps ride the
 	// unified log as kind=reqdump lines, no file anymore)
-	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(capture, nil))})
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(buf, nil))})
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	tr.ServeMessages(httptest.NewRecorder(), req)
 
-	require.Contains(t, capture.String(), `"dump_kind":"codex-sse"`)
+	require.Contains(t, buf.String(), `"dump_kind":"codex-sse"`)
 }
 
 // Claude Code sends SessionStart-hook output as a message with role "system"
@@ -378,16 +378,16 @@ func TestServeMessages_DumpsExchangeWhenEnabled(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	capture := &suite_provider.Capture{}
+	buf := &capture.Capture{}
 	reqdump.ResetForTest()
 	t.Cleanup(reqdump.ResetForTest)
-	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(capture, nil))})
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(buf, nil))})
 
 	tr := codex.NewForTest(&models.Profile{}, fakeAuth{}, up.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"m","system":"s","stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	tr.ServeMessages(httptest.NewRecorder(), req)
 
-	lines := dumpLinesOf(t, capture)
+	lines := dumpLinesOf(t, buf)
 	require.Len(t, lines, 2)
 	reqDump := dumpLineOf(t, lines, "codex-req")
 	respDump := dumpLineOf(t, lines, "codex-resp-400")

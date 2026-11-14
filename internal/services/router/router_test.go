@@ -16,6 +16,7 @@ import (
 	"github.com/ivangurin/ccx/internal/models"
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 	"github.com/ivangurin/ccx/internal/pkg/reqdump"
+	"github.com/ivangurin/ccx/internal/pkg/suite/capture"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccx/internal/services/router"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func TestBuild_ActivatesRoute(t *testing.T) {
 	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 
 	provider, protocol, ok := svc.Active()
@@ -74,7 +75,7 @@ func TestBuild_ActivatesRoute(t *testing.T) {
 func TestBuild_UnknownProviderFails(t *testing.T) {
 	sp := newFixture(t)
 
-	_, err := router.Build(context.Background(), sp.Config, sp.Logger(), "nope")
+	_, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "nope")
 	require.ErrorContains(t, err, "unknown provider")
 }
 
@@ -90,7 +91,7 @@ func TestBuild_OpenAIProfileReady(t *testing.T) {
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "work")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "work")
 	require.NoError(t, err)
 
 	provider, protocol, ok := svc.Active()
@@ -108,7 +109,7 @@ func TestBuild_CopilotWithoutAuth_NotReady(t *testing.T) {
 	p.Providers.Set("copilot-x", &models.Profile{Name: "copilot-x", Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	_, err = router.Build(context.Background(), sp.Config, sp.Logger(), "copilot-x")
+	_, err = router.Build(context.Background(), sp.Config, sp.GetLogger(), "copilot-x")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not ready")
 }
@@ -120,7 +121,7 @@ func TestServeMessages_DelegatesToActive(t *testing.T) {
 	require.NoError(t, err)
 	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
@@ -144,23 +145,23 @@ func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	require.NoError(t, err)
 	p.Providers.Get("zai").BaseURL = up.URL
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 
-	capture := &suite_provider.Capture{}
+	buf := &capture.Capture{}
 	reqdump.ResetForTest()
 	t.Cleanup(reqdump.ResetForTest)
 	// dumping is --debug-gated in production (app.Run Configure); the router
 	// test arms it directly with a capture logger (dumps ride the unified
 	// log as kind=reqdump lines, no file anymore)
-	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(capture, nil))})
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(buf, nil))})
 
 	rec := httptest.NewRecorder()
 	svc.ServeMessages(rec, httptest.NewRequest(http.MethodPost, "/v1/messages",
 		strings.NewReader(`{"m":1,"unknown_field":"kept"}`)))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	lines := capture.Lines(t)
+	lines := buf.Lines(t)
 	require.Len(t, lines, 1)
 	require.Equal(t, "anthropic-req", lines[0]["dump_kind"])
 	require.InDelta(t, 1, dumpBodyOf(t, lines[0])["m"], 0)
@@ -170,7 +171,7 @@ func TestServeMessages_DumpsRawBodyWhenEnabled(t *testing.T) {
 	rec2 := httptest.NewRecorder()
 	svc.ServeCountTokens(rec2, httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens",
 		strings.NewReader(`{"m":2}`)))
-	lines = capture.Lines(t)
+	lines = buf.Lines(t)
 	require.Len(t, lines, 2)
 	require.Equal(t, "anthropic-count-tokens", lines[1]["dump_kind"])
 	require.InDelta(t, 2, dumpBodyOf(t, lines[1])["m"], 0)
@@ -203,7 +204,7 @@ func TestBuild_NoBaseURL_FailsGracefully(t *testing.T) {
 			require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
 			require.NotPanics(t, func() {
-				_, err := router.Build(t.Context(), sp.Config, sp.Logger(), tc.key)
+				_, err := router.Build(t.Context(), sp.Config, sp.GetLogger(), tc.key)
 				require.Error(t, err, "a route without base_url must not be built")
 				require.Contains(t, err.Error(), "ccx edit")
 			})
@@ -231,7 +232,7 @@ func TestBuild_CodexProfile_PersonalStore(t *testing.T) {
 	p.Providers.Set("cx", &models.Profile{Name: "Codex", Protocol: models.ProtocolCodex})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(t.Context(), sp.Config, sp.Logger(), "cx")
+	svc, err := router.Build(t.Context(), sp.Config, sp.GetLogger(), "cx")
 	require.NoError(t, err)
 
 	provider, _, ok := svc.Active()
@@ -255,7 +256,7 @@ func TestBuild_CopilotProfile_PersonalStore(t *testing.T) {
 	p.Providers.Set("gh", &models.Profile{Name: "GitHub", Protocol: models.ProtocolCopilot})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(t.Context(), sp.Config, sp.Logger(), "gh")
+	svc, err := router.Build(t.Context(), sp.Config, sp.GetLogger(), "gh")
 	require.NoError(t, err)
 
 	provider, _, ok := svc.Active()

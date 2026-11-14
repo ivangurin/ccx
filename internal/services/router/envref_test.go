@@ -23,7 +23,7 @@ func TestBuild_EnvRefMissing_Fails(t *testing.T) {
 	p.Providers.Get("zai").AuthToken = "$CCX_SERVE_MISSING"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	_, err = router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	_, err = router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.ErrorContains(t, err, "CCX_SERVE_MISSING")
 }
 
@@ -40,7 +40,7 @@ func TestBuild_EnvRef_ExpandedBearer(t *testing.T) {
 	zai.AuthToken = "$CCX_SERVE_TOKEN"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()

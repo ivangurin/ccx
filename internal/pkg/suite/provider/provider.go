@@ -1,8 +1,16 @@
-// Package suite_provider — a test counterpart of the production composition:
-// a sandboxed CCX_HOME with settings.json pinned inside it, a silent logger,
-// lazy services/mocks on top — a single assembly point of fixtures for all
-// tests. The live ~/.claude is unreachable by construction (an invariant
-// after the CCR incidents in bash-ccx: tests never touch real settings).
+// Package suite_provider — the test composition root, the mirror of the
+// production internal/provider over a sandboxed CCX_HOME (the idp-kube
+// suite_provider shape): lazy GetX getters grouped per concern
+// (clients.go, services.go), real production objects built over mocks at
+// the leaves — tests wire expectations on the leaf mock and drive the real
+// service (sp.GetDaemonMock().EXPECT()... → sp.GetSwitcher()).
+// The live ~/.claude is unreachable by construction (an invariant after the
+// CCR incidents in bash-ccx: tests never touch real settings).
+//
+// Deliberate difference from the reference: NewProvider takes *testing.T —
+// the sandbox (t.TempDir + t.Setenv + t.Cleanup) is what keeps the live
+// settings unreachable; the reference's bare NewProvider() has no
+// environment to sandbox away.
 package suite_provider
 
 import (
@@ -17,19 +25,24 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/logger"
 )
 
-// Provider — the test environment: a config with safe defaults + a silent
-// logger + lazy dependencies (added package by package as the project grows).
+// Provider — the test environment: a sandboxed config + a silent logger +
+// lazy client/service seams (clients.go, services.go).
 type Provider struct {
+	t      *testing.T
 	ctx    context.Context
 	Config *config.Config
 	log    *slog.Logger
 
 	mu       sync.Mutex
+	clients  clients
+	services services
+
 	cleanups []func()
 }
 
 // NewProvider builds the sandbox: a unique CCX_HOME per call (t.Setenv —
-// tests must not be parallel); the return value is the provider itself.
+// tests must not be parallel); the return value is the provider itself
+// (cleanup is registered with t.Cleanup).
 func NewProvider(t *testing.T) *Provider {
 	t.Helper()
 
@@ -40,13 +53,10 @@ func NewProvider(t *testing.T) *Provider {
 	// settings would leak into tests
 	t.Setenv("CCX_SETTINGS", filepath.Join(home, "settings.json"))
 
-	cfg, err := config.NewFromEnv()
+	cfg, err := InitConfig()
 	if err != nil {
 		t.Fatalf("suite provider: config: %v", err)
 	}
-	// safe test defaults: short timeouts, silent log
-	cfg.LogLevel = "error"
-	cfg.LogFormat = "json"
 
 	log, err := logger.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
 	if err != nil {
@@ -54,6 +64,7 @@ func NewProvider(t *testing.T) *Provider {
 	}
 
 	sp := &Provider{
+		t:      t,
 		ctx:    context.Background(),
 		Config: cfg,
 		log:    log,
@@ -68,8 +79,8 @@ func (p *Provider) Context() context.Context {
 	return p.ctx
 }
 
-// Logger returns the silent logger (error level).
-func (p *Provider) Logger() *slog.Logger {
+// GetLogger returns the silent logger (error level).
+func (p *Provider) GetLogger() *slog.Logger {
 	return p.log
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/ivangurin/ccx/internal/app"
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/suite/capture"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/stretchr/testify/require"
 )
@@ -50,12 +51,12 @@ func TestRun_UsageRidesUnifiedLog(t *testing.T) {
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	capture := &suite_provider.Capture{}
-	log := slog.New(slog.NewJSONHandler(capture, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	buf := &capture.Capture{}
+	log := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	// the usage stream: what buildServeLogger returns as the second logger —
 	// info+json pinned, pre-attributed kind=usage (usage is data, not
 	// diagnostics; a warn-level diagnostics logger must not silence it)
-	usageLog := slog.New(slog.NewJSONHandler(capture, &slog.HandlerOptions{Level: slog.LevelInfo})).With("kind", "usage")
+	usageLog := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo})).With("kind", "usage")
 
 	ctx, cancel := context.WithCancel(sp.Context())
 	port := freePort(t)
@@ -96,12 +97,12 @@ func TestRun_UsageRidesUnifiedLog(t *testing.T) {
 	// the usage line rides the daemon logger with the kind discriminator and
 	// the full Entry schema
 	require.Eventually(t, func() bool {
-		return strings.Contains(capture.String(), `"kind":"usage"`)
+		return strings.Contains(buf.String(), `"kind":"usage"`)
 	}, 5*time.Second, 50*time.Millisecond, "no usage line in the unified daemon log stream")
 
 	var entry map[string]any
 	found := false
-	for _, line := range strings.Split(strings.TrimRight(capture.String(), "\n"), "\n") {
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
 		if !strings.Contains(line, `"kind":"usage"`) {
 			continue
 		}

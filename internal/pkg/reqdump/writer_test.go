@@ -1,10 +1,11 @@
-package reqdump
+package reqdump_test
 
 import (
 	"log/slog"
 	"testing"
 
-	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
+	"github.com/ivangurin/ccx/internal/pkg/reqdump"
+	"github.com/ivangurin/ccx/internal/pkg/suite/capture"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,13 +15,13 @@ import (
 // the sequence number and the body: a valid JSON document embeds verbatim
 // (not as a string), keeping jq's .body|fromjson unnecessary.
 func TestWrite_RidesLoggerWithKind(t *testing.T) {
-	ResetForTest()
-	t.Cleanup(ResetForTest)
-	var buf suite_provider.Capture
-	Configure(Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	var buf capture.Capture
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
 
-	Write("anthropic-req", []byte(`{"model":"m"}`))
-	Write("codex-sse", []byte(`{"event":"x"}`))
+	reqdump.Write("anthropic-req", []byte(`{"model":"m"}`))
+	reqdump.Write("codex-sse", []byte(`{"event":"x"}`))
 
 	lines := buf.Lines(t)
 	require.Len(t, lines, 2)
@@ -39,12 +40,12 @@ func TestWrite_RidesLoggerWithKind(t *testing.T) {
 
 // A non-JSON body becomes an escaped JSON string, never a broken JSONL line.
 func TestWrite_InvalidBodyAsString(t *testing.T) {
-	ResetForTest()
-	t.Cleanup(ResetForTest)
-	var buf suite_provider.Capture
-	Configure(Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	var buf capture.Capture
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
 
-	Write("codex-resp-400", []byte("not json"))
+	reqdump.Write("codex-resp-400", []byte("not json"))
 
 	lines := buf.Lines(t)
 	require.Len(t, lines, 1)
@@ -53,42 +54,42 @@ func TestWrite_InvalidBodyAsString(t *testing.T) {
 
 // No logger configured — dumps drop silently (never break the request path).
 func TestWrite_NilLoggerDrops(t *testing.T) {
-	ResetForTest()
-	t.Cleanup(ResetForTest)
-	Configure(Options{Enabled: true, Logger: nil})
-	require.True(t, Enabled())
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: nil})
+	require.True(t, reqdump.Enabled())
 
-	require.NotPanics(t, func() { Write("anthropic-req", []byte(`{}`)) })
+	require.NotPanics(t, func() { reqdump.Write("anthropic-req", []byte(`{}`)) })
 }
 
 // Disabled by default: Configure without Enabled is a no-op sink even with
 // a logger at hand.
 func TestWrite_DisabledDrops(t *testing.T) {
-	ResetForTest()
-	t.Cleanup(ResetForTest)
-	var buf suite_provider.Capture
-	Configure(Options{Enabled: false, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
-	require.False(t, Enabled())
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	var buf capture.Capture
+	reqdump.Configure(reqdump.Options{Enabled: false, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
+	require.False(t, reqdump.Enabled())
 
-	Write("anthropic-req", []byte(`{}`))
+	reqdump.Write("anthropic-req", []byte(`{}`))
 
 	require.Empty(t, buf.String())
 }
 
 // seq stays monotonic across writes (the old JSONL contract).
 func TestWrite_SeqMonotonic(t *testing.T) {
-	ResetForTest()
-	t.Cleanup(ResetForTest)
-	var buf suite_provider.Capture
-	Configure(Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
+	reqdump.ResetForTest()
+	t.Cleanup(reqdump.ResetForTest)
+	var buf capture.Capture
+	reqdump.Configure(reqdump.Options{Enabled: true, Logger: slog.New(slog.NewJSONHandler(&buf, nil))})
 
-	Write("a", []byte(`{}`))
-	Write("b", []byte(`{}`))
-	Write("c", []byte(`{}`))
+	reqdump.Write("a", []byte(`{}`))
+	reqdump.Write("b", []byte(`{}`))
+	reqdump.Write("c", []byte(`{}`))
 
 	lines := buf.Lines(t)
 	require.Len(t, lines, 3)
 	require.Less(t, lines[0]["seq"], lines[1]["seq"])
 	require.Less(t, lines[1]["seq"], lines[2]["seq"])
-	require.GreaterOrEqual(t, seqForTest(), int64(3))
+	require.GreaterOrEqual(t, reqdump.SeqForTest(), int64(3))
 }

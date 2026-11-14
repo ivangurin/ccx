@@ -35,7 +35,7 @@ func Write(kind string, body []byte) {
 	)
 }
 
-// seqForTest exposes the sequence counter (tests only).
-func seqForTest() int64 {
+// SeqForTest exposes the sequence counter (tests only).
+func SeqForTest() int64 {
 	return seq.Load()
 }

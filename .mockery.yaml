@@ -1,0 +1,30 @@
+# Mockery config — the idp-kube template (the team's reference): mocks live
+# next to their interface under mocks/, carry the interface's name and get
+# typed expecters (with-expecter). The listed packages are the CLIENT SEAMS:
+# the daemon contract and the two OAuth client contracts the translators
+# consume. Regenerate with `make gen-mocks` (or `make generate`).
+dir: "{{.InterfaceDir}}/mocks"
+mockname: "{{.InterfaceName}}"
+filename: "{{.InterfaceNameSnake}}.mock.go"
+outpkg: "mocks"
+include-regex: ".*"
+with-expecter: true
+issue-845-fix: true
+resolve-type-alias: false
+disable-version-string: true
+packages:
+  github.com/ivangurin/ccx/internal/services/switcher:
+    config:
+      include-regex: "^Daemon$"
+    interfaces:
+      Daemon:
+  github.com/ivangurin/ccx/internal/translators/codex:
+    config:
+      include-regex: "^AuthSource$"
+    interfaces:
+      AuthSource:
+  github.com/ivangurin/ccx/internal/translators/copilot:
+    config:
+      include-regex: "^TokenSource$"
+    interfaces:
+      TokenSource:

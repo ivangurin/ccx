@@ -36,7 +36,7 @@ func TestApply_EnvRef_DirectExpanded(t *testing.T) {
 // An unset variable fails the direct switch before any write: settings.json
 // untouched, no state, the daemon was never stopped (it never got that far).
 func TestApply_EnvRefMissing_DirectFailsUntouched(t *testing.T) {
-	sw, d, sp := newDirectSwitcher(t, func(p *models.Profile) {
+	sw, rec, sp := newDirectSwitcher(t, func(p *models.Profile) {
 		p.BaseURL, p.AuthToken = envRefUpstream, "$CCX_SWITCH_MISSING"
 	})
 	before := readSettings(t, sp.Config.SettingsPath())
@@ -46,7 +46,7 @@ func TestApply_EnvRefMissing_DirectFailsUntouched(t *testing.T) {
 	require.ErrorContains(t, err, "untouched")
 	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
 	require.NoFileExists(t, sp.Config.StatePath())
-	require.Equal(t, 0, d.stopN, "nothing was stopped — the switch died before any side effect")
+	require.Equal(t, 0, rec.stops, "nothing was stopped — the switch died before any side effect")
 }
 
 // A translated profile must fail BEFORE the daemon restart: an unset
@@ -54,7 +54,7 @@ func TestApply_EnvRefMissing_DirectFailsUntouched(t *testing.T) {
 // nothing and forced a rollback. The expansion runs first; Restart is never
 // called.
 func TestApply_EnvRefMissing_TranslatedNoRestart(t *testing.T) {
-	sw, d, sp := newTestSwitcher(t)
+	sw, rec, sp := newTestSwitcher(t)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	acme := p.Providers.Get("acme")
@@ -64,8 +64,8 @@ func TestApply_EnvRefMissing_TranslatedNoRestart(t *testing.T) {
 
 	_, err = sw.Apply(context.Background(), "acme", "")
 	require.ErrorContains(t, err, "CCX_SWITCH_MISSING")
-	require.Empty(t, d.snapshotRestarts(), "the daemon was not restarted")
-	require.Equal(t, 0, d.stopN)
+	require.Empty(t, rec.snapshotCalls(), "the daemon was not restarted")
+	require.Equal(t, 0, rec.stops)
 	require.Equal(t, before, readSettings(t, sp.Config.SettingsPath()))
 	require.NoFileExists(t, sp.Config.StatePath())
 }

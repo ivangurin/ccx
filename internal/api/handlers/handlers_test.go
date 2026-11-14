@@ -37,7 +37,7 @@ func newTestApp(t *testing.T) (*httptest.Server, *suite_provider.Provider) {
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 	h := handlers.New(handlers.Deps{
 		Router:  svc,
@@ -119,7 +119,7 @@ func TestAdminHealth_ReportsLaunchState(t *testing.T) {
 func TestAdminStop_TriggersCallback(t *testing.T) {
 	_, sp := newTestApp(t)
 
-	svc, err := router.Build(context.Background(), sp.Config, sp.Logger(), "zai")
+	svc, err := router.Build(context.Background(), sp.Config, sp.GetLogger(), "zai")
 	require.NoError(t, err)
 	stopped := make(chan struct{})
 	h := handlers.New(handlers.Deps{Router: svc, Version: "t", Port: 4567, Stop: func() { close(stopped) }})

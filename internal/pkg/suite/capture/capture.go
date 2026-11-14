@@ -1,4 +1,4 @@
-package suite_provider
+package capture
 
 import (
 	"bytes"
