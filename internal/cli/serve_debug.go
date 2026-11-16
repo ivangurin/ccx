@@ -11,11 +11,12 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/logger"
 )
 
-// serveLoggers — the pair buildServeLogger hands over: the diagnostics
-// logger and the usage logger (two streams over the same sink).
+// serveLoggers — the triple buildServeLogger hands over: the diagnostics
+// logger and the two JSON-pinned streams (usage, exit) over the same sink.
 type serveLoggers struct {
 	Diagnostics *slog.Logger
 	Usage       *slog.Logger
+	Exit        *slog.Logger
 }
 
 // buildServeLogger — the daemon logger. The sink is always the writer given
@@ -25,12 +26,14 @@ type serveLoggers struct {
 // Level is "debug" with the flag, env-configured otherwise; format is ALWAYS
 // env-driven — a debug run stays machine-parseable like every other run.
 //
-// It returns TWO loggers over the same sink: the diagnostics logger (env
-// level/format as above) and the usage logger — usage is DATA, not
-// diagnostics, so its stream is pinned to info level and json format
-// regardless of the env config: a CCX_LOG_LEVEL=warn daemon must keep
-// recording usage, and the jq-able unified-log recipe (kind=usage slices)
-// must hold whatever the human-facing format is.
+// It returns THREE loggers over the same sink: the diagnostics logger (env
+// level/format as above) and two streams pinned to info level and json
+// format regardless of the env config — usage (usage is DATA, not
+// diagnostics: a CCX_LOG_LEVEL=warn daemon must keep recording it, and the
+// jq-able unified-log recipe must hold whatever the human-facing format is)
+// and the exit line (spawn.DaemonExitedWithErrorMsg — the startup-wait
+// reader lifts the reason from that line by parsing JSON; a dev-format text
+// line would degrade every dead-child diagnosis to "exit status 1").
 func buildServeLogger(cfg *config.Config, opts app.ServeOptions, stderr io.Writer, _ time.Time) (serveLoggers, func(), error) {
 	level := cfg.LogLevel
 	if opts.Debug {
@@ -44,8 +47,12 @@ func buildServeLogger(cfg *config.Config, opts app.ServeOptions, stderr io.Write
 	if err != nil {
 		return serveLoggers{}, nil, fmt.Errorf("logger: usage stream: %w", err)
 	}
+	exitLog, err := logger.New(stderr, "info", "json")
+	if err != nil {
+		return serveLoggers{}, nil, fmt.Errorf("logger: exit stream: %w", err)
+	}
 
-	return serveLoggers{Diagnostics: log, Usage: usageLog.With("kind", "usage")}, func() {}, nil
+	return serveLoggers{Diagnostics: log, Usage: usageLog.With("kind", "usage"), Exit: exitLog}, func() {}, nil
 }
 
 // BuildServeLoggerForTest exports buildServeLogger for logger-wiring tests.

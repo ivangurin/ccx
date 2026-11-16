@@ -6,22 +6,17 @@ import (
 	"testing"
 
 	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/models"
 	"github.com/stretchr/testify/require"
 )
 
-// pinnedKeysList — the model pin env vars ccx writes (just one: the legacy
-// ANTHROPIC_DEFAULT_*_MODEL / SMALL_FAST mappings are deliberately not
-// written anymore — a leftover in settings.json is wiped by the stale sweep).
-var pinnedKeysList = []string{
-	"ANTHROPIC_MODEL",
-}
-
-// legacyPinnedKeys — the old multi-mapping pin; a switch must REMOVE these
-// from settings.json when they are present.
+// legacyPinnedKeys — the old DERIVED multi-mapping pin (computed from the
+// selected model, incl. the deprecated SMALL_FAST); a switch must REMOVE
+// these from settings.json when they are present. ANTHROPIC_DEFAULT_MODEL
+// is not among them anymore: ccx writes it deliberately now.
 var legacyPinnedKeys = []string{
-	"ANTHROPIC_DEFAULT_MODEL",
 	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-	"ANTHROPIC_DEFAULT_SONET_MODEL",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL",
 	"ANTHROPIC_DEFAULT_OPUS_MODEL",
 	"ANTHROPIC_DEFAULT_FABLE_MODEL",
 	"ANTHROPIC_SMALL_FAST_MODEL",
@@ -86,4 +81,104 @@ func TestApply_EffortLevel(t *testing.T) {
 	_, err = sw.Apply(context.Background(), "zai", "")
 	require.NoError(t, err)
 	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
+}
+
+// The per-model role flags pin the official ANTHROPIC_DEFAULT_*_MODEL family:
+// a flag on a model entry writes THAT model's id into the role's env var —
+// explicit config facts, independent of the selected model. The first model
+// in list order carrying a role wins it; a role no model carries writes
+// nothing.
+func TestApply_RoleModelsWritten(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	acme := p.Providers.Get("acme")
+	acme.Models[0].Haiku = true
+	acme.Models[0].Opus = true
+	acme.Models = append(acme.Models, models.Model{ID: "acme-mini", Label: "Mini", Haiku: true, Sonnet: true})
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "copilot-code-large", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "first model with the flag wins")
+	require.Equal(t, "copilot-code-large", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+	require.Equal(t, "acme-mini", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+	require.NotContains(t, env, "ANTHROPIC_DEFAULT_FABLE_MODEL", "no model carries the fable flag")
+}
+
+// All four role flags on one model point every role var at the same id — and
+// the direct anthropic path writes them too, ids verbatim (the [1m] suffix
+// stays, same as ANTHROPIC_MODEL).
+func TestApply_RoleModelsAllOnOneModel(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	zai := p.Providers.Get("zai")
+	zai.Models[0].Haiku = true
+	zai.Models[0].Sonnet = true
+	zai.Models[0].Opus = true
+	zai.Models[0].Fable = true
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+
+	_, err = sw.Apply(context.Background(), "zai", "")
+	require.NoError(t, err)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	for _, key := range []string{
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL",
+		"ANTHROPIC_DEFAULT_FABLE_MODEL",
+	} {
+		require.Equal(t, "glm-5.3[1m]", env[key], key)
+	}
+}
+
+// ANTHROPIC_DEFAULT_MODEL — the default of new sessions / the picker's
+// Default row: the provider's default-flagged model when it has one, the
+// selected model when it does not. ANTHROPIC_MODEL keeps following the
+// selection even when the two differ.
+func TestApply_DefaultModelPin(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+
+	// zai: glm-5.3[1m] carries default:true; selecting glm-flash → the
+	// default pin stays on glm-5.3[1m], the session model is glm-flash
+	_, err := sw.Apply(context.Background(), "zai", "glm-flash")
+	require.NoError(t, err)
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "glm-flash", env["ANTHROPIC_MODEL"])
+	require.Equal(t, "glm-5.3[1m]", env["ANTHROPIC_DEFAULT_MODEL"], "the default-flagged model is pinned")
+
+	// acme without any default flag → the selected model is pinned (the
+	// explicit model arg is required here: no default to resolve empty by)
+	p, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	p.Providers.Get("acme").Models[0].Default = false
+	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
+	_, err = sw.Apply(context.Background(), "acme", "copilot-code-large")
+	require.NoError(t, err)
+	env = settingsEnv(t, sp.Config.SettingsPath())
+	require.Equal(t, "copilot-code-large", env["ANTHROPIC_DEFAULT_MODEL"], "no default flag → the selected model")
+	require.Equal(t, "copilot-code-large", env["ANTHROPIC_MODEL"])
+}
+
+// No model carries a role flag → the role vars are absent; a manual leftover
+// in settings.json dies with the stale sweep (ccx-owned like every
+// ANTHROPIC_* key).
+func TestApply_RoleModelsAbsent(t *testing.T) {
+	sw, _, sp := newTestSwitcher(t)
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
+		"env": {
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": "leftover"
+		}
+	}`), 0o600))
+
+	_, err := sw.Apply(context.Background(), "acme", "")
+	require.NoError(t, err)
+
+	env := settingsEnv(t, sp.Config.SettingsPath())
+	require.NotContains(t, env, "ANTHROPIC_DEFAULT_HAIKU_MODEL")
+	require.NotContains(t, env, "ANTHROPIC_DEFAULT_SONNET_MODEL")
 }

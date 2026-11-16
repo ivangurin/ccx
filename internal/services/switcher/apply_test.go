@@ -111,7 +111,9 @@ func newTestSwitcher(t *testing.T) (*switcher.Service, *daemonRec, *suite_provid
 	})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 
-	// settings.json with user keys (left untouched) and a stale ANTHROPIC_*
+	// settings.json with user keys (left untouched), a stale ANTHROPIC_* and
+	// a leftover availableModels/enforceAvailableModels lock (old switches
+	// wrote it — the next switch must wipe it)
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
 		"env": {
 			"API_TIMEOUT_MS": "3000000",
@@ -119,6 +121,8 @@ func newTestSwitcher(t *testing.T) (*switcher.Service, *daemonRec, *suite_provid
 			"ANTHROPIC_STALE_KEY": "old"
 		},
 		"model": "old-model",
+		"availableModels": ["old-model"],
+		"enforceAvailableModels": true,
 		"permissions": {"allow": ["Bash"]}
 	}`), 0o600))
 
@@ -174,7 +178,7 @@ func TestApply_HappyPath(t *testing.T) {
 	require.NotContains(t, env, "ANTHROPIC_API_KEY")
 	// pinning: ONLY ANTHROPIC_MODEL carries the selected model; the legacy
 	// multi-mapping keys are neither written nor kept
-	for _, key := range pinnedKeysList {
+	for _, key := range switcher.PinnedKeysForTest() {
 		require.Equal(t, "copilot-code-large", env[key], key)
 	}
 	for _, key := range legacyPinnedKeys {
@@ -185,17 +189,20 @@ func TestApply_HappyPath(t *testing.T) {
 	require.Equal(t, "user-token", env["MCP_TOKEN"])
 	require.NotContains(t, env, "ANTHROPIC_STALE_KEY")
 
-	// the model is pinned
+	// the model pin: model + the FULL provider allowlist (every provider
+	// model visible in /model, built-in families like Fable hidden);
+	// enforceAvailableModels stays unwritten — with it on Claude Code
+	// ignores ANTHROPIC_DEFAULT_MODEL — a leftover one is wiped
+	require.Equal(t, "copilot-code-large", settingsEnv(t, sp.Config.SettingsPath())["ANTHROPIC_MODEL"])
+	require.NotContains(t, readSettings(t, sp.Config.SettingsPath()), "enforceAvailableModels")
 	var s struct {
-		Model   string         `json:"model"`
-		Avail   []string       `json:"availableModels"`
-		Enforce bool           `json:"enforceAvailableModels"`
-		Perms   map[string]any `json:"permissions"`
+		Model string         `json:"model"`
+		Avail []string       `json:"availableModels"`
+		Perms map[string]any `json:"permissions"`
 	}
 	require.NoError(t, jsonfile.ReadJSON(sp.Config.SettingsPath(), &s))
 	require.Equal(t, "copilot-code-large", s.Model)
-	require.Equal(t, []string{"copilot-code-large"}, s.Avail)
-	require.True(t, s.Enforce)
+	require.Equal(t, []string{"copilot-code-large"}, s.Avail, "availableModels = ALL the provider's models")
 	// other file fields are untouched
 	require.Equal(t, map[string]any{"allow": []any{"Bash"}}, s.Perms)
 

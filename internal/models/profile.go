@@ -35,6 +35,15 @@ type Model struct {
 	// Effort → CLAUDE_CODE_EFFORT_LEVEL on switch (written verbatim, no
 	// validation); empty means unset — the key is wiped (ccx-owned).
 	Effort string `json:"effort,omitempty"`
+	// Role flags for the Claude Code ANTHROPIC_DEFAULT_*_MODEL family: a set
+	// flag pins THIS model's id into the role's env var on switch (first
+	// model in the list carrying the role wins). Explicit config facts,
+	// independent of the selected model; a role no model carries writes no
+	// var (ccx-owned — a manual leftover is wiped).
+	Haiku  bool `json:"haiku,omitempty"`
+	Sonnet bool `json:"sonnet,omitempty"`
+	Opus   bool `json:"opus,omitempty"`
+	Fable  bool `json:"fable,omitempty"`
 }
 
 // Profile is a single provider. The connection fields sit at the top level
@@ -94,4 +103,17 @@ func (p *Profile) ResolveModel(model string) (string, bool) {
 // DefaultModel returns the id of the model with default:true (first one if several).
 func (p *Profile) DefaultModel() (string, bool) {
 	return p.ResolveModel("")
+}
+
+// ModelIDs returns every model's id in file order — the allowlist the
+// switcher pins into settings.json (availableModels = the whole list, so the
+// /model picker offers each provider model and hides the built-in families
+// none of them map to).
+func (p *Profile) ModelIDs() []string {
+	ids := make([]string, 0, len(p.Models))
+	for i := range p.Models {
+		ids = append(ids, p.Models[i].ID)
+	}
+
+	return ids
 }

@@ -90,7 +90,13 @@ func profileFromSettings(path string) *models.Profile {
 		return nil
 	}
 	env := settings.Env
-	primary := strutil.FirstNonEmpty(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], env["ANTHROPIC_DEFAULT_OPUS_MODEL"], env["ANTHROPIC_DEFAULT_MODEL"])
+	// ANTHROPIC_DEFAULT_MODEL first: on a ccx-managed install it is the
+	// provider's default pin ccx writes on every switch, while the SONNET/
+	// OPUS role vars carry role-flagged models that must not hijack the
+	// primary (this order predates the role vars, which the legacy sweep
+	// used to wipe — a re-import would otherwise promote the sonnet-role
+	// model to the profile default)
+	primary := strutil.FirstNonEmpty(env["ANTHROPIC_DEFAULT_MODEL"], env["ANTHROPIC_DEFAULT_SONNET_MODEL"], env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
 	haiku := env["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
 
 	prof := &models.Profile{

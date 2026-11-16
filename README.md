@@ -207,6 +207,7 @@ them loads cleanly, and the fields are dropped on the next save.
 | `default` | bool | no | `false` | selected when no model is specified (`ccx use <provider>`, menu Enter) |
 | `max_context_tokens` | int | no | — | caps the context window Claude Code believes it has (drives the `CLAUDE_CODE_MAX_CONTEXT_TOKENS` env trio); unset → the trio is wiped |
 | `effort` | string | no | — | written to `CLAUDE_CODE_EFFORT_LEVEL` verbatim; unset → the key is wiped |
+| `haiku` / `sonnet` / `opus` / `fable` | bool | no | `false` | role flags for the Claude Code `ANTHROPIC_DEFAULT_*_MODEL` family: a set flag pins this model's id into that role's env var (`haiku` also drives Claude Code's background traffic); the first model in the list carrying a role wins, all four may sit on one model; no model carries a role → its var is absent (a leftover is wiped) |
 
 **`daemon` block** — optional, top-level; read by the switcher, which spawns
 the daemon with these parameters:
@@ -223,12 +224,20 @@ edited in place, never moved or reformatted (`CCX_SETTINGS` points it
 elsewhere). A switch changes exactly two things:
 
 - **The env block.** `ANTHROPIC_BASE_URL` + the credential (or the upstream
-  URL for a direct `anthropic` provider), the model pin `ANTHROPIC_MODEL`
-  and the ccx-owned context/effort keys. Stale `ANTHROPIC_*` keys are swept;
-  your own variables (`API_TIMEOUT_MS`, MCP tokens, …) survive untouched —
-  an always-env key you set by hand keeps its value.
-- **The model pin.** `model`, `availableModels=[m]` and
-  `enforceAvailableModels` at the top level.
+  URL for a direct `anthropic` provider), the model pin `ANTHROPIC_MODEL`,
+  the ccx-owned context/effort keys and the `ANTHROPIC_DEFAULT_*_MODEL`
+  role vars for the models flagged `haiku`/`sonnet`/`opus`/`fable`. Stale
+  `ANTHROPIC_*` keys are swept; your own variables (`API_TIMEOUT_MS`, MCP
+  tokens, …) survive untouched — an always-env key you set by hand keeps
+  its value.
+- **The model pin.** The top-level `model` key and the `ANTHROPIC_MODEL` env
+  carry the chosen model — new sessions start on it; `ANTHROPIC_DEFAULT_MODEL`
+  carries the provider's `default`-flagged model (the chosen one when no
+  model is flagged) — the `/model` picker's "Default" option resolves to it.
+  `availableModels` lists ALL the provider's models: the picker offers each
+  of them and hides the built-in families none of them map to (Fable, …).
+  `enforceAvailableModels` is not written — with it on, Claude Code ignores
+  `ANTHROPIC_DEFAULT_MODEL`. Switching models mid-session is allowed.
 
 Everything else — key order, indentation, your own blocks, the trailing
 newline — survives a switch byte-for-byte: a fresh env key is appended at
@@ -287,10 +296,17 @@ involved.
   bearer works from Claude Code's side. The codex store stays
   `auth.json`-compatible: a hand-made symlink of `auth/<key>.json` onto the
   codex CLI's own `~/.codex/auth.json` keeps both tools reading one login.
-- **Model pinning.** A switch pins the chosen model: `model`,
-  `availableModels=[m]`, `enforceAvailableModels` and `ANTHROPIC_MODEL`
-  select it. Legacy `ANTHROPIC_DEFAULT_*_MODEL` overrides are removed on
-  the next switch.
+- **Model pinning.** A switch pins the chosen model (top-level `model`,
+  `ANTHROPIC_MODEL`) and the provider's default (`ANTHROPIC_DEFAULT_MODEL` —
+  the `default`-flagged model, the chosen one when none is flagged): the
+  picker's "Default" option resolves to it instead of the built-in account
+  default, while new sessions start on the chosen model (`ANTHROPIC_MODEL`
+  outranks the variable). The `/model` picker lists the provider's models
+  (`availableModels` = the whole list) — switching models mid-session there
+  is allowed. The `ANTHROPIC_DEFAULT_*_MODEL` role vars come from the
+  per-model `haiku`/`sonnet`/`opus`/`fable` flags in providers.json (the
+  first flagged model wins); any `ANTHROPIC_*` key the current switch does
+  not produce is wiped.
 
 </details>
 

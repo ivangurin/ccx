@@ -95,25 +95,27 @@ func (s *Settings) PatchEnv(stale []string, fresh map[string]string) error {
 	return nil
 }
 
-// SetModelPin pins a model: model/availableModels/enforceAvailableModels,
-// each replaced in place or appended at the end of the file when absent.
-func (s *Settings) SetModelPin(model string) error {
-	avail, err := json.Marshal([]string{model})
+// SetModelPin pins the selected model and the provider allowlist: the model
+// key is replaced in place or appended; availableModels carries ALL the
+// provider's model ids in file order — the /model picker shows every
+// provider model and hides the built-in families none of them map to
+// (Fable, …). enforceAvailableModels is deliberately NOT written and a
+// leftover one is wiped: with enforce on Claude Code ignores
+// ANTHROPIC_DEFAULT_MODEL (docs), which would break the Default-row
+// steering — and with the full list it is redundant anyway.
+func (s *Settings) SetModelPin(model string, allowed []string) error {
+	avail, err := json.Marshal(allowed)
 	if err != nil {
 		return fmt.Errorf("settings: marshal availableModels: %w", err)
 	}
-	pins := []struct {
-		key string
-		raw []byte
-	}{
-		{"model", mustMarshal(model)},
-		{"availableModels", avail},
-		{"enforceAvailableModels", []byte("true")},
+	if s.raw, err = jsonpatch.Set(s.raw, nil, "model", mustMarshal(model)); err != nil {
+		return fmt.Errorf("settings: pinning model: %w", err)
 	}
-	for _, p := range pins {
-		if s.raw, err = jsonpatch.Set(s.raw, nil, p.key, p.raw); err != nil {
-			return fmt.Errorf("settings: pinning %s: %w", p.key, err)
-		}
+	if s.raw, err = jsonpatch.Set(s.raw, nil, "availableModels", avail); err != nil {
+		return fmt.Errorf("settings: pinning availableModels: %w", err)
+	}
+	if s.raw, err = jsonpatch.Delete(s.raw, nil, "enforceAvailableModels"); err != nil {
+		return fmt.Errorf("settings: dropping enforceAvailableModels: %w", err)
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package switcher_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/config"
 	"github.com/ivangurin/ccx/internal/models"
+	"github.com/ivangurin/ccx/internal/pkg/spawn"
 	suite_provider "github.com/ivangurin/ccx/internal/pkg/suite/provider"
 	"github.com/ivangurin/ccx/internal/services/switcher"
 	"github.com/stretchr/testify/require"
@@ -262,14 +264,14 @@ func TestHTTPDaemon_RestartStopsThenSpawnsThenWaitsHealth(t *testing.T) {
 			// the same port (free after the stop) — /health answers from then on.
 			var spawnArgs []string
 			var spawnMu sync.Mutex
-			switcher.SetSpawnForTest(func(_ *config.Config, args ...string) error {
+			switcher.SetSpawnForTest(func(_ *config.Config, args ...string) (*spawn.Child, error) {
 				spawnMu.Lock()
 				spawnArgs = append([]string(nil), args...)
 				spawnMu.Unlock()
 				f.record("spawn")
 				lis, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(oldPort))
 				if err != nil {
-					return err // the old daemon still holds the port — ordering broken
+					return nil, err // the old daemon still holds the port — ordering broken
 				}
 				newFake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
@@ -279,7 +281,7 @@ func TestHTTPDaemon_RestartStopsThenSpawnsThenWaitsHealth(t *testing.T) {
 				t.Cleanup(newFake.Close)
 				f.record("health-up")
 
-				return nil
+				return spawn.NewChild("", neverDone(), nil), nil
 			})
 			t.Cleanup(switcher.ResetSpawnForTest)
 
@@ -307,12 +309,54 @@ func TestHTTPDaemon_RestartHealthTimeout(t *testing.T) {
 	ownDaemonPid(t, cfg) // owned old daemon: the stop phase proceeds, the health wait is what fails
 	cfg.DaemonStartTimeout = 300 * time.Millisecond
 
-	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) error { return nil }) // spawns nothing
+	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) (*spawn.Child, error) {
+		return spawn.NewChild("", neverDone(), nil), nil // spawns nothing, never dies
+	})
 	t.Cleanup(switcher.ResetSpawnForTest)
 
 	d := switcher.NewHTTPDaemon(cfg)
 	err := d.Restart(context.Background(), "work", serverPort(t, f.srv), false)
 	require.ErrorContains(t, err, "daemon-*.log")
+}
+
+// A spawned child that DIES mid-wait (route build failure, auth refusal —
+// the copilot geo-block shape) fails the restart fast, with the reason
+// lifted from the child's own log — not the generic 10s "did not respond":
+// the switch message must name why the daemon did not come up.
+func TestHTTPDaemon_RestartReportsDeadChildReason(t *testing.T) {
+	shortenWaits()
+	f := newFakeAdminDaemon(t, true)
+	cfg := f.config(t)
+	ownDaemonPid(t, cfg)
+	cfg.DaemonStartTimeout = 5 * time.Second
+
+	require.NoError(t, os.MkdirAll(cfg.LogDir(), 0o750))
+	logPath := filepath.Join(cfg.LogDir(), "daemon-20261116-231743.log")
+	require.NoError(t, os.WriteFile(logPath, []byte(
+		`{"level":"ERROR","msg":"`+spawn.DaemonExitedWithErrorMsg+`","err":"app: router: provider copilot1 not ready: copilot: token exchange: status 403: At this time, Copilot is not available in your location."}`+"\n",
+	), 0o600)) //nolint:gosec // sandbox path
+
+	done := make(chan struct{})
+	go func() { time.Sleep(20 * time.Millisecond); close(done) }()
+	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) (*spawn.Child, error) {
+		return spawn.NewChild(logPath, done, errors.New("exit status 1")), nil
+	})
+	t.Cleanup(switcher.ResetSpawnForTest)
+
+	d := switcher.NewHTTPDaemon(cfg)
+	err := d.Restart(context.Background(), "copilot1", serverPort(t, f.srv), false)
+
+	require.ErrorContains(t, err, "copilot: token exchange: status 403")
+	require.NotContains(t, err.Error(), "did not respond within")
+	require.NotContains(t, err.Error(), "daemon-*.log", "the dead-child error names the exact file, not the glob")
+}
+
+// neverDone — a done channel that never fires: the child handle for a
+// healthy (still-running) daemon.
+func neverDone() <-chan struct{} {
+	done := make(chan struct{})
+
+	return done
 }
 
 // serverPort — the TCP port of a test server (errcheck-safe assertion).
@@ -344,10 +388,10 @@ func TestHTTPDaemon_RestartWaitsForDrainingOldDaemon(t *testing.T) {
 	))
 
 	// the spawn seam brings up the NEW fake daemon on the freed port
-	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) error {
+	switcher.SetSpawnForTest(func(_ *config.Config, _ ...string) (*spawn.Child, error) {
 		lis, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(oldPort))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		newFake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -356,7 +400,7 @@ func TestHTTPDaemon_RestartWaitsForDrainingOldDaemon(t *testing.T) {
 		newFake.Start()
 		t.Cleanup(newFake.Close)
 
-		return nil
+		return spawn.NewChild("", neverDone(), nil), nil
 	})
 	t.Cleanup(switcher.ResetSpawnForTest)
 

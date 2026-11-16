@@ -180,7 +180,8 @@ internal/
     flock/                              file locks (LOCK_EX|LOCK_NB)
     jsonfile/                           atomic JSON writes (tmp+rename, permissions)
     spawn/                              daemon launch primitives (SpawnDetached: Setsid, stderr →
-                                         daemon-<launch time>.log; HealthCheck/WaitForHealth) — a leaf
+                                         daemon-<launch time>.log; HealthCheck/WaitForStartup — the
+                                         wait watches the child and fails fast with the reason) — a leaf
                                          package: app→provider→switcher→spawn stays acyclic
     sse/                                upstream SSE reader + AnthropicWriter
     tui/                                interactive menu (arrows/filter/fallback)
@@ -255,18 +256,75 @@ internal/
   env key appends at the end of the block, a replaced one keeps its line).
   Deliberately stricter than bash-ccx, whose jq round-trip reformatted the
   whole file.
-- **Model pinning**: `model`, `availableModels=[m]`, `enforceAvailableModels`,
-  and exactly ONE env pin `ANTHROPIC_MODEL` = the selected model (2026-11-10:
-  the legacy `ANTHROPIC_DEFAULT_*_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL`
-  multi-mapping is not written anymore — a leftover in settings.json dies on
-  the next switch via the `ANTHROPIC_*` stale sweep). A model entry may carry
+- **Model pinning**: the top-level `model` key pins the selected model and
+  `ANTHROPIC_DEFAULT_MODEL` pins the provider's default-flagged model — the
+  selected one when no model carries `default` (2026-11-16, owner decision;
+  a model WITHOUT the flag cannot be selected by an empty model arg — the
+  switch requires an explicit id then). The var selects a new session's
+  model only when nothing else does (doc precedence: `--model` >
+  `ANTHROPIC_MODEL` > settings `model` key > this var) — a ccx-managed
+  install always sets the middle two, so its practical effect is the
+  /model picker's Default ROW ("Set by ANTHROPIC_DEFAULT_MODEL" label);
+  ignored when set to default/inherit/opusplan/haiku or when
+  enforceAvailableModels is on — a second reason the lock pair had to go;
+  verified via docs fetch: that row resolves the account RUNTIME default —
+  the settings `model` key and ANTHROPIC_MODEL do NOT feed it — and the
+  ANTHROPIC_DEFAULT_*_MODEL pins redirect it; with DEFAULT_MODEL unset the
+  row fell to the built-in
+  Opus 5.5 slot → the OPUS pin, which is why "Default (currently glm-5.3)"
+  showed while working on glm-5.3-flash; ANTHROPIC_DEFAULT_MODEL is
+  v2.1.236+; 2026-11-10: the
+  DERIVED legacy multi-mapping `ANTHROPIC_DEFAULT_HAIKU/SONNET/OPUS/FABLE_
+  MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` computed from the selection is not
+  written — a leftover dies via the `ANTHROPIC_*` stale sweep;
+  2026-11-16, owner decision — TWO steps the same day: first the
+  `availableModels`/`enforceAvailableModels` pair was dropped entirely,
+  then `availableModels` came back as the FULL provider model list
+  (`profile.ModelIDs()`, file order): the /model picker must offer every
+  provider model while hiding the built-in families none of them map to
+  (Fable's row is exactly what the user wanted gone). `enforceAvailableModels`
+  stays unwritten and a leftover one is wiped — docs: with enforce on
+  Claude Code ignores ANTHROPIC_DEFAULT_MODEL (the Default-row steering
+  dies), and with the full list enforce is redundant anyway; a stale
+  `availableModels` is replaced in place. Model switching mid-session in
+  /model is allowed and belongs to the user, ccx pins only the default). A model entry may carry
   `max_context_tokens` (providers.json): when set, the switch writes
   `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS=<v>`,
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW=<v − 10%>`; when unset the trio is wiped —
   the keys are ccx-owned, a manual value dies too. A model entry may also
   carry `effort` → `CLAUDE_CODE_EFFORT_LEVEL`, written verbatim (no
   validation); when unset the key is wiped — ccx-owned, a manual value dies
-  too. Always-env (add-if-missing,
+  too. Role flags (2026-11-16, owner decision — reverses the removal of the
+  family, but as explicit config facts instead of derivations): a model entry
+  may carry boolean `haiku`/`sonnet`/`opus`/`fable` → the switch scans the
+  provider's WHOLE model list and pins the first model carrying a role into
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `_SONNET_` / `_OPUS_` / `_FABLE_MODEL`
+  (ids verbatim, `[1m]` stays; all four flags may sit on one model; a role no
+  model carries writes no var, a manual leftover dies via the stale sweep).
+  All four are officially documented Claude Code env vars (haiku also drives
+  its background traffic, fable participates in automatic model fallback on
+  third-party providers — code.claude.com/docs/en/model-config, 2026-11-14
+  snapshot, verified via docs fetch, not from memory). Picker-hiding
+  alternatives checked and rejected (docs fetch 2026-11-16): deniedModels
+  hides a family by alias but is MANAGED-scope only — ignored with a
+  warning in the user settings.json ccx writes; modelPicker +
+  replaceBuiltInOptions is user-scope but replaces the whole lineup and
+  documented to hide "the rows it adds for availableModels entries" —
+  incompatible with the full-list allowlist above. Interaction with the
+  Claude Code /model picker (verified against docs 2026-11-16): picker rows
+  are ALIAS-based — each ANTHROPIC_DEFAULT_*_MODEL renders a substitute row
+  only when its target id is inside availableModels ("alias resolution:
+  … cannot redirect an allowed alias to a model outside the list"; excluded
+  models are hidden) — so with a role mapped to the SELECTED model the picker
+  shows extra rows (Opus/Sonnet) that all resolve to the same upstream id,
+  and with a role mapped elsewhere (e.g. haiku → another provider model) those
+  rows vanish; a role mapped to a NON-selected model is invisible in the
+  picker yet still written to settings.json. With the full-list allowlist,
+  switching models mid-session in /model belongs to the user; ccx pins only
+  the session default (this sentence supersedes the older "switching belongs
+  to ccx, never to /model" claim from before the allowlist returned — do not
+  re-tighten). Always-env
+  (add-if-missing,
   never overwritten: a user value in settings.json wins): 
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`,
   `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `CLAUDE_CODE_AUTO_MODE_SERVER=0`.
@@ -336,7 +394,16 @@ internal/
   `daemon launch` snapshot (pid/ppid/sid/rlimit). `ccx status` probes
   /health and prints `Daemon: up/down/not used (direct)` — it used to show
   nothing about the daemon, which fed a day of "the daemon IS running"
-  misdiagnosis (verified live 2026-11-09).
+  misdiagnosis (verified live 2026-11-09). Restart's health wait watches the
+  spawned CHILD (spawn.WaitForStartup over the Child's death channel from a
+  cmd.Wait reaper goroutine): a child that dies mid-wait (route build
+  failure, copilot geo-block 403 — verified live 2026-11-16, the child
+  exited at 400ms while the switch burned the full 10s budget on a dead
+  process) fails the switch IMMEDIATELY with the reason lifted from the
+  child's own log ("daemon exited with error" JSONL line), not the generic
+  "did not respond within 10s"; the wait status is the fallback when the log
+  carries no reason line, and the live-but-never-answering child keeps the
+  generic timeout message (verified in tests).
 
 ### Translator runtime invariants (v0.0.4 hardening)
 
@@ -445,6 +512,13 @@ internal/
   live), a non-JSON body is handed over as a plain string and escaped by
   the handler, so a broken line is impossible by either path.
   `json.Valid`-gating in reqdump decides which of the two encodings applies.
+  The daemon's startup-failure line (msg=`daemon exited with error`, written
+  by runServe when app.Run fails) is JSON-PINNED the same way — the
+  switcher's reason lift (spawn.startupFailureReason) parses it as JSON, so a
+  dev-format text line would degrade every dead-child diagnosis to
+  "exit status 1"; with CCX_LOG_FORMAT != json the line is written twice
+  (env-format echo for a foreground human + the pinned JSON line, json
+  format writes it once).
   A test logger writing into a plain `bytes.Buffer` from a background
   goroutine is a -race FAILURE — wrap it in a mutex (`syncBuffer` /
   `suite_provider.Capture`), `require.Eventually` polls it from the test
@@ -639,7 +713,7 @@ gateways may block Go's default UA (openai.DefaultUserAgent masquerades it).
   The
   cycle that used to forbid app→provider is gone: the daemon launch
   primitives moved out of `app` into the leaf `internal/pkg/spawn`
-  (`SpawnDetached`/`WaitForHealth`/`HealthCheck`; the switcher's spawn seam
+  (`SpawnDetached`/`WaitForStartup`/`HealthCheck`; the switcher's spawn seam
   var renamed `spawnFn`), so `app → provider → switcher → spawn` stays
   acyclic — moving runtime-wrong primitives back under `app` reintroduces
   the cycle. The translators and the OAuth client OBJECTS stay outside the

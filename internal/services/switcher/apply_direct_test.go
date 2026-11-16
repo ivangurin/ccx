@@ -54,7 +54,7 @@ func TestApply_DirectAnthropic(t *testing.T) {
 	require.Equal(t, "sk-z", env["ANTHROPIC_AUTH_TOKEN"])
 	require.NotContains(t, env, "ANTHROPIC_API_KEY")
 	// pinning still applies
-	for _, key := range pinnedKeysList {
+	for _, key := range switcher.PinnedKeysForTest() {
 		require.Equal(t, "glm-5.3[1m]", env[key], key)
 	}
 	// stale keys wiped, user keys kept

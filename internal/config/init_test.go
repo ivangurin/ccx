@@ -82,6 +82,26 @@ func TestInitProviders_FromEnvironmentTemplates(t *testing.T) {
 	require.True(t, zai.Models[0].Default)
 	require.Equal(t, "glm-haiku", zai.Models[1].ID)
 
+	// On a ccx-MANAGED settings.json the role vars are written by every
+	// switch — the DEFAULT_MODEL pin (the provider's default-flagged model)
+	// must win the primary over the sonnet-role var, not the other way
+	// around (a re-import would otherwise promote the role model to the
+	// profile default).
+	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
+		"env": {"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-z",
+			"ANTHROPIC_DEFAULT_MODEL": "glm-5.3[1m]",
+			"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-flash", "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3[1m]"}
+	}`), 0o600))
+	_, err = config.InitProviders(sp.Config, true)
+	require.NoError(t, err)
+	p2, err := config.LoadProviders(sp.Config.ProvidersPath())
+	require.NoError(t, err)
+	zai2 := p2.Providers.Get("zai")
+	require.NotNil(t, zai2)
+	require.Equal(t, "glm-5.3[1m]", zai2.Models[0].ID, "DEFAULT_MODEL outranks the role vars")
+	require.True(t, zai2.Models[0].Default)
+	require.Len(t, zai2.Models, 1)
+
 	work := p.Providers.Get("work")
 	require.NotNil(t, work)
 	require.Equal(t, "https://api-copilot.work.example/aigw", work.BaseURL)

@@ -10,11 +10,12 @@ import (
 )
 
 // writeSettings: backup → surgical env patch (managed keys) → model pinning.
-// env is the fresh block content (daemonEnv or directEnv). The patcher edits
-// the file's own text, so everything outside env/the pin — order, indent,
-// user blocks — survives byte-for-byte; fresh keys land at the end of the
-// env block.
-func (s *Service) writeSettings(env map[string]string, model string) error {
+// env is the fresh block content (daemonEnv or directEnv); allowed is the
+// provider's FULL model id list (availableModels). The patcher edits the
+// file's own text, so everything outside env/the pin — order, indent, user
+// blocks — survives byte-for-byte; fresh keys land at the end of the env
+// block.
+func (s *Service) writeSettings(env map[string]string, model string, allowed []string) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
 		return fmt.Errorf("ccx: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
@@ -45,7 +46,7 @@ func (s *Service) writeSettings(env map[string]string, model string) error {
 	if err := settings.PatchEnv(stale, env); err != nil {
 		return fmt.Errorf("ccx: %w", err)
 	}
-	if err := settings.SetModelPin(model); err != nil {
+	if err := settings.SetModelPin(model, allowed); err != nil {
 		return fmt.Errorf("ccx: %w", err)
 	}
 	// WriteAtomicRaw (not a local copy): settings.json is patched as TEXT and

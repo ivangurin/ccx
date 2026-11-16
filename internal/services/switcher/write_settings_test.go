@@ -22,7 +22,9 @@ func TestApply_PreservesSettingsFormatting(t *testing.T) {
     "API_TIMEOUT_MS": "3000000",
     "ANTHROPIC_STALE_KEY": "old"
   },
-  "model": "old-model"
+  "model": "old-model",
+  "availableModels": ["old-model"],
+  "enforceAvailableModels": true
 }
 `
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(in), 0o600))
@@ -30,6 +32,9 @@ func TestApply_PreservesSettingsFormatting(t *testing.T) {
 	_, err := sw.Apply(context.Background(), "acme", "")
 	require.NoError(t, err)
 
+	// the leftover enforceAvailableModels is wiped; availableModels carries
+	// the FULL provider model list (the fixture's stale ["old-model"] list
+	// is replaced in place)
 	want := `{
   "permissions": {
     "allow": ["Bash(npm run test)"]
@@ -38,14 +43,14 @@ func TestApply_PreservesSettingsFormatting(t *testing.T) {
     "API_TIMEOUT_MS": "3000000",
     "ANTHROPIC_AUTH_TOKEN": "k",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:4567",
+    "ANTHROPIC_DEFAULT_MODEL": "copilot-code-large",
     "ANTHROPIC_MODEL": "copilot-code-large",
     "CLAUDE_CODE_AUTO_MODE_SERVER": "0",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "model": "copilot-code-large",
-  "availableModels": ["copilot-code-large"],
-  "enforceAvailableModels": true
+  "availableModels": ["copilot-code-large"]
 }
 `
 	got, err := os.ReadFile(sp.Config.SettingsPath())

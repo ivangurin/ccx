@@ -21,7 +21,7 @@ func (s *Service) applyDirect(
 		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous provider", err)
 	}
 
-	if err := s.writeSettings(env, model.ID); err != nil {
+	if err := s.writeSettings(env, model.ID, profile.ModelIDs()); err != nil {
 		return "", err
 	}
 	if err := s.writeState(profileKey, model.ID); err != nil {
@@ -48,7 +48,7 @@ func directEnv(profile *models.Profile, model *models.Model) (map[string]string,
 	if profile.AuthToken != "" {
 		env["ANTHROPIC_AUTH_TOKEN"] = profile.AuthToken
 	}
-	pinModel(env, model)
+	pinModel(env, profile, model)
 
 	return env, nil
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ivangurin/ccx/internal/app"
 	"github.com/ivangurin/ccx/internal/config"
+	"github.com/ivangurin/ccx/internal/pkg/spawn"
 	"github.com/spf13/cobra"
 )
 
@@ -97,7 +98,14 @@ func runServe(opts app.ServeOptions) int {
 	defer stop()
 
 	if err := app.New(cfg, logs.Diagnostics, logs.Usage).Run(ctx, opts); err != nil {
-		logs.Diagnostics.Error("daemon exited with error", "err", err)
+		// the exit line is the child's last word and the reason lift's
+		// contract: the pinned JSON stream carries it always (dev-format
+		// text would defeat the reader), the env-format stream echoes it
+		// for a foreground human — json format writes it once
+		if cfg.LogFormat != "json" {
+			logs.Diagnostics.Error(spawn.DaemonExitedWithErrorMsg, "err", err)
+		}
+		logs.Exit.Error(spawn.DaemonExitedWithErrorMsg, "err", err)
 
 		return 1
 	}

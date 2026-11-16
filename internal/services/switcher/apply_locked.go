@@ -63,7 +63,7 @@ func (s *Service) applyLocked(ctx context.Context, profileKey, modelArg string) 
 			fmt.Errorf("ccx: cancelled: daemon did not come up (%v)", err))
 	}
 
-	if err := s.writeSettings(daemonEnv(profile, model, port), model.ID); err != nil {
+	if err := s.writeSettings(daemonEnv(profile, model, port), model.ID, profile.ModelIDs()); err != nil {
 		return "", s.switchAborted(ctx, providers, port, debug, err)
 	}
 	if err := s.writeState(profileKey, model.ID); err != nil {
@@ -105,7 +105,7 @@ func daemonEnv(profile *models.Profile, model *models.Model, port int) map[strin
 	env := map[string]string{}
 	env["ANTHROPIC_BASE_URL"] = baseURL(port)
 	env["ANTHROPIC_AUTH_TOKEN"] = credentialPlaceholder(profile)
-	pinModel(env, model)
+	pinModel(env, profile, model)
 
 	return env
 }

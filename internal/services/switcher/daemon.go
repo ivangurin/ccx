@@ -37,7 +37,7 @@ func SetWaitTimingsForTest(port, term, kill, drain, poll time.Duration) {
 }
 
 // SetSpawnForTest replaces the spawn function; ResetSpawnForTest restores it.
-func SetSpawnForTest(fn func(*config.Config, ...string) error) { spawnFn = fn }
+func SetSpawnForTest(fn func(*config.Config, ...string) (*spawn.Child, error)) { spawnFn = fn }
 
 // ResetSpawnForTest restores the real spawn.
 func ResetSpawnForTest() { spawnFn = spawn.SpawnDetached }
@@ -62,7 +62,9 @@ func baseURL(port int) string {
 // with the launch parameters (--provider/--port, plus --debug when the
 // switcher read daemon.debug) and waits for /health — which answering means
 // the translator passed Ready() (the daemon builds the route before
-// listening).
+// listening). A child that dies mid-wait fails the restart immediately with
+// the reason from its own log (spawn.WaitForStartup) — "did not come up"
+// alone is not an answer the user can act on.
 func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int, debug bool) error {
 	if err := d.Stop(ctx); err != nil {
 		return err
@@ -74,15 +76,13 @@ func (d *HTTPDaemon) Restart(ctx context.Context, providerKey string, port int, 
 	if debug {
 		args = append(args, "--debug")
 	}
-	if err := spawnFn(d.cfg, args...); err != nil {
+	child, err := spawnFn(d.cfg, args...)
+	if err != nil {
 		return fmt.Errorf("daemon: spawn: %w", err)
 	}
-	base := baseURL(port)
-	if !spawn.WaitForHealth(ctx, base, d.cfg.DaemonStartTimeout) {
-		return fmt.Errorf("daemon did not respond within %s (logs: %s/daemon-*.log)", d.cfg.DaemonStartTimeout, d.cfg.LogDir())
-	}
-
-	return nil
+	// the glob hint rides ONLY the timeout branch inside WaitForStartup — a
+	// dead-child error already names its exact log file
+	return spawn.WaitForStartup(ctx, baseURL(port), child, d.cfg.LogDir(), d.cfg.DaemonStartTimeout)
 }
 
 // waitDrained waits for the old daemon's process to be gone after its port

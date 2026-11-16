@@ -18,6 +18,7 @@ func writeSettings(t *testing.T, content string) string {
 }
 
 func TestSettings_PatchEnvPreservesFileByteForByte(t *testing.T) {
+	const testModelID = "m1"
 	in := `{
   "permissions": {
     "allow": ["Bash(npm run lint)"]
@@ -46,8 +47,7 @@ func TestSettings_PatchEnvPreservesFileByteForByte(t *testing.T) {
   },
   "statusLine": {"type": "command"},
   "model": "m1",
-  "availableModels": ["m1"],
-  "enforceAvailableModels": true
+  "availableModels": ["m1"]
 }
 `
 
@@ -58,10 +58,10 @@ func TestSettings_PatchEnvPreservesFileByteForByte(t *testing.T) {
 		map[string]string{
 			"ANTHROPIC_BASE_URL":   "http://127.0.0.1:4567",
 			"ANTHROPIC_AUTH_TOKEN": "tok",
-			"ANTHROPIC_MODEL":      "m1",
+			"ANTHROPIC_MODEL":      testModelID,
 		},
 	))
-	require.NoError(t, s.SetModelPin("m1"))
+	require.NoError(t, s.SetModelPin(testModelID, []string{testModelID}))
 	require.Equal(t, want, string(s.Bytes()))
 }
 
@@ -114,13 +114,18 @@ func TestSettings_PatchEnvNotAnObject(t *testing.T) {
 	require.ErrorContains(t, err, "not an object")
 }
 
-func TestSettings_SetModelPinReplacesInPlace(t *testing.T) {
-	in := "{\n  \"model\": \"old\",\n  \"env\": {\"A\": \"1\"},\n  \"enforceAvailableModels\": true\n}\n"
-	want := "{\n  \"model\": \"m1\",\n  \"env\": {\"A\": \"1\"},\n  \"enforceAvailableModels\": true,\n  \"availableModels\": [\"m1\"]\n}\n"
+// SetModelPin writes the model key and the FULL provider allowlist: the
+// picker shows every provider model and hides the built-in families none of
+// them map to. availableModels is replaced in place; enforceAvailableModels
+// is deliberately not written and a leftover one is wiped — with enforce on
+// Claude Code ignores ANTHROPIC_DEFAULT_MODEL, breaking the Default row.
+func TestSettings_SetModelPinWritesModelAndAllowlist(t *testing.T) {
+	in := "{\n  \"model\": \"old\",\n  \"availableModels\": [\"old\"],\n  \"enforceAvailableModels\": true,\n  \"env\": {\"A\": \"1\"}\n}\n"
+	want := "{\n  \"model\": \"m1\",\n  \"availableModels\": [\"m1\",\"m2\"],\n  \"env\": {\"A\": \"1\"}\n}\n"
 
 	s, err := models.LoadSettings(writeSettings(t, in))
 	require.NoError(t, err)
-	require.NoError(t, s.SetModelPin("m1"))
+	require.NoError(t, s.SetModelPin("m1", []string{"m1", "m2"}))
 	require.Equal(t, want, string(s.Bytes()))
 }
 
@@ -164,8 +169,7 @@ func TestSettings_PatchEnvPreservesBlankLinesAndInlineBlocks(t *testing.T) {
     "command": "ccx statusline"
   },
   "model": "glm-5.3[1m]",
-  "availableModels": ["glm-5.3[1m]"],
-  "enforceAvailableModels": true
+  "availableModels": ["glm-5.3[1m]","glm-flash"]
 }
 `
 
@@ -180,7 +184,7 @@ func TestSettings_PatchEnvPreservesBlankLinesAndInlineBlocks(t *testing.T) {
 			"EXTRA_FROM_PROFILE":   "yes",
 		},
 	))
-	require.NoError(t, s.SetModelPin("glm-5.3[1m]"))
+	require.NoError(t, s.SetModelPin("glm-5.3[1m]", []string{"glm-5.3[1m]", "glm-flash"}))
 	require.Equal(t, want, string(s.Bytes()))
 }
 
