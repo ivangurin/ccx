@@ -193,10 +193,6 @@ the resolved credential is written to Claude Code's `settings.json`.
 | `auth_token` | string | for `anthropic` / `openai` | — | the credential — the only one; sent upstream as `Authorization: Bearer`, written to settings.json on switch; may be a whole-value env reference `$NAME` / `${NAME}`; for `copilot` / `codex` any placeholder works (they own the real one) |
 | `models` | list | **yes** | — | the provider's models (see below) |
 
-Removed fields (`api_key`, `extra_headers`, `env`, `max_tokens_field`,
-`reasoning_to_thinking`) are schema history: a providers.json still carrying
-them loads cleanly, and the fields are dropped on the next save.
-
 **Model** — `label` is what menus and `ccx list` show, `id` is what
 `ccx use <provider> <model>` accepts (exact match):
 
