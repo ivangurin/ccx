@@ -123,27 +123,30 @@ func TestApply_DirectMaxContextTokens(t *testing.T) {
 	require.Equal(t, "90000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
 }
 
-// The effort pin rides the direct path too (pinModel is shared between
-// daemonEnv and directEnv): a model with the effort field gets
-// CLAUDE_CODE_EFFORT_LEVEL verbatim, a model without it loses the key —
-// a stale manual value included.
+// The per-model effort map rides the direct path too (writeSettings is
+// shared): a model with the effort field gets modelSettings.<bare
+// id>.effortLevel verbatim; a provider without effortful models loses the
+// whole key — the legacy env carrier (CLAUDE_CODE_EFFORT_LEVEL) included.
 func TestApply_DirectEffortLevel(t *testing.T) {
 	sw, _, sp := newDirectSwitcher(t, func(p *models.Profile) {
 		p.BaseURL, p.AuthToken = envRefUpstream, "t"
 	})
 
-	// no effort on m1 → a pre-existing manual value is wiped by the switch
+	// no effort on m1 → the legacy env leftover dies, no map appears
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{"env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"}}`), 0o600))
 	_, err := sw.Apply(context.Background(), "p", "")
 	require.NoError(t, err)
 	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
+	require.Empty(t, settingsModelSettings(t, sp.Config.SettingsPath()))
 
-	// m1 carries effort → written verbatim
+	// m1 carries effort → modelSettings.<bare id>.effortLevel verbatim
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
 	p.Providers.Get("p").Models[0].Effort = "xhigh"
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	_, err = sw.Apply(context.Background(), "p", "")
 	require.NoError(t, err)
-	require.Equal(t, "xhigh", settingsEnv(t, sp.Config.SettingsPath())["CLAUDE_CODE_EFFORT_LEVEL"])
+	ms := settingsModelSettings(t, sp.Config.SettingsPath())
+	require.Len(t, ms, 1)
+	require.Equal(t, "xhigh", ms["m1"].EffortLevel)
 }

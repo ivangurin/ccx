@@ -202,7 +202,7 @@ the resolved credential is written to Claude Code's `settings.json`.
 | `label` | string | no | the `id` | display text in the menu and `ccx list` |
 | `default` | bool | no | `false` | selected when no model is specified (`ccx use <provider>`, menu Enter) |
 | `max_context_tokens` | int | no | — | caps the context window Claude Code believes it has (drives the `CLAUDE_CODE_MAX_CONTEXT_TOKENS` env trio); unset → the trio is wiped |
-| `effort` | string | no | — | written to `CLAUDE_CODE_EFFORT_LEVEL` verbatim; unset → the key is wiped |
+| `effort` | string | no | — | written verbatim into `modelSettings`.<bare id>`.effortLevel` for every model carrying it (docs: the key accepts `low`/`medium`/`high`/`xhigh`; `max` is session-persistent only — ccx writes what the config says); no effortful models → the whole `modelSettings` key is wiped |
 | `haiku` / `sonnet` / `opus` / `fable` | bool | no | `false` | role flags for the Claude Code `ANTHROPIC_DEFAULT_*_MODEL` family: a set flag pins this model's id into that role's env var (`haiku` also drives Claude Code's background traffic); the first model in the list carrying a role wins, all four may sit on one model; no model carries a role → its var is absent (a leftover is wiped) |
 
 **`daemon` block** — optional, top-level; read by the switcher, which spawns
@@ -221,11 +221,18 @@ elsewhere). A switch changes exactly two things:
 
 - **The env block.** `ANTHROPIC_BASE_URL` + the credential (or the upstream
   URL for a direct `anthropic` provider), the model pin `ANTHROPIC_MODEL`,
-  the ccx-owned context/effort keys and the `ANTHROPIC_DEFAULT_*_MODEL`
+  the ccx-owned context keys and the `ANTHROPIC_DEFAULT_*_MODEL`
   role vars for the models flagged `haiku`/`sonnet`/`opus`/`fable`. Stale
   `ANTHROPIC_*` keys are swept; your own variables (`API_TIMEOUT_MS`, MCP
   tokens, …) survive untouched — an always-env key you set by hand keeps
   its value.
+- **The effort map.** Every model carrying `effort` lands in
+  `modelSettings`.<bare id>`.effortLevel` — per model, not env-wide, so the
+  level follows the model through mid-session `/model` switches (needs
+  Claude Code v2.1.251+). The key is owned wholesale: each switch replaces
+  it with the current provider's entries; a provider without effortful
+  models wipes it. The legacy env carrier `CLAUDE_CODE_EFFORT_LEVEL` is no
+  longer written — a leftover from an older ccx dies on the first switch.
 - **The model pin.** The top-level `model` key and the `ANTHROPIC_MODEL` env
   carry the chosen model — new sessions start on it; `ANTHROPIC_DEFAULT_MODEL`
   carries the provider's `default`-flagged model (the chosen one when no

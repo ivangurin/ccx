@@ -65,12 +65,12 @@ func rolePins(profile *models.Profile) map[string]string {
 // pinModel writes the model pin; a model with max_context_tokens additionally
 // caps the window Claude Code believes it has: the 1M context is disabled,
 // the window pinned, the auto-compact threshold set 10% below the cap (room
-// to compact BEFORE the hard limit). A model with effort additionally pins
-// CLAUDE_CODE_EFFORT_LEVEL verbatim (no validation — the value passes
-// through). Role flags anywhere in the profile pin the
-// ANTHROPIC_DEFAULT_*_MODEL family to the flagged models' ids (rolePins).
+// to compact BEFORE the hard limit). Role flags anywhere in the profile pin
+// the ANTHROPIC_DEFAULT_*_MODEL family to the flagged models' ids (rolePins).
 // Unset facts ⇒ the corresponding keys are not written;
-// writeSettings wipes any stale copy (the keys are ccx-owned).
+// writeSettings wipes any stale copy (the keys are ccx-owned). The per-model
+// effort does NOT ride env: it lands in modelSettings.<id>.effortLevel
+// (writeSettings → SetModelSettings).
 func pinModel(env map[string]string, profile *models.Profile, model *models.Model) {
 	for _, key := range pinnedKeys {
 		env[key] = model.ID
@@ -82,12 +82,5 @@ func pinModel(env map[string]string, profile *models.Profile, model *models.Mode
 		env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
 		env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.Itoa(window)
 		env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = strconv.Itoa(window - window/10)
-	}
-	// after the context block, and independent of it: a model may carry
-	// effort without a context cap (the trio used to early-return here,
-	// which made this write dead code for uncapped models — keep the
-	// blocks independent)
-	if model.Effort != "" {
-		env[effortKey] = model.Effort
 	}
 }

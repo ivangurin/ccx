@@ -21,7 +21,7 @@ func (s *Service) applyDirect(
 		return "", fmt.Errorf("%s — settings.json untouched, you stay on the previous provider", err)
 	}
 
-	if err := s.writeSettings(env, model.ID, profile.ModelIDs()); err != nil {
+	if err := s.writeSettings(env, model.ID, profile); err != nil {
 		return "", err
 	}
 	if err := s.writeState(profileKey, model.ID); err != nil {

@@ -50,37 +50,47 @@ func TestApply_MaxContextTokens(t *testing.T) {
 	require.NotContains(t, env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW")
 }
 
-// The per-model effort field pins CLAUDE_CODE_EFFORT_LEVEL verbatim (no
-// validation — the value passes through as written): written when the model
-// carries it, wiped on the next switch when it does not. The key is
-// ccx-owned: a manual value in settings.json dies too (stale-managed
-// semantics, same as the context trio).
+// The per-model effort field lands in settings.json's modelSettings map:
+// modelSettings.<bare id>.effortLevel for EVERY provider model carrying
+// effort (docs: the map is keyed by the canonical bare id — a [1m]-suffixed
+// session model matches the same entry), not only the selected one — so the
+// level follows the model through mid-session /model switches. The key is
+// ccx-owned WHOLESALE (like availableModels): every switch replaces the map
+// with the current provider's entries; a provider without effortful models
+// wipes it — manual entries and the legacy env carrier
+// (CLAUDE_CODE_EFFORT_LEVEL, the pre-modelSettings channel) included.
 func TestApply_EffortLevel(t *testing.T) {
 	sw, _, sp := newTestSwitcher(t)
 
-	// acme's model has no effort → a pre-existing manual value is wiped
+	// the legacy env leftover dies, the manual foreign entry dies: acme's
+	// model has no effort → the whole modelSettings key is wiped
 	require.NoError(t, os.WriteFile(sp.Config.SettingsPath(), []byte(`{
-		"env": {
-			"CLAUDE_CODE_EFFORT_LEVEL": "low"
-		}
+		"env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"},
+		"modelSettings": {"old-model": {"effortLevel": "xhigh"}}
 	}`), 0o600))
 	_, err := sw.Apply(context.Background(), "acme", "")
 	require.NoError(t, err)
 	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
+	require.Empty(t, settingsModelSettings(t, sp.Config.SettingsPath()))
 
-	// a model with the effort field → written verbatim
+	// effortful models → written verbatim under bare-id keys ([1m] stripped)
 	p, err := config.LoadProviders(sp.Config.ProvidersPath())
 	require.NoError(t, err)
-	p.Providers.Get("acme").Models[0].Effort = "high"
+	acme := p.Providers.Get("acme")
+	acme.Models[0].Effort = "high"
+	acme.Models = append(acme.Models, models.Model{ID: "acme-mini[1m]", Label: "Mini", Effort: "xhigh"})
 	require.NoError(t, config.SaveProviders(sp.Config.ProvidersPath(), p))
 	_, err = sw.Apply(context.Background(), "acme", "")
 	require.NoError(t, err)
-	require.Equal(t, "high", settingsEnv(t, sp.Config.SettingsPath())["CLAUDE_CODE_EFFORT_LEVEL"])
+	ms := settingsModelSettings(t, sp.Config.SettingsPath())
+	require.Len(t, ms, 2)
+	require.Equal(t, "high", ms["copilot-code-large"].EffortLevel)
+	require.Equal(t, "xhigh", ms["acme-mini"].EffortLevel, "the [1m] suffix is stripped: keyed by the bare id")
 
-	// back to a model without effort → wiped again
+	// switching to a provider without effort → the map dies whole
 	_, err = sw.Apply(context.Background(), "zai", "")
 	require.NoError(t, err)
-	require.NotContains(t, settingsEnv(t, sp.Config.SettingsPath()), "CLAUDE_CODE_EFFORT_LEVEL")
+	require.Empty(t, settingsModelSettings(t, sp.Config.SettingsPath()))
 }
 
 // The per-model role flags pin the official ANTHROPIC_DEFAULT_*_MODEL family:

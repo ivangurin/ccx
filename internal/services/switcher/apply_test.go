@@ -141,6 +141,22 @@ func settingsEnv(t *testing.T, path string) map[string]string {
 	return s.Env
 }
 
+// modelSettingsEntry mirrors one modelSettings.<id> entry — the only field
+// ccx writes there is effortLevel.
+type modelSettingsEntry struct {
+	EffortLevel string `json:"effortLevel"`
+}
+
+func settingsModelSettings(t *testing.T, path string) map[string]modelSettingsEntry {
+	t.Helper()
+	var s struct {
+		MS map[string]modelSettingsEntry `json:"modelSettings"`
+	}
+	require.NoError(t, jsonfile.ReadJSON(path, &s))
+
+	return s.MS
+}
+
 func readState(t *testing.T, path string) models.State {
 	t.Helper()
 	var st models.State

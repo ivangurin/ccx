@@ -245,7 +245,8 @@ internal/
   memory; the flow is verifiable only in a real browser (Cloudflare blocks
   curl on auth.openai.com).
 - **Managed keys**: only `ANTHROPIC_*` keys, the
-  `max_context_tokens` trio and the `effort` key (see Model pinning) and the
+  `max_context_tokens` trio, the legacy `effort` env key (stale sweep only —
+  the effort now lives in `modelSettings`, see Model pinning) and the
   always-env flags are edited (profile env keys are gone — the profile schema
   has no env map anymore); user variables (API_TIMEOUT_MS, MCP tokens)
   are preserved — an always-env key the user set by hand keeps its value
@@ -292,9 +293,23 @@ internal/
   `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS=<v>`,
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW=<v − 10%>`; when unset the trio is wiped —
   the keys are ccx-owned, a manual value dies too. A model entry may also
-  carry `effort` → `CLAUDE_CODE_EFFORT_LEVEL`, written verbatim (no
-  validation); when unset the key is wiped — ccx-owned, a manual value dies
-  too. Role flags (2026-11-16, owner decision — reverses the removal of the
+  carry `effort` → `modelSettings.<bare id>.effortLevel` (2026-11-18,
+  owner decision — replaces the env carrier): the switch fills the map for
+  EVERY provider model carrying effort (bare id — the `[1m]` suffix is
+  stripped; docs: modelSettings is keyed by the canonical bare id and
+  matches suffixed session ids onto the same entry), so the level follows
+  the model through mid-session /model switches — the single env var pinned
+  only the selection. The key is ccx-owned WHOLESALE like availableModels:
+  each switch replaces the whole object (a user's /effort save in the same
+  file dies on the next switch, exactly like a mid-session model choice
+  under the `model` pin); no effortful models → the key is deleted. Values
+  are written verbatim (no validation; docs, settings-reference.md fetched
+  2026-11-18: effortLevel accepts only low/medium/high/xhigh, `max` is
+  session-persistent ONLY via the env var — ccx still writes what the
+  config says; requires Claude Code v2.1.251+, honored in user settings).
+  The legacy env carrier `CLAUDE_CODE_EFFORT_LEVEL` is no longer written
+  but stays in the stale sweep — a leftover from an older ccx dies on the
+  first switch (that IS the migration). Role flags (2026-11-16, owner decision — reverses the removal of the
   family, but as explicit config facts instead of derivations): a model entry
   may carry boolean `haiku`/`sonnet`/`opus`/`fable` → the switch scans the
   provider's WHOLE model list and pins the first model carrying a role into

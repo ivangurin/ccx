@@ -32,8 +32,11 @@ type Model struct {
 	Default bool   `json:"default,omitempty"`
 	// MaxContextTokens → CLAUDE_CODE_MAX_CONTEXT_TOKENS and friends on switch.
 	MaxContextTokens int `json:"max_context_tokens,omitempty"`
-	// Effort → CLAUDE_CODE_EFFORT_LEVEL on switch (written verbatim, no
-	// validation); empty means unset — the key is wiped (ccx-owned).
+	// Effort → modelSettings.<bare id>.effortLevel on switch, verbatim (no
+	// validation — docs: the key accepts low/medium/high/xhigh; "max" is
+	// session-persistent only, ccx writes what the config says). Empty means
+	// unset — with no effortful models the whole modelSettings key is wiped
+	// (ccx-owned wholesale).
 	Effort string `json:"effort,omitempty"`
 	// Role flags for the Claude Code ANTHROPIC_DEFAULT_*_MODEL family: a set
 	// flag pins THIS model's id into the role's env var on switch (first

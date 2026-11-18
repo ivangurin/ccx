@@ -121,6 +121,38 @@ func (s *Settings) SetModelPin(model string, allowed []string) error {
 	return nil
 }
 
+// SetModelSettings writes the provider's per-model effort map —
+// modelSettings.<bare id>.effortLevel (docs: the map is keyed by the
+// canonical bare model id; a [1m]-suffixed session model matches the same
+// entry). The key is ccx-owned wholesale (like availableModels): the whole
+// object is replaced in place on every switch, so entries outside the
+// current provider — manual ones included — die; an empty map deletes the
+// key entirely.
+func (s *Settings) SetModelSettings(entries map[string]string) error {
+	if len(entries) == 0 {
+		raw, err := jsonpatch.Delete(s.raw, nil, "modelSettings")
+		if err != nil {
+			return fmt.Errorf("settings: dropping modelSettings: %w", err)
+		}
+		s.raw = raw
+
+		return nil
+	}
+	ms := make(map[string]map[string]string, len(entries))
+	for id, level := range entries {
+		ms[id] = map[string]string{"effortLevel": level}
+	}
+	raw, err := json.Marshal(ms)
+	if err != nil {
+		return fmt.Errorf("settings: marshal modelSettings: %w", err)
+	}
+	if s.raw, err = jsonpatch.Set(s.raw, nil, "modelSettings", raw); err != nil {
+		return fmt.Errorf("settings: pinning modelSettings: %w", err)
+	}
+
+	return nil
+}
+
 // Bytes returns the patched file text.
 func (s *Settings) Bytes() []byte {
 	return s.raw

@@ -9,13 +9,14 @@ import (
 	"github.com/ivangurin/ccx/internal/pkg/jsonfile"
 )
 
-// writeSettings: backup → surgical env patch (managed keys) → model pinning.
-// env is the fresh block content (daemonEnv or directEnv); allowed is the
-// provider's FULL model id list (availableModels). The patcher edits the
-// file's own text, so everything outside env/the pin — order, indent, user
-// blocks — survives byte-for-byte; fresh keys land at the end of the env
-// block.
-func (s *Service) writeSettings(env map[string]string, model string, allowed []string) error {
+// writeSettings: backup → surgical env patch (managed keys) → model pinning
+// → the per-model effort map (modelSettings). env is the fresh block content
+// (daemonEnv or directEnv); profile supplies the FULL model id list
+// (availableModels) and the effort entries. The patcher edits the file's own
+// text, so everything outside env/the pin/modelSettings — order, indent,
+// user blocks — survives byte-for-byte; fresh keys land at the end of the
+// env block.
+func (s *Service) writeSettings(env map[string]string, model string, profile *models.Profile) error {
 	settings, err := models.LoadSettings(s.cfg.SettingsPath())
 	if err != nil {
 		return fmt.Errorf("ccx: no %s — it is created by the first run of Claude Code", s.cfg.SettingsPath())
@@ -46,7 +47,10 @@ func (s *Service) writeSettings(env map[string]string, model string, allowed []s
 	if err := settings.PatchEnv(stale, env); err != nil {
 		return fmt.Errorf("ccx: %w", err)
 	}
-	if err := settings.SetModelPin(model, allowed); err != nil {
+	if err := settings.SetModelPin(model, profile.ModelIDs()); err != nil {
+		return fmt.Errorf("ccx: %w", err)
+	}
+	if err := settings.SetModelSettings(modelSettingsFor(profile)); err != nil {
 		return fmt.Errorf("ccx: %w", err)
 	}
 	// WriteAtomicRaw (not a local copy): settings.json is patched as TEXT and
@@ -78,11 +82,38 @@ var contextKeys = []string{
 	"CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 }
 
-// effortKey — CLAUDE_CODE_EFFORT_LEVEL, derived from the per-model effort
-// field: written verbatim (no allow-list) only for a model that carries it,
-// wiped otherwise (ccx-owned like the context trio — a manual value dies
-// too).
+// effortKey — CLAUDE_CODE_EFFORT_LEVEL, the legacy carrier of the per-model
+// effort: no longer written (the level now lives in
+// modelSettings.<id>.effortLevel), kept managed so a leftover from an older
+// ccx dies on the first switch.
 var effortKey = "CLAUDE_CODE_EFFORT_LEVEL"
+
+// modelSettingsFor — the provider's per-model effort entries: every model
+// carrying effort under its bare id, selected or not — the level follows the
+// model through mid-session /model switches, which the single env var could
+// never do.
+func modelSettingsFor(profile *models.Profile) map[string]string {
+	entries := map[string]string{}
+	for i := range profile.Models {
+		m := &profile.Models[i]
+		if m.Effort != "" {
+			entries[bareModelID(m.ID)] = m.Effort
+		}
+	}
+
+	return entries
+}
+
+// bareModelID cuts a trailing "[…]" bracket suffix (Claude Code's 1M-context
+// marker): modelSettings is keyed by the canonical bare id, the suffixed
+// session ids match onto the same entry (docs).
+func bareModelID(id string) string {
+	if i := strings.IndexByte(id, '['); i > 0 {
+		return id[:i]
+	}
+
+	return id
+}
 
 // staleEnvKeys — the keys to wipe: the managed (ccx-owned) context trio and
 // effort key plus every ANTHROPIC_* key that is present now but absent from

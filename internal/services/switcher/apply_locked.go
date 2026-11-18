@@ -63,7 +63,7 @@ func (s *Service) applyLocked(ctx context.Context, profileKey, modelArg string) 
 			fmt.Errorf("ccx: cancelled: daemon did not come up (%v)", err))
 	}
 
-	if err := s.writeSettings(daemonEnv(profile, model, port), model.ID, profile.ModelIDs()); err != nil {
+	if err := s.writeSettings(daemonEnv(profile, model, port), model.ID, profile); err != nil {
 		return "", s.switchAborted(ctx, providers, port, debug, err)
 	}
 	if err := s.writeState(profileKey, model.ID); err != nil {
